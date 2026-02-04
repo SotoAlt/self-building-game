@@ -101,16 +101,22 @@ export class GameRoom extends Room {
 
     // Trigger activation (for goals, checkpoints)
     this.onMessage('trigger_activated', (client, data) => {
+      console.log(`[GameRoom] Trigger activated: ${data.entityId} by ${client.sessionId}`);
+
       this.broadcast('trigger_activated', {
         entityId: data.entityId,
         playerId: client.sessionId
       });
 
       // Notify mini-game if active
-      if (this.currentMiniGame && this.currentMiniGame.isActive) {
-        if (typeof this.currentMiniGame.onPlayerReachedGoal === 'function') {
+      if (this.currentMiniGame) {
+        console.log(`[GameRoom] Mini-game active: ${this.currentMiniGame.isActive}`);
+        if (this.currentMiniGame.isActive && typeof this.currentMiniGame.onPlayerReachedGoal === 'function') {
+          console.log(`[GameRoom] Calling onPlayerReachedGoal for ${client.sessionId}`);
           this.currentMiniGame.onPlayerReachedGoal(client.sessionId);
         }
+      } else {
+        console.log('[GameRoom] No mini-game active');
       }
     });
 

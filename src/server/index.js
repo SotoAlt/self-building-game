@@ -185,6 +185,11 @@ app.post('/api/game/start', (req, res) => {
       countdownTime
     });
 
+    // Share with game room immediately for event handling
+    if (gameRoom) {
+      gameRoom.currentMiniGame = currentMiniGame;
+    }
+
     // Start the game
     currentMiniGame.start();
 

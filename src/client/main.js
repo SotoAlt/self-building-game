@@ -22,11 +22,57 @@ const state = {
   localPlayer: null,
   room: null,
   gameState: { phase: 'lobby' },
-  announcements: new Map()
+  announcements: new Map(),
+  connected: false
 };
 
 // Remote players
 const remotePlayers = new Map();
+
+// Expose state for debugging
+window.__gameState = state;
+
+// Helper to safely send messages
+function sendToServer(type, data) {
+  if (!state.room) return false;
+
+  try {
+    state.room.send(type, data);
+    return true;
+  } catch (e) {
+    console.warn('[Network] Send failed:', e.message);
+    state.connected = false;
+    attemptReconnect();
+    return false;
+  }
+}
+
+// Throttle position sends to 20 per second
+let lastMoveTime = 0;
+const MOVE_INTERVAL = 50; // ms
+
+// Reconnection logic
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+
+async function attemptReconnect() {
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    console.error('[Network] Max reconnect attempts reached');
+    return;
+  }
+
+  reconnectAttempts++;
+  console.log(`[Network] Reconnecting... (attempt ${reconnectAttempts})`);
+
+  try {
+    await connectToServer();
+    reconnectAttempts = 0;
+    console.log('[Network] Reconnected successfully');
+  } catch (e) {
+    console.warn('[Network] Reconnect failed, retrying in 2s...');
+    setTimeout(attemptReconnect, 2000);
+  }
+}
 
 // ============================================
 // Three.js Setup
@@ -246,9 +292,7 @@ function handleCollision(entity, mesh, box) {
 
 function collectItem(entity) {
   // Notify server
-  if (state.room) {
-    state.room.send('collect', { entityId: entity.id });
-  }
+  sendToServer('collect', { entityId: entity.id });
 
   // Remove from local state immediately for responsive feel
   removeEntity(entity.id);
@@ -266,11 +310,9 @@ function playerDie() {
   }
 
   // Notify server
-  if (state.room) {
-    state.room.send('died', {
-      position: playerMesh.position.toArray()
-    });
-  }
+  sendToServer('died', {
+    position: playerMesh.position.toArray()
+  });
 
   // Visual feedback - turn red briefly
   playerMesh.material.color.setHex(0xff0000);
@@ -298,9 +340,7 @@ function respawnPlayer() {
   }
 
   // Notify server
-  if (state.room) {
-    state.room.send('respawn');
-  }
+  sendToServer('respawn', {});
 
   console.log('[Player] Respawned');
 }
@@ -308,10 +348,7 @@ function respawnPlayer() {
 function triggerEvent(entity) {
   // Triggers can activate challenges, teleport, etc.
   console.log(`[Trigger] Activated: ${entity.id}`);
-
-  if (state.room) {
-    state.room.send('trigger_activated', { entityId: entity.id });
-  }
+  sendToServer('trigger_activated', { entityId: entity.id });
 }
 
 // ============================================
@@ -376,9 +413,11 @@ function updatePlayer(delta) {
   camera.position.z = playerMesh.position.z + 20;
   camera.lookAt(playerMesh.position);
 
-  // Send position to server
-  if (state.room) {
-    state.room.send('move', {
+  // Send position to server (throttled)
+  const now = performance.now();
+  if (now - lastMoveTime >= MOVE_INTERVAL) {
+    lastMoveTime = now;
+    sendToServer('move', {
       position: playerMesh.position.toArray(),
       velocity: playerVelocity.toArray()
     });
@@ -573,7 +612,23 @@ async function connectToServer() {
     const room = await client.joinOrCreate('game', { name: `Player-${Date.now().toString(36)}` });
 
     state.room = room;
+    state.connected = true;
     console.log('[Network] Connected to room:', room.roomId);
+    console.log('[Network] Room send test - connection alive');
+
+    // Handle disconnection
+    room.onLeave((code) => {
+      console.warn('[Network] Disconnected from room, code:', code);
+      state.room = null;
+      state.connected = false;
+      if (code !== 1000) { // Not a clean close
+        setTimeout(attemptReconnect, 1000);
+      }
+    });
+
+    room.onError((code, message) => {
+      console.error('[Network] Room error:', code, message);
+    });
 
     // Handle events from server
     room.onMessage('entity_spawned', (entity) => {
@@ -644,9 +699,11 @@ async function connectToServer() {
       updateUI();
     });
 
+    state.connected = true;
     return true;
   } catch (error) {
     console.error('[Network] Connection failed:', error);
+    state.connected = false;
     return false;
   }
 }
@@ -757,6 +814,20 @@ async function init() {
 
   // Poll for updates every 2 seconds (backup)
   setInterval(pollForUpdates, 2000);
+
+  // Backup position sync (independent of animation loop)
+  setInterval(() => {
+    if (playerMesh && state.room) {
+      try {
+        state.room.send('move', {
+          position: playerMesh.position.toArray(),
+          velocity: playerVelocity.toArray()
+        });
+      } catch (e) {
+        // silent
+      }
+    }
+  }, 100);
 
   console.log('[Game] Ready!');
 }
