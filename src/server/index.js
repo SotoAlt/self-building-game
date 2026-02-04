@@ -6,8 +6,10 @@
 
 import express from 'express';
 import cors from 'cors';
-import { Server } from 'colyseus';
-import { WebSocketTransport } from '@colyseus/ws-transport';
+import Colyseus from 'colyseus';
+import WSTransport from '@colyseus/ws-transport';
+const { Server } = Colyseus;
+const { WebSocketTransport } = WSTransport;
 import { createServer } from 'http';
 import { GameRoom } from './GameRoom.js';
 import { WorldState } from './WorldState.js';

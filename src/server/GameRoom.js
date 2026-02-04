@@ -4,7 +4,8 @@
  * Handles player connections, position sync, and game events.
  */
 
-import { Room } from 'colyseus';
+import Colyseus from 'colyseus';
+const { Room } = Colyseus;
 
 export class GameRoom extends Room {
   // World state injected by server
