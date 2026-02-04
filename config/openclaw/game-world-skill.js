@@ -164,6 +164,69 @@ async function get_challenge_status() {
   return gameRequest('/api/challenge/status');
 }
 
+/**
+ * Tool: announce
+ * Send a global announcement to all players
+ */
+async function announce({ text, type = 'agent', duration = 5000 }) {
+  if (!text) {
+    return { success: false, error: 'Missing required parameter: text' };
+  }
+
+  const validTypes = ['agent', 'system', 'challenge', 'player'];
+  if (!validTypes.includes(type)) {
+    return { success: false, error: `Invalid type. Must be one of: ${validTypes.join(', ')}` };
+  }
+
+  return gameRequest('/api/announce', 'POST', { text, type, duration });
+}
+
+/**
+ * Tool: get_game_types
+ * Get available mini-game types and their descriptions
+ */
+async function get_game_types() {
+  return gameRequest('/api/game/types');
+}
+
+/**
+ * Tool: start_game
+ * Start a mini-game session
+ */
+async function start_game({ type, timeLimit, goalPosition, collectibleCount }) {
+  if (!type) {
+    return { success: false, error: 'Missing required parameter: type' };
+  }
+
+  const validTypes = ['reach', 'collect', 'survival', 'obstacle'];
+  if (!validTypes.includes(type)) {
+    return { success: false, error: `Invalid type. Must be one of: ${validTypes.join(', ')}` };
+  }
+
+  const body = { type };
+  if (timeLimit) body.timeLimit = timeLimit;
+  if (goalPosition) body.goalPosition = goalPosition;
+  if (collectibleCount) body.collectibleCount = collectibleCount;
+
+  return gameRequest('/api/game/start', 'POST', body);
+}
+
+/**
+ * Tool: end_game
+ * End the current mini-game
+ */
+async function end_game({ result = 'cancelled', winnerId }) {
+  return gameRequest('/api/game/end', 'POST', { result, winnerId });
+}
+
+/**
+ * Tool: get_game_state
+ * Get the current game state (lobby, playing, etc.)
+ */
+async function get_game_state() {
+  return gameRequest('/api/game/state');
+}
+
 // Export tools for OpenClaw
 export {
   spawn_entity,
@@ -173,5 +236,10 @@ export {
   get_world_state,
   get_player_positions,
   create_challenge,
-  get_challenge_status
+  get_challenge_status,
+  announce,
+  get_game_types,
+  start_game,
+  end_game,
+  get_game_state
 };

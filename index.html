@@ -42,6 +42,72 @@
       font-size: 24px;
       z-index: 1000;
     }
+    #announcements {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 200;
+      pointer-events: none;
+      text-align: center;
+    }
+    .announcement {
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 15px 30px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+      font-size: 18px;
+      font-weight: bold;
+      animation: announceIn 0.3s ease-out forwards;
+      border: 2px solid;
+    }
+    .announcement.agent {
+      border-color: #9b59b6;
+      background: linear-gradient(135deg, rgba(155, 89, 182, 0.9), rgba(0, 0, 0, 0.9));
+    }
+    .announcement.system {
+      border-color: #f39c12;
+      background: linear-gradient(135deg, rgba(243, 156, 18, 0.9), rgba(0, 0, 0, 0.9));
+    }
+    .announcement.challenge {
+      border-color: #2ecc71;
+      background: linear-gradient(135deg, rgba(46, 204, 113, 0.9), rgba(0, 0, 0, 0.9));
+    }
+    .announcement.fade-out {
+      animation: announceOut 0.5s ease-in forwards;
+    }
+    @keyframes announceIn {
+      from { opacity: 0; transform: scale(0.8) translateY(-20px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    @keyframes announceOut {
+      from { opacity: 1; transform: scale(1); }
+      to { opacity: 0; transform: scale(0.8); }
+    }
+    #game-status {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 100;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 15px;
+      border-radius: 8px;
+      color: white;
+      min-width: 150px;
+    }
+    #game-status.playing {
+      border: 2px solid #2ecc71;
+    }
+    #game-status.countdown {
+      border: 2px solid #f39c12;
+    }
+    #game-timer {
+      font-size: 28px;
+      font-weight: bold;
+      text-align: center;
+      margin-top: 5px;
+    }
   </style>
 </head>
 <body>
@@ -57,6 +123,12 @@
   </div>
   <div id="controls" style="display:none">
     WASD: Move | Space: Jump | Mouse: Look
+  </div>
+  <div id="announcements"></div>
+  <div id="game-status" style="display:none">
+    <div id="game-phase">LOBBY</div>
+    <div id="game-type"></div>
+    <div id="game-timer"></div>
   </div>
   <div id="game"></div>
   <script type="module" src="/src/client/main.js"></script>

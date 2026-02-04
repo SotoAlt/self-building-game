@@ -20,8 +20,13 @@ const state = {
   players: new Map(),
   physics: { gravity: -9.8, friction: 0.3, bounce: 0.5 },
   localPlayer: null,
-  room: null
+  room: null,
+  gameState: { phase: 'lobby' },
+  announcements: new Map()
 };
+
+// Remote players
+const remotePlayers = new Map();
 
 // ============================================
 // Three.js Setup
@@ -171,6 +176,145 @@ function removeEntity(id) {
 }
 
 // ============================================
+// Collision Detection
+// ============================================
+const playerBox = new THREE.Box3();
+const entityBox = new THREE.Box3();
+const collisionResponse = new THREE.Vector3();
+
+function checkCollisions() {
+  if (!playerMesh) return;
+
+  // Update player bounding box
+  playerBox.setFromObject(playerMesh);
+
+  let standingOnPlatform = false;
+  let platformY = 0;
+
+  for (const [id, mesh] of entityMeshes) {
+    const entity = mesh.userData.entity;
+    if (!entity) continue;
+
+    // Update entity bounding box
+    entityBox.setFromObject(mesh);
+
+    if (playerBox.intersectsBox(entityBox)) {
+      handleCollision(entity, mesh, entityBox);
+
+      // Check if standing on platform
+      if (entity.type === 'platform' || entity.type === 'ramp') {
+        const playerBottom = playerMesh.position.y - 1; // Player capsule bottom
+        const platformTop = mesh.position.y + (entity.size[1] / 2);
+
+        // If player is above platform and falling
+        if (playerBottom >= platformTop - 0.5 && playerVelocity.y <= 0) {
+          standingOnPlatform = true;
+          platformY = platformTop + 1; // +1 for player capsule height
+        }
+      }
+    }
+  }
+
+  // Resolve platform standing
+  if (standingOnPlatform) {
+    playerMesh.position.y = platformY;
+    playerVelocity.y = 0;
+    isGrounded = true;
+  }
+}
+
+function handleCollision(entity, mesh, box) {
+  switch (entity.type) {
+    case 'platform':
+    case 'ramp':
+      // Handled in checkCollisions for vertical resolution
+      break;
+
+    case 'collectible':
+      collectItem(entity);
+      break;
+
+    case 'obstacle':
+      playerDie();
+      break;
+
+    case 'trigger':
+      triggerEvent(entity);
+      break;
+  }
+}
+
+function collectItem(entity) {
+  // Notify server
+  if (state.room) {
+    state.room.send('collect', { entityId: entity.id });
+  }
+
+  // Remove from local state immediately for responsive feel
+  removeEntity(entity.id);
+
+  console.log(`[Collect] Picked up ${entity.id}`);
+}
+
+function playerDie() {
+  if (!playerMesh || state.localPlayer?.state === 'dead') return;
+
+  console.log('[Player] Died!');
+
+  if (state.localPlayer) {
+    state.localPlayer.state = 'dead';
+  }
+
+  // Notify server
+  if (state.room) {
+    state.room.send('died', {
+      position: playerMesh.position.toArray()
+    });
+  }
+
+  // Visual feedback - turn red briefly
+  playerMesh.material.color.setHex(0xff0000);
+  playerMesh.material.emissive.setHex(0xff0000);
+
+  // Respawn after delay
+  setTimeout(() => {
+    respawnPlayer();
+  }, 1500);
+}
+
+function respawnPlayer() {
+  if (!playerMesh) return;
+
+  // Reset position
+  playerMesh.position.set(0, 2, 0);
+  playerVelocity.set(0, 0, 0);
+
+  // Reset color
+  playerMesh.material.color.setHex(0x00ff88);
+  playerMesh.material.emissive.setHex(0x00ff88);
+
+  if (state.localPlayer) {
+    state.localPlayer.state = 'alive';
+  }
+
+  // Notify server
+  if (state.room) {
+    state.room.send('respawn');
+  }
+
+  console.log('[Player] Respawned');
+}
+
+function triggerEvent(entity) {
+  // Triggers can activate challenges, teleport, etc.
+  console.log(`[Trigger] Activated: ${entity.id}`);
+
+  if (state.room) {
+    state.room.send('trigger_activated', { entityId: entity.id });
+  }
+}
+
+// ============================================
 // Player
 // ============================================
 let playerMesh = null;
@@ -257,17 +401,147 @@ document.addEventListener('keyup', (e) => {
 });
 
 // ============================================
+// Remote Player Rendering
+// ============================================
+
+function createRemotePlayerMesh(player) {
+  const geometry = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
+  const hue = Math.random();
+  const color = new THREE.Color().setHSL(hue, 0.7, 0.5);
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    emissive: color,
+    emissiveIntensity: 0.2
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+
+  // Add name label
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, 256, 64);
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 24px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(player.name || 'Player', 128, 40);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+  const sprite = new THREE.Sprite(spriteMaterial);
+  sprite.scale.set(3, 0.75, 1);
+  sprite.position.y = 2;
+  mesh.add(sprite);
+
+  return mesh;
+}
+
+function updateRemotePlayer(player) {
+  let mesh = remotePlayers.get(player.id);
+
+  if (!mesh) {
+    mesh = createRemotePlayerMesh(player);
+    remotePlayers.set(player.id, mesh);
+    scene.add(mesh);
+    console.log(`[Remote] Added player: ${player.name || player.id}`);
+  }
+
+  if (player.position) {
+    mesh.position.set(...player.position);
+  }
+}
+
+function removeRemotePlayer(id) {
+  const mesh = remotePlayers.get(id);
+  if (mesh) {
+    scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+    remotePlayers.delete(id);
+    console.log(`[Remote] Removed player: ${id}`);
+  }
+}
+
+// ============================================
+// Announcements
+// ============================================
+
+function showAnnouncement(announcement) {
+  const container = document.getElementById('announcements');
+
+  // Check if already showing this announcement
+  if (state.announcements.has(announcement.id)) return;
+
+  const div = document.createElement('div');
+  div.className = `announcement ${announcement.type || 'agent'}`;
+  div.textContent = announcement.text;
+  div.id = `ann-${announcement.id}`;
+  container.appendChild(div);
+
+  state.announcements.set(announcement.id, true);
+
+  // Schedule removal
+  const duration = announcement.duration || 5000;
+  setTimeout(() => {
+    div.classList.add('fade-out');
+    setTimeout(() => {
+      div.remove();
+      state.announcements.delete(announcement.id);
+    }, 500);
+  }, duration - 500);
+
+  console.log(`[Announcement] ${announcement.type}: ${announcement.text}`);
+}
+
+// ============================================
+// Game State UI
+// ============================================
+
+function updateGameStateUI() {
+  const statusEl = document.getElementById('game-status');
+  const phaseEl = document.getElementById('game-phase');
+  const typeEl = document.getElementById('game-type');
+  const timerEl = document.getElementById('game-timer');
+
+  if (state.gameState.phase === 'lobby') {
+    statusEl.style.display = 'none';
+    return;
+  }
+
+  statusEl.style.display = 'block';
+  statusEl.className = state.gameState.phase;
+  phaseEl.textContent = state.gameState.phase.toUpperCase();
+  typeEl.textContent = state.gameState.gameType ? `Mode: ${state.gameState.gameType}` : '';
+
+  // Update timer
+  if (state.gameState.phase === 'playing' && state.gameState.timeRemaining !== undefined) {
+    const seconds = Math.ceil(state.gameState.timeRemaining / 1000);
+    timerEl.textContent = `${seconds}s`;
+    timerEl.style.color = seconds <= 10 ? '#e74c3c' : 'white';
+  } else if (state.gameState.phase === 'countdown') {
+    timerEl.textContent = '3...';
+    timerEl.style.color = '#f39c12';
+  } else {
+    timerEl.textContent = '';
+  }
+}
+
+// ============================================
 // UI
 // ============================================
 function updateUI() {
   document.getElementById('entity-count').textContent = state.entities.size;
-  document.getElementById('player-count').textContent = state.players.size + 1;
+  document.getElementById('player-count').textContent = state.players.size + remotePlayers.size + 1;
   document.getElementById('physics-info').textContent = `g=${state.physics.gravity}`;
 
   const entitiesDiv = document.getElementById('entities');
   entitiesDiv.innerHTML = Array.from(state.entities.values())
     .map(e => `<div class="entity-item">${e.type}: ${e.id.slice(-8)}</div>`)
     .join('');
+
+  updateGameStateUI();
 }
 
 // ============================================
@@ -326,19 +600,46 @@ async function connectToServer() {
     room.onMessage('player_joined', (player) => {
       console.log('[Event] Player joined:', player.name);
       state.players.set(player.id, player);
+      updateRemotePlayer(player);
       updateUI();
     });
 
-    room.onMessage('player_left', ({ id }) => {
+    room.onMessage('player_left', ({ id, name }) => {
       state.players.delete(id);
+      removeRemotePlayer(id);
       updateUI();
+      console.log('[Event] Player left:', name || id);
+    });
+
+    room.onMessage('player_moved', ({ id, position, velocity }) => {
+      if (id === room.sessionId) return; // Ignore self
+      const player = state.players.get(id) || { id, position };
+      player.position = position;
+      updateRemotePlayer(player);
+    });
+
+    room.onMessage('announcement', (announcement) => {
+      showAnnouncement(announcement);
+    });
+
+    room.onMessage('game_state_changed', (gameState) => {
+      console.log('[Event] Game state changed:', gameState.phase);
+      state.gameState = gameState;
+      updateGameStateUI();
     });
 
     room.onMessage('init', (data) => {
       console.log('[Init] Received initial state from room');
       state.physics = data.worldState.physics;
+      state.gameState = data.worldState.gameState || { phase: 'lobby' };
       for (const entity of data.worldState.entities) {
         addEntity(entity);
+      }
+      // Show any existing announcements
+      if (data.worldState.announcements) {
+        for (const ann of data.worldState.announcements) {
+          showAnnouncement(ann);
+        }
       }
       updateUI();
     });
@@ -362,6 +663,9 @@ function animate() {
 
   // Update player
   updatePlayer(delta);
+
+  // Check collisions with entities
+  checkCollisions();
 
   // Rotate entities
   for (const [id, mesh] of entityMeshes) {
@@ -397,6 +701,11 @@ async function pollForUpdates() {
 
     // Update physics
     state.physics = data.physics;
+
+    // Update game state
+    if (data.gameState) {
+      state.gameState = data.gameState;
+    }
 
     // Sync entities
     const serverIds = new Set(data.entities.map(e => e.id));

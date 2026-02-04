@@ -4,11 +4,12 @@
   "description": "AI agent builds a game while players play",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run world\" \"npm run client:dev\"",
-    "world": "node src/server/index.js",
-    "client:dev": "vite",
-    "client:build": "vite build",
-    "test": "node src/server/test.js"
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "node src/server/index.js",
+    "client": "vite",
+    "build": "vite build",
+    "test": "node src/server/test.js",
+    "world": "node src/server/index.js"
   },
   "dependencies": {
     "@colyseus/ws-transport": "^0.15.0",

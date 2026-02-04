@@ -31,6 +31,20 @@ export class WorldState {
       totalChallengesCreated: 0,
       totalChallengesCompleted: 0
     };
+
+    // Announcements queue
+    this.announcements = [];
+
+    // Game state machine
+    this.gameState = {
+      phase: 'lobby', // lobby, countdown, playing, ended
+      currentGame: null,
+      gameType: null,
+      startTime: null,
+      timeLimit: null,
+      winners: [],
+      losers: []
+    };
   }
 
   // ============================================
@@ -243,6 +257,135 @@ export class WorldState {
   }
 
   // ============================================
+  // Announcements
+  // ============================================
+
+  announce(text, type = 'agent', duration = 5000) {
+    const id = `ann-${randomUUID().slice(0, 8)}`;
+    const announcement = {
+      id,
+      text,
+      type, // 'agent', 'system', 'challenge', 'player'
+      duration,
+      timestamp: Date.now()
+    };
+
+    this.announcements.push(announcement);
+    console.log(`[WorldState] Announcement (${type}): ${text}`);
+    return announcement;
+  }
+
+  getAnnouncements() {
+    // Clean old announcements
+    const now = Date.now();
+    this.announcements = this.announcements.filter(
+      a => now - a.timestamp < a.duration + 1000
+    );
+    return [...this.announcements];
+  }
+
+  clearAnnouncements() {
+    this.announcements = [];
+  }
+
+  // ============================================
+  // Game State Machine
+  // ============================================
+
+  startGame(gameType, config = {}) {
+    const validTypes = ['reach', 'collect', 'survival', 'obstacle'];
+    if (!validTypes.includes(gameType)) {
+      throw new Error(`Invalid game type: ${gameType}`);
+    }
+
+    const gameId = `game-${randomUUID().slice(0, 8)}`;
+    const timeLimit = config.timeLimit || 60000;
+
+    this.gameState = {
+      phase: 'countdown',
+      currentGame: gameId,
+      gameType,
+      startTime: Date.now(),
+      timeLimit,
+      targetEntity: config.targetEntity || null,
+      winners: [],
+      losers: []
+    };
+
+    // Transition to playing after countdown
+    setTimeout(() => {
+      if (this.gameState.currentGame === gameId && this.gameState.phase === 'countdown') {
+        this.gameState.phase = 'playing';
+        this.gameState.startTime = Date.now();
+        console.log(`[WorldState] Game started: ${gameType}`);
+      }
+    }, config.countdownTime || 3000);
+
+    console.log(`[WorldState] Game countdown: ${gameType} (${timeLimit}ms)`);
+    return { ...this.gameState };
+  }
+
+  endGame(result, winnerId = null) {
+    if (this.gameState.phase === 'lobby') {
+      return this.gameState;
+    }
+
+    this.gameState.phase = 'ended';
+    this.gameState.endTime = Date.now();
+    this.gameState.result = result; // 'win', 'lose', 'timeout', 'cancelled'
+
+    if (winnerId) {
+      this.gameState.winners.push(winnerId);
+    }
+
+    console.log(`[WorldState] Game ended: ${result}`);
+
+    // Return to lobby after delay
+    setTimeout(() => {
+      this.resetGameState();
+    }, 5000);
+
+    return { ...this.gameState };
+  }
+
+  resetGameState() {
+    this.gameState = {
+      phase: 'lobby',
+      currentGame: null,
+      gameType: null,
+      startTime: null,
+      timeLimit: null,
+      winners: [],
+      losers: []
+    };
+    console.log('[WorldState] Game state reset to lobby');
+  }
+
+  getGameState() {
+    const state = { ...this.gameState };
+
+    // Calculate remaining time if playing
+    if (state.phase === 'playing' && state.timeLimit) {
+      const elapsed = Date.now() - state.startTime;
+      state.timeRemaining = Math.max(0, state.timeLimit - elapsed);
+    }
+
+    return state;
+  }
+
+  recordWinner(playerId) {
+    if (this.gameState.phase === 'playing') {
+      this.gameState.winners.push(playerId);
+    }
+  }
+
+  recordLoser(playerId) {
+    if (this.gameState.phase === 'playing') {
+      this.gameState.losers.push(playerId);
+    }
+  }
+
+  // ============================================
   // State Export
   // ============================================
 
@@ -254,6 +397,8 @@ export class WorldState {
         active: this.getChallenges(),
         completed: Array.from(this.challenges.values()).filter(c => !c.active)
       },
+      gameState: this.getGameState(),
+      announcements: this.getAnnouncements(),
       statistics: {
         ...this.statistics,
         totalEntities: this.entities.size,

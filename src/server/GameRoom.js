@@ -11,6 +11,9 @@ export class GameRoom extends Room {
   // World state injected by server
   worldState = null;
 
+  // Current mini-game instance (injected by server)
+  currentMiniGame = null;
+
   onCreate(options) {
     console.log(`[GameRoom] Room created`);
 
@@ -87,6 +90,28 @@ export class GameRoom extends Room {
         entityId: data.entityId,
         playerId: client.sessionId
       });
+
+      // Notify mini-game if active
+      if (this.currentMiniGame && this.currentMiniGame.isActive) {
+        if (typeof this.currentMiniGame.onCollect === 'function') {
+          this.currentMiniGame.onCollect(client.sessionId, data.entityId);
+        }
+      }
+    });
+
+    // Trigger activation (for goals, checkpoints)
+    this.onMessage('trigger_activated', (client, data) => {
+      this.broadcast('trigger_activated', {
+        entityId: data.entityId,
+        playerId: client.sessionId
+      });
+
+      // Notify mini-game if active
+      if (this.currentMiniGame && this.currentMiniGame.isActive) {
+        if (typeof this.currentMiniGame.onPlayerReachedGoal === 'function') {
+          this.currentMiniGame.onPlayerReachedGoal(client.sessionId);
+        }
+      }
     });
 
     // Set simulation interval (physics tick)
