@@ -11,15 +11,16 @@
     "test": "node src/server/test.js"
   },
   "dependencies": {
-    "colyseus": "^0.15.0",
     "@colyseus/ws-transport": "^0.15.0",
-    "express": "^4.18.2",
+    "cannon-es": "^0.20.0",
+    "colyseus": "^0.15.0",
+    "colyseus.js": "^0.15.28",
     "cors": "^2.8.5",
-    "three": "^0.160.0",
-    "cannon-es": "^0.20.0"
+    "express": "^4.18.2",
+    "three": "^0.160.0"
   },
   "devDependencies": {
-    "vite": "^5.0.0",
-    "concurrently": "^8.2.0"
+    "concurrently": "^8.2.0",
+    "vite": "^5.0.0"
   }
 }

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Self-Building Game</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: system-ui, sans-serif; }
+    #game { width: 100vw; height: 100vh; }
+    #ui {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      color: white;
+      z-index: 100;
+      background: rgba(0,0,0,0.7);
+      padding: 15px;
+      border-radius: 8px;
+      max-width: 300px;
+    }
+    #ui h1 { font-size: 18px; margin-bottom: 10px; }
+    #stats { font-size: 12px; opacity: 0.8; }
+    #entities { font-size: 11px; margin-top: 10px; max-height: 150px; overflow-y: auto; }
+    .entity-item { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    #controls {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      color: white;
+      background: rgba(0,0,0,0.7);
+      padding: 10px 15px;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+    #loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-size: 24px;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">Connecting to game world...</div>
+  <div id="ui" style="display:none">
+    <h1>🎭 Self-Building Game</h1>
+    <div id="stats">
+      <div>Entities: <span id="entity-count">0</span></div>
+      <div>Players: <span id="player-count">0</span></div>
+      <div>Physics: <span id="physics-info">-</span></div>
+    </div>
+    <div id="entities"></div>
+  </div>
+  <div id="controls" style="display:none">
+    WASD: Move | Space: Jump | Mouse: Look
+  </div>
+  <div id="game"></div>
+  <script type="module" src="/src/client/main.js"></script>
+</body>
+</html>
