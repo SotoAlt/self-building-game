@@ -165,7 +165,7 @@ async function get_challenge_status() {
 }
 
 // Export tools for OpenClaw
-module.exports = {
+export {
   spawn_entity,
   modify_entity,
   destroy_entity,
