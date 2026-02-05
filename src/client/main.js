@@ -25,7 +25,8 @@ const state = {
   announcements: new Map(),
   connected: false,
   isReady: false,
-  chatFocused: false
+  chatFocused: false,
+  activeEffects: []
 };
 
 // Remote players
@@ -177,7 +178,7 @@ function updateCamera() {
 // Get camera-relative forward and right vectors (Y=0 plane)
 function getCameraDirections() {
   const forward = new THREE.Vector3(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw)).normalize();
-  const right = new THREE.Vector3(forward.z, 0, -forward.x);
+  const right = new THREE.Vector3(-forward.z, 0, forward.x);
   return { forward, right };
 }
 
@@ -454,27 +455,46 @@ function createPlayer() {
   scene.add(playerMesh);
 }
 
+// Check if a spell effect is currently active
+function hasEffect(effectType) {
+  if (!state.activeEffects) return false;
+  const now = Date.now();
+  return state.activeEffects.some(e => e.type === effectType && now - e.startTime < e.duration);
+}
+
 function updatePlayer(delta) {
   if (!playerMesh) return;
 
-  const speed = 15;
-  const jumpForce = 12;
+  let speed = 15;
+  let jumpForce = 12;
+  let gravityMult = 1;
+  const inverted = hasEffect('invert_controls');
+
+  // Apply spell modifiers
+  if (hasEffect('speed_boost')) speed = 25;
+  if (hasEffect('slow_motion')) speed = 7;
+  if (hasEffect('low_gravity')) gravityMult = 0.3;
+  if (hasEffect('high_gravity')) gravityMult = 2.5;
+  if (hasEffect('bouncy')) jumpForce = 22;
 
   // Camera-relative movement
   const { forward, right } = getCameraDirections();
   const moveDir = new THREE.Vector3();
 
-  if (keys.w) moveDir.add(forward);
-  if (keys.s) moveDir.sub(forward);
-  if (keys.d) moveDir.add(right);
-  if (keys.a) moveDir.sub(right);
+  const fwd = inverted ? -1 : 1;
+  const strafe = inverted ? -1 : 1;
+
+  if (keys.w) moveDir.addScaledVector(forward, fwd);
+  if (keys.s) moveDir.addScaledVector(forward, -fwd);
+  if (keys.d) moveDir.addScaledVector(right, strafe);
+  if (keys.a) moveDir.addScaledVector(right, -strafe);
   moveDir.normalize();
 
   playerVelocity.x = moveDir.x * speed;
   playerVelocity.z = moveDir.z * speed;
 
   // Gravity
-  playerVelocity.y += state.physics.gravity * delta;
+  playerVelocity.y += state.physics.gravity * gravityMult * delta;
 
   // Jump
   if (keys.space && isGrounded) {
@@ -780,6 +800,24 @@ function showAnnouncement(announcement) {
 }
 
 // ============================================
+// Spell Effects
+// ============================================
+
+function showSpellEffect(spell) {
+  const container = document.getElementById('announcements');
+  const div = document.createElement('div');
+  div.className = 'announcement agent';
+  div.textContent = `${spell.name}!`;
+  div.style.fontSize = '24px';
+  container.appendChild(div);
+
+  setTimeout(() => {
+    div.classList.add('fade-out');
+    setTimeout(() => div.remove(), 500);
+  }, 2500);
+}
+
+// ============================================
 // Game State UI
 // ============================================
 
@@ -920,6 +958,33 @@ async function connectToServer() {
 
     // Announcements
     room.onMessage('announcement', showAnnouncement);
+
+    // Spells
+    room.onMessage('spell_cast', (spell) => {
+      console.log(`[Spell] ${spell.name} cast for ${spell.duration}ms`);
+      if (!state.activeEffects) state.activeEffects = [];
+      state.activeEffects.push(spell);
+      showSpellEffect(spell);
+
+      // Apply scale effects immediately
+      if (playerMesh) {
+        if (spell.type === 'giant') playerMesh.scale.set(2, 2, 2);
+        if (spell.type === 'tiny') playerMesh.scale.set(0.4, 0.4, 0.4);
+      }
+
+      // Auto-expire
+      setTimeout(() => {
+        state.activeEffects = (state.activeEffects || []).filter(e => e.id !== spell.id);
+        if (spell.type === 'giant' || spell.type === 'tiny') {
+          if (playerMesh) playerMesh.scale.set(1, 1, 1);
+        }
+      }, spell.duration);
+    });
+
+    room.onMessage('effects_cleared', () => {
+      state.activeEffects = [];
+      if (playerMesh) playerMesh.scale.set(1, 1, 1);
+    });
 
     // Game state
     room.onMessage('game_state_changed', (gameState) => {

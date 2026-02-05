@@ -247,6 +247,30 @@ async function get_chat_messages({ since = 0, limit = 20 } = {}) {
   return gameRequest(`/api/chat/messages?since=${since}&limit=${limit}`);
 }
 
+/**
+ * Tool: cast_spell
+ * Cast a spell effect on all players
+ * Types: invert_controls, low_gravity, high_gravity, speed_boost, slow_motion, bouncy, giant, tiny
+ */
+async function cast_spell({ type, duration }) {
+  if (!type) {
+    return { success: false, error: 'Missing required parameter: type' };
+  }
+
+  const body = { type };
+  if (duration) body.duration = duration;
+
+  return gameRequest('/api/spell/cast', 'POST', body);
+}
+
+/**
+ * Tool: clear_spells
+ * Remove all active spell effects
+ */
+async function clear_spells() {
+  return gameRequest('/api/spell/clear', 'POST', {});
+}
+
 // Export tools for OpenClaw
 export {
   spawn_entity,
@@ -263,5 +287,7 @@ export {
   end_game,
   get_game_state,
   send_chat_message,
-  get_chat_messages
+  get_chat_messages,
+  cast_spell,
+  clear_spells
 };

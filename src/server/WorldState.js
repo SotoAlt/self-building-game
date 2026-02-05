@@ -42,6 +42,9 @@ export class WorldState {
     // Leaderboard: playerId → { name, wins, totalScore }
     this.leaderboard = new Map();
 
+    // Active spells/effects
+    this.activeEffects = [];
+
     // Game state machine
     this.gameState = {
       phase: 'lobby', // lobby, countdown, playing, ended
@@ -502,6 +505,52 @@ export class WorldState {
   }
 
   // ============================================
+  // Spells / World Effects
+  // ============================================
+
+  static SPELL_TYPES = {
+    invert_controls: { name: 'Inverted Controls', defaultDuration: 15000 },
+    low_gravity: { name: 'Low Gravity', defaultDuration: 20000 },
+    high_gravity: { name: 'Crushing Gravity', defaultDuration: 15000 },
+    speed_boost: { name: 'Speed Boost', defaultDuration: 15000 },
+    slow_motion: { name: 'Slow Motion', defaultDuration: 10000 },
+    bouncy: { name: 'Bouncy World', defaultDuration: 20000 },
+    giant: { name: 'Giant Mode', defaultDuration: 15000 },
+    tiny: { name: 'Tiny Mode', defaultDuration: 15000 }
+  };
+
+  castSpell(spellType, duration) {
+    const spellDef = WorldState.SPELL_TYPES[spellType];
+    if (!spellDef) {
+      throw new Error(`Unknown spell: ${spellType}. Available: ${Object.keys(WorldState.SPELL_TYPES).join(', ')}`);
+    }
+
+    const id = `spell-${randomUUID().slice(0, 8)}`;
+    const spell = {
+      id,
+      type: spellType,
+      name: spellDef.name,
+      duration: duration || spellDef.defaultDuration,
+      startTime: Date.now()
+    };
+
+    this.activeEffects.push(spell);
+    console.log(`[WorldState] Spell cast: ${spellDef.name} for ${spell.duration}ms`);
+    return spell;
+  }
+
+  getActiveEffects() {
+    const now = Date.now();
+    this.activeEffects = this.activeEffects.filter(e => now - e.startTime < e.duration);
+    return [...this.activeEffects];
+  }
+
+  clearEffects() {
+    this.activeEffects = [];
+    console.log('[WorldState] All effects cleared');
+  }
+
+  // ============================================
   // State Export
   // ============================================
 
@@ -514,6 +563,7 @@ export class WorldState {
         completed: Array.from(this.challenges.values()).filter(c => !c.active)
       },
       gameState: this.getGameState(),
+      activeEffects: this.getActiveEffects(),
       announcements: this.getAnnouncements(),
       statistics: {
         ...this.statistics,

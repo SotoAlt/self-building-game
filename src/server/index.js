@@ -271,6 +271,35 @@ app.get('/api/leaderboard', (req, res) => {
 });
 
 // ============================================
+// Spells API
+// ============================================
+
+app.post('/api/spell/cast', (req, res) => {
+  const { type, duration } = req.body;
+  if (!type) {
+    return res.status(400).json({ error: 'Missing required: type' });
+  }
+
+  try {
+    const spell = worldState.castSpell(type, duration);
+    broadcastToRoom('spell_cast', spell);
+    res.json({ success: true, spell });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/spell/clear', (req, res) => {
+  worldState.clearEffects();
+  broadcastToRoom('effects_cleared', {});
+  res.json({ success: true });
+});
+
+app.get('/api/spell/active', (req, res) => {
+  res.json({ effects: worldState.getActiveEffects() });
+});
+
+// ============================================
 // Colyseus Game Server
 // ============================================
 
