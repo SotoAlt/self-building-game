@@ -195,7 +195,7 @@ export class MiniGame {
       type: this.type,
       startTime: this.startTime,
       result,
-      winnerId: winnerId || null,
+      winnerId,
       playerCount: this.players.size,
       scores: Object.fromEntries(this.scores)
     });
@@ -218,9 +218,10 @@ export class MiniGame {
 
   getResultMessage(result, winnerId) {
     switch (result) {
-      case 'win':
+      case 'win': {
         const winner = this.worldState.players.get(winnerId);
         return `WINNER: ${winner?.name || winnerId}!`;
+      }
       case 'timeout':
         return 'TIME UP!';
       case 'cancelled':

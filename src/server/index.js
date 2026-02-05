@@ -28,8 +28,8 @@ app.use(cors());
 app.use(express.json());
 
 // Serve static files in production
+const distPath = path.join(__dirname, '../../dist');
 if (process.env.NODE_ENV === 'production') {
-  const distPath = path.join(__dirname, '../../dist');
   app.use(express.static(distPath));
 }
 
@@ -352,8 +352,8 @@ app.get('/api/stats', async (req, res) => {
     uptime: Math.floor(process.uptime()),
     players: worldState.players.size,
     entities: worldState.entities.size,
-    gamesPlayed: dbStats.totalGames || worldState.statistics.totalChallengesCompleted,
-    totalPlayers: dbStats.totalPlayers || worldState.statistics.playersOnline || 0,
+    gamesPlayed: dbStats.totalGames ?? worldState.statistics.totalChallengesCompleted,
+    totalPlayers: dbStats.totalPlayers ?? worldState.statistics.playersOnline ?? 0,
     dbConnected: dbStats.dbConnected
   });
 });
@@ -419,14 +419,11 @@ function broadcastToRoom(event, data) {
   }
 }
 
-// ============================================
-// SPA Catch-All (production)
-// ============================================
-
+// SPA catch-all (production)
 if (process.env.NODE_ENV === 'production') {
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) {
-      res.sendFile(path.join(__dirname, '../../dist/index.html'));
+      res.sendFile(path.join(distPath, 'index.html'));
     }
   });
 }
@@ -436,9 +433,9 @@ if (process.env.NODE_ENV === 'production') {
 // ============================================
 
 // Initialize database (non-blocking)
-initDB().then(connected => {
+initDB().then(async (connected) => {
   if (connected) {
-    worldState.loadLeaderboardFromDB();
+    await worldState.loadLeaderboardFromDB();
   }
 });
 

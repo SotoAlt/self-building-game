@@ -136,7 +136,7 @@ export async function saveGameHistory(game) {
         new Date(),
         Date.now() - game.startTime,
         game.result,
-        game.winnerId || null,
+        game.winnerId ?? null,
         game.playerCount,
         JSON.stringify(game.scores)
       ]
@@ -158,8 +158,8 @@ export async function getStats() {
       pool.query('SELECT COUNT(*) AS count FROM users')
     ]);
     return {
-      totalGames: parseInt(games.rows[0].count),
-      totalPlayers: parseInt(players.rows[0].count),
+      totalGames: parseInt(games.rows[0].count, 10),
+      totalPlayers: parseInt(players.rows[0].count, 10),
       dbConnected: true
     };
   } catch (err) {

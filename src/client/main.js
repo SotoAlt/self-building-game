@@ -9,11 +9,12 @@ import { Client } from 'colyseus.js';
 // ============================================
 // Configuration
 // ============================================
+const isLocalhost = window.location.hostname === 'localhost';
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const SERVER_URL = window.location.hostname === 'localhost'
+const SERVER_URL = isLocalhost
   ? 'ws://localhost:3000'
   : `${wsProtocol}//${window.location.host}`;
-const API_URL = window.location.hostname === 'localhost'
+const API_URL = isLocalhost
   ? 'http://localhost:3000'
   : `${window.location.protocol}//${window.location.host}`;
 
