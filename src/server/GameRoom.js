@@ -42,84 +42,82 @@ export class GameRoom extends Room {
   onCreate(options) {
     console.log(`[GameRoom] Room created`);
 
-    // Player position updates (client → server)
+    // Player position updates (client -> server)
     this.onMessage('move', (client, data) => {
-      if (this.worldState) {
-        this.worldState.updatePlayer(client.sessionId, {
-          position: data.position,
-          velocity: data.velocity
-        });
+      if (!this.worldState) return;
 
-        // Broadcast to other clients
-        this.broadcast('player_moved', {
-          id: client.sessionId,
-          position: data.position,
-          velocity: data.velocity
-        }, { except: client });
-      }
+      this.worldState.updatePlayer(client.sessionId, {
+        position: data.position,
+        velocity: data.velocity
+      });
+
+      this.broadcast('player_moved', {
+        id: client.sessionId,
+        position: data.position,
+        velocity: data.velocity
+      }, { except: client });
     });
 
     // Player death (rate-limited: 1 per 2 seconds per player)
     this._deathTimestamps = new Map();
     this.onMessage('died', (client, data) => {
-      if (this.worldState) {
-        const now = Date.now();
-        const lastDeath = this._deathTimestamps.get(client.sessionId) || 0;
-        if (now - lastDeath < 2000) return; // rate limit
-        this._deathTimestamps.set(client.sessionId, now);
+      if (!this.worldState) return;
 
-        const player = this.worldState.players.get(client.sessionId);
-        const name = player?.name || client.sessionId.slice(0, 8);
-        this.worldState.updatePlayer(client.sessionId, { state: 'dead' });
+      const now = Date.now();
+      const lastDeath = this._deathTimestamps.get(client.sessionId) || 0;
+      if (now - lastDeath < 2000) return; // rate limit
+      this._deathTimestamps.set(client.sessionId, now);
 
-        if (data.challengeId) {
-          this.worldState.recordChallengeAttempt(data.challengeId);
-        }
+      const player = this.worldState.players.get(client.sessionId);
+      const name = player?.name || client.sessionId.slice(0, 8);
+      this.worldState.updatePlayer(client.sessionId, { state: 'dead' });
 
-        this.broadcast('player_died', {
-          id: client.sessionId,
-          position: data.position,
-          challengeId: data.challengeId
-        });
-
-        this._systemMessage(`${name} died`);
-        this.worldState.addEvent('player_death', { playerId: client.sessionId, name });
-
-        console.log(`[GameRoom] Player died: ${client.sessionId}`);
+      if (data.challengeId) {
+        this.worldState.recordChallengeAttempt(data.challengeId);
       }
+
+      this.broadcast('player_died', {
+        id: client.sessionId,
+        position: data.position,
+        challengeId: data.challengeId
+      });
+
+      this._systemMessage(`${name} died`);
+      this.worldState.addEvent('player_death', { playerId: client.sessionId, name });
+
+      console.log(`[GameRoom] Player died: ${client.sessionId}`);
     });
 
     // Player respawn
     this.onMessage('respawn', (client) => {
-      if (this.worldState) {
-        const player = this.worldState.players.get(client.sessionId);
-        const name = player?.name || client.sessionId.slice(0, 8);
-        const rp = this.worldState.respawnPoint || [0, 2, 0];
-        this.worldState.updatePlayer(client.sessionId, {
-          state: 'alive',
-          position: [...rp]
-        });
+      if (!this.worldState) return;
 
-        this.broadcast('player_respawned', { id: client.sessionId });
-        this._systemMessage(`${name} respawned`);
-      }
+      const player = this.worldState.players.get(client.sessionId);
+      const name = player?.name || client.sessionId.slice(0, 8);
+      const rp = this.worldState.respawnPoint || [0, 2, 0];
+      this.worldState.updatePlayer(client.sessionId, {
+        state: 'alive',
+        position: [...rp]
+      });
+
+      this.broadcast('player_respawned', { id: client.sessionId });
+      this._systemMessage(`${name} respawned`);
     });
 
     // Challenge completion
     this.onMessage('challenge_complete', (client, data) => {
-      if (this.worldState) {
-        const challenge = this.worldState.completeChallenge(data.challengeId, client.sessionId);
+      if (!this.worldState) return;
 
-        if (challenge) {
-          this.broadcast('challenge_completed', {
-            challengeId: data.challengeId,
-            playerId: client.sessionId,
-            challenge
-          });
+      const challenge = this.worldState.completeChallenge(data.challengeId, client.sessionId);
+      if (!challenge) return;
 
-          console.log(`[GameRoom] Challenge completed: ${data.challengeId} by ${client.sessionId}`);
-        }
-      }
+      this.broadcast('challenge_completed', {
+        challengeId: data.challengeId,
+        playerId: client.sessionId,
+        challenge
+      });
+
+      console.log(`[GameRoom] Challenge completed: ${data.challengeId} by ${client.sessionId}`);
     });
 
     // Collectible pickup
@@ -191,28 +189,30 @@ export class GameRoom extends Room {
     // Player ready toggle
     this.onMessage('ready', (client, data) => {
       if (!this.worldState) return;
+
       const ready = !!data.ready;
       const player = this.worldState.setPlayerReady(client.sessionId, ready);
-      if (player) {
-        // Auto-ready all AI bots when a human readies up
-        if (ready) {
-          for (const [id, p] of this.worldState.players) {
-            if (p.type === 'ai' && !p.ready) {
-              this.worldState.setPlayerReady(id, true);
-              this.broadcast('player_ready', { id, name: p.name, ready: true });
-            }
+      if (!player) return;
+
+      // Auto-ready all AI bots when a human readies up
+      if (ready) {
+        for (const [id, p] of this.worldState.players) {
+          if (p.type === 'ai' && !p.ready) {
+            this.worldState.setPlayerReady(id, true);
+            this.broadcast('player_ready', { id, name: p.name, ready: true });
           }
         }
+      }
 
-        this.broadcast('player_ready', {
-          id: client.sessionId,
-          name: player.name,
-          ready
-        });
-        if (ready) {
-          const { ready: readyHumans, total: totalHumans } = this.worldState.getHumanReadyCount();
-          this._systemMessage(`${player.name} is ready (${readyHumans}/${totalHumans} players)`);
-        }
+      this.broadcast('player_ready', {
+        id: client.sessionId,
+        name: player.name,
+        ready
+      });
+
+      if (ready) {
+        const { ready: readyHumans, total: totalHumans } = this.worldState.getHumanReadyCount();
+        this._systemMessage(`${player.name} is ready (${readyHumans}/${totalHumans} players)`);
       }
     });
 
@@ -229,37 +229,36 @@ export class GameRoom extends Room {
     const userId = payload?.userId ?? client.sessionId;
     const type = options.type || (payload ? 'authenticated' : 'human');
 
-    // Fire-and-forget DB upsert
     upsertUser(userId, name, type);
-
-    if (this.worldState) {
-      const player = this.worldState.addPlayer(client.sessionId, name, type);
-
-      client.send('init', {
-        playerId: client.sessionId,
-        worldState: this.worldState.getState()
-      });
-
-      this.broadcast('player_joined', player, { except: client });
-      this._systemMessage(`${name} has entered the arena`);
-      this.worldState.addEvent('player_join', { playerId: client.sessionId, name, type });
-    }
-
     console.log(`[GameRoom] ${name} joined (${type})`);
+
+    if (!this.worldState) return;
+
+    const player = this.worldState.addPlayer(client.sessionId, name, type);
+
+    const initState = this.worldState.getState();
+    initState.environment = { ...this.worldState.environment };
+    client.send('init', {
+      playerId: client.sessionId,
+      worldState: initState
+    });
+
+    this.broadcast('player_joined', player, { except: client });
+    this._systemMessage(`${name} has entered the arena`);
+    this.worldState.addEvent('player_join', { playerId: client.sessionId, name, type });
   }
 
   onLeave(client) {
-    if (this.worldState) {
-      const player = this.worldState.players.get(client.sessionId);
-      const name = player?.name || client.sessionId;
-
-      this.worldState.removePlayer(client.sessionId);
-      this.broadcast('player_left', { id: client.sessionId, name });
-      this._systemMessage(`${name} has left`);
-      this.worldState.addEvent('player_leave', { playerId: client.sessionId, name });
-    }
-
     console.log(`[GameRoom] Player left: ${client.sessionId}`);
+    if (!this.worldState) return;
+
+    const player = this.worldState.players.get(client.sessionId);
+    const name = player?.name || client.sessionId;
+
+    this.worldState.removePlayer(client.sessionId);
+    this.broadcast('player_left', { id: client.sessionId, name });
+    this._systemMessage(`${name} has left`);
+    this.worldState.addEvent('player_leave', { playerId: client.sessionId, name });
   }
 
   onDispose() {

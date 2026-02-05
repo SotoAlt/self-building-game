@@ -403,6 +403,31 @@ async function set_floor({ type }) {
 }
 
 /**
+ * Tool: set_environment
+ * Change sky color, fog, lighting. Use hex colors (#rrggbb).
+ * Parameters: skyColor, fogColor, fogNear, fogFar, ambientColor, ambientIntensity, sunColor, sunIntensity, sunPosition
+ * Example: { skyColor: '#2d0a3e', ambientIntensity: 0.3, fogFar: 100 }
+ */
+async function set_environment(args) {
+  const VALID_KEYS = [
+    'skyColor', 'fogColor', 'fogNear', 'fogFar',
+    'ambientColor', 'ambientIntensity',
+    'sunColor', 'sunIntensity', 'sunPosition'
+  ];
+
+  const params = {};
+  for (const key of VALID_KEYS) {
+    if (args[key] !== undefined) params[key] = args[key];
+  }
+
+  if (Object.keys(params).length === 0) {
+    return { success: false, error: 'No environment parameters provided' };
+  }
+
+  return gameRequest('/api/world/environment', 'POST', params);
+}
+
+/**
  * Tool: check_bribes
  * Check pending bribes from players. Decide whether to honor them.
  */
@@ -440,6 +465,8 @@ export {
   // Spells
   cast_spell,
   clear_spells,
+  // Environment
+  set_environment,
   // Agent context
   get_context,
   get_drama_score,

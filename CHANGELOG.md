@@ -2,6 +2,37 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.9.0] - 2026-02-05
+
+### Added
+- **Player Movement Polish**
+  - Base speed increased (15 → 20) for snappier feel
+  - Sprint with Shift key (speed 32, ~60% boost)
+  - Higher jumps (force 12 → 16) for larger arenas
+  - Spell speed values scaled proportionally
+- **Character Visuals**
+  - Eyes on player capsules (white spheres + dark pupils)
+  - Glow ring at player base (translucent torus)
+  - Increased emissive intensity (0.2 → 0.4) for better visibility
+  - Remote players receive the same visual treatment
+- **Environment Controls (Agent)**
+  - `POST /api/world/environment` — change sky color, fog, lighting dynamically
+  - `set_environment` agent tool with 9 parameters (skyColor, fogColor, fogNear, fogFar, ambientColor, ambientIntensity, sunColor, sunIntensity, sunPosition)
+  - Environment included in agent context and world state responses
+  - Arena templates now define themed environment overrides (e.g. gauntlet has red-tinted hellish lighting)
+  - Environment resets on world clear and applies on template load
+  - Late-joining clients receive current environment in init payload
+- **Agent Chat Polish**
+  - "Magician is thinking..." indicator appears when player sends `@agent` message
+  - Auto-removed when agent reply arrives
+
+### Changed
+- Refactored WorldState defaults to static constants (`DEFAULT_PHYSICS`, `DEFAULT_ENVIRONMENT`)
+- GameRoom handlers use early-return pattern consistently (reduced nesting)
+- Extracted `addPlayerDecorations()` and `applyWorldState()` helpers in client
+- `executeAutoBribe` uses switch statement instead of if/else chain
+- Improved auth error handling with better logging and error propagation
+
 ## [0.8.1] - 2026-02-05
 
 ### Fixed

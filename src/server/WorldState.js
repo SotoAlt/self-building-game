@@ -9,41 +9,41 @@ import { randomUUID } from 'crypto';
 import { updateLeaderboard, loadLeaderboard } from './db.js';
 
 export class WorldState {
+  static DEFAULT_PHYSICS = { gravity: -9.8, friction: 0.3, bounce: 0.5 };
+
+  static DEFAULT_ENVIRONMENT = {
+    skyColor: '#1a1a2e',
+    fogColor: '#1a1a2e',
+    fogNear: 50,
+    fogFar: 200,
+    ambientColor: '#404040',
+    ambientIntensity: 0.5,
+    sunColor: '#ffffff',
+    sunIntensity: 1.0,
+    sunPosition: [50, 100, 50]
+  };
+
   constructor() {
-    // Physics parameters
-    this.physics = {
-      gravity: -9.8,
-      friction: 0.3,
-      bounce: 0.5
-    };
-
-    // All entities in the world
+    this.physics = { ...WorldState.DEFAULT_PHYSICS };
     this.entities = new Map();
-
-    // Active challenges
     this.challenges = new Map();
-
-    // Connected players
     this.players = new Map();
 
-    // Statistics
     this.statistics = {
       totalEntitiesCreated: 0,
       totalChallengesCreated: 0,
       totalChallengesCompleted: 0
     };
 
-    // Announcements queue
     this.announcements = [];
 
     // Chat messages (keep last 50)
     this.messages = [];
     this._messageIdCounter = 0;
 
-    // Leaderboard: playerId → { name, wins, totalScore }
+    // Leaderboard: playerId -> { name, wins, totalScore }
     this.leaderboard = new Map();
 
-    // Active spells/effects
     this.activeEffects = [];
 
     // Event log
@@ -55,6 +55,8 @@ export class WorldState {
 
     // Floor type: 'solid', 'none' (abyss), 'lava'
     this.floorType = 'solid';
+
+    this.environment = { ...WorldState.DEFAULT_ENVIRONMENT };
 
     // Game state machine
     this.gameState = {
@@ -135,8 +137,9 @@ export class WorldState {
   clearEntities() {
     const ids = [...this.entities.keys()];
     this.entities.clear();
-    this.physics = { gravity: -9.8, friction: 0.3, bounce: 0.5 };
+    this.physics = { ...WorldState.DEFAULT_PHYSICS };
     this.floorType = 'solid';
+    this.environment = { ...WorldState.DEFAULT_ENVIRONMENT };
     this.clearEffects();
     console.log(`[WorldState] Cleared ${ids.length} entities`);
     return ids;
@@ -150,6 +153,39 @@ export class WorldState {
     this.floorType = type;
     console.log(`[WorldState] Floor type set to: ${type}`);
     return this.floorType;
+  }
+
+  setEnvironment(changes) {
+    const colorKeys = ['skyColor', 'fogColor', 'ambientColor', 'sunColor'];
+    const numberKeys = ['fogNear', 'fogFar', 'ambientIntensity', 'sunIntensity'];
+
+    for (const key of colorKeys) {
+      if (changes[key] !== undefined) {
+        if (typeof changes[key] !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(changes[key])) {
+          throw new Error(`Invalid color for ${key}: must be hex like #rrggbb`);
+        }
+        this.environment[key] = changes[key];
+      }
+    }
+
+    for (const key of numberKeys) {
+      if (changes[key] !== undefined) {
+        if (typeof changes[key] !== 'number') {
+          throw new Error(`Invalid value for ${key}: must be a number`);
+        }
+        this.environment[key] = changes[key];
+      }
+    }
+
+    if (changes.sunPosition !== undefined) {
+      if (!Array.isArray(changes.sunPosition) || changes.sunPosition.length !== 3) {
+        throw new Error('sunPosition must be [x, y, z]');
+      }
+      this.environment.sunPosition = [...changes.sunPosition];
+    }
+
+    console.log(`[WorldState] Environment updated`);
+    return { ...this.environment };
   }
 
   setRespawnPoint(position) {
@@ -690,6 +726,7 @@ export class WorldState {
       activeEffects: this.getActiveEffects(),
       announcements: this.getAnnouncements(),
       floorType: this.floorType,
+      environment: { ...this.environment },
       statistics: {
         ...this.statistics,
         totalEntities: this.entities.size,

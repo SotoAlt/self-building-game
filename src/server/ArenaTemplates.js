@@ -10,6 +10,7 @@ export const TEMPLATES = {
     name: 'Spiral of Madness',
     gameType: 'reach',
     floorType: 'solid',
+    environment: { skyColor: '#0d1b2a', fogColor: '#0d1b2a', fogFar: 180, ambientIntensity: 0.4 },
     respawnPoint: [0, 2, 0],
     goalPosition: [0, 28, 0],
     entities: [
@@ -38,6 +39,7 @@ export const TEMPLATES = {
     name: 'Sky Islands',
     gameType: 'collect',
     floorType: 'none',
+    environment: { skyColor: '#1a3a5c', fogColor: '#1a3a5c', fogFar: 250, ambientIntensity: 0.6, sunIntensity: 1.2 },
     respawnPoint: [0, 6, 0],
     goalPosition: null,
     entities: [
@@ -76,6 +78,7 @@ export const TEMPLATES = {
     name: 'The Gauntlet',
     gameType: 'reach',
     floorType: 'lava',
+    environment: { skyColor: '#1a0a0a', fogColor: '#2a0a0a', fogFar: 150, ambientColor: '#553333', ambientIntensity: 0.3, sunColor: '#ff6633', sunIntensity: 0.8 },
     respawnPoint: [0, 2, 20],
     goalPosition: [0, 5, -40],
     entities: [
@@ -130,6 +133,7 @@ export const TEMPLATES = {
     name: 'Parkour Hell',
     gameType: 'reach',
     floorType: 'none',
+    environment: { skyColor: '#0a0a1a', fogColor: '#0a0a1a', fogFar: 160, ambientIntensity: 0.35 },
     respawnPoint: [0, 2, 25],
     goalPosition: [0, 40, -25],
     entities: [
@@ -162,6 +166,7 @@ export const TEMPLATES = {
     name: 'The Void',
     gameType: 'survival',
     floorType: 'none',
+    environment: { skyColor: '#0a0a1a', fogColor: '#0a0a1a', fogFar: 100, ambientIntensity: 0.3 },
     respawnPoint: [0, 3, 0],
     goalPosition: null,
     entities: [

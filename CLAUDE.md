@@ -50,7 +50,7 @@ Kimi K2.5 via OpenClaw Gateway
 │       ├── main.js           # Three.js renderer, physics, player controls
 │       └── auth.js           # Privy client-side auth
 ├── config/openclaw/
-│   ├── game-world-skill.js   # 25 agent tools (HTTP API wrappers)
+│   ├── game-world-skill.js   # 26 agent tools (HTTP API wrappers)
 │   └── SOUL.md               # Chaos Magician personality
 ├── docs/                     # PRD, CONCEPT, ROADMAP, STACK-EVALUATION
 ├── index.html                # Game UI (login, chat, leaderboard, spectator)
@@ -82,6 +82,7 @@ npm run build        # Build client for production
 | `POST /api/agent/pause` | Kill switch — pause agent |
 | `POST /api/agent/resume` | Resume agent |
 | `POST /api/ai-players/toggle` | Enable/disable AI bots |
+| `POST /api/world/environment` | Change sky, fog, lighting |
 | `GET /api/stream/events` | SSE feed for OBS overlays |
 
 ## Agent System

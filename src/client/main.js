@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { Client } from 'colyseus.js';
 import {
   initPrivy, handleOAuthCallback, exchangeForBackendToken,
-  loginAsGuest, loginWithTwitter, getPrivyUser, getToken
+  loginAsGuest, loginWithTwitter, getPrivyUser, getToken, debugAuth
 } from './auth.js';
 
 // ============================================
@@ -53,6 +53,7 @@ const remotePlayers = new Map();
 
 // Expose state for debugging
 window.__gameState = state;
+window.debugAuth = debugAuth;
 
 // Helper to safely send messages
 function sendToServer(type, data) {
@@ -165,6 +166,23 @@ function setFloorType(type) {
   gridHelper.visible = type === 'solid';
   lavaFloor.visible = type === 'lava';
   console.log(`[Floor] Type changed to: ${type}`);
+}
+
+function applyEnvironment(env) {
+  if (env.skyColor) scene.background = new THREE.Color(env.skyColor);
+  if (env.fogColor || env.fogNear != null || env.fogFar != null) {
+    scene.fog = new THREE.Fog(
+      env.fogColor ? new THREE.Color(env.fogColor) : scene.fog.color,
+      env.fogNear ?? scene.fog.near,
+      env.fogFar ?? scene.fog.far
+    );
+  }
+  if (env.ambientColor) ambientLight.color.set(env.ambientColor);
+  if (env.ambientIntensity != null) ambientLight.intensity = env.ambientIntensity;
+  if (env.sunColor) directionalLight.color.set(env.sunColor);
+  if (env.sunIntensity != null) directionalLight.intensity = env.sunIntensity;
+  if (env.sunPosition) directionalLight.position.set(...env.sunPosition);
+  console.log('[Environment] Updated');
 }
 
 // ============================================
@@ -805,15 +823,40 @@ function triggerEvent(entity) {
 // ============================================
 let playerMesh = null;
 const playerVelocity = new THREE.Vector3();
-const keys = { w: false, a: false, s: false, d: false, space: false };
+const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
 let isGrounded = true;
+
+function addPlayerDecorations(mesh, color) {
+  // Eyes
+  const eyeGeo = new THREE.SphereGeometry(0.1, 8, 8);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const pupilGeo = new THREE.SphereGeometry(0.05, 8, 8);
+  const pupilMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+  for (const side of [-0.15, 0.15]) {
+    const eye = new THREE.Mesh(eyeGeo, eyeMat);
+    eye.position.set(side, 0.35, 0.42);
+    const pupil = new THREE.Mesh(pupilGeo, pupilMat);
+    pupil.position.set(0, 0, 0.06);
+    eye.add(pupil);
+    mesh.add(eye);
+  }
+
+  // Glow ring at base
+  const ringGeo = new THREE.TorusGeometry(0.6, 0.08, 8, 24);
+  const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.3 });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = -0.75;
+  mesh.add(ring);
+}
 
 function createPlayer() {
   const geometry = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
-  const material = new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 0.2 });
+  const material = new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 0.4 });
   playerMesh = new THREE.Mesh(geometry, material);
   playerMesh.position.set(0, 2, 0);
   playerMesh.castShadow = true;
+  addPlayerDecorations(playerMesh, 0x00ff88);
   scene.add(playerMesh);
 }
 
@@ -827,33 +870,28 @@ function hasEffect(effectType) {
 function updatePlayer(delta) {
   if (!playerMesh) return;
 
-  let speed = 15;
-  let jumpForce = 12;
+  let speed = keys.shift ? 32 : 20;
+  let jumpForce = 16;
   let gravityMult = 1;
-  const inverted = hasEffect('invert_controls');
-  const isGiant = hasEffect('giant');
-  const isTiny = hasEffect('tiny');
 
-  // Apply spell modifiers
-  if (hasEffect('speed_boost')) speed = 25;
-  if (hasEffect('slow_motion')) speed = 7;
+  // Apply spell modifiers (order matters: later overrides win)
+  if (hasEffect('speed_boost')) speed = 35;
+  if (hasEffect('slow_motion')) speed = 10;
   if (hasEffect('low_gravity')) gravityMult = 0.3;
   if (hasEffect('high_gravity')) gravityMult = 2.5;
   if (hasEffect('bouncy')) jumpForce = 22;
-  if (isGiant) { speed = 10; jumpForce = 16; }
-  if (isTiny) { speed = 20; jumpForce = 8; }
+  if (hasEffect('giant')) { speed = 14; jumpForce = 20; }
+  if (hasEffect('tiny')) { speed = 25; jumpForce = 10; }
 
   // Camera-relative movement
   const { forward, right } = getCameraDirections();
   const moveDir = new THREE.Vector3();
+  const inputSign = hasEffect('invert_controls') ? -1 : 1;
 
-  const fwd = inverted ? -1 : 1;
-  const strafe = inverted ? -1 : 1;
-
-  if (keys.w) moveDir.addScaledVector(forward, fwd);
-  if (keys.s) moveDir.addScaledVector(forward, -fwd);
-  if (keys.d) moveDir.addScaledVector(right, strafe);
-  if (keys.a) moveDir.addScaledVector(right, -strafe);
+  if (keys.w) moveDir.addScaledVector(forward, inputSign);
+  if (keys.s) moveDir.addScaledVector(forward, -inputSign);
+  if (keys.d) moveDir.addScaledVector(right, inputSign);
+  if (keys.a) moveDir.addScaledVector(right, -inputSign);
   moveDir.normalize();
 
   playerVelocity.x = moveDir.x * speed;
@@ -874,12 +912,13 @@ function updatePlayer(delta) {
   playerMesh.position.y += playerVelocity.y * delta;
   playerMesh.position.z += playerVelocity.z * delta;
 
-  // Ground collision — depends on floor type and game phase
-  const inSafePhase = state.gameState.phase === 'lobby' || state.gameState.phase === 'building';
+  // Ground collision: solid floors stop the player, lava kills, void (none) kills at y < -20
+  const phase = state.gameState.phase;
+  const inSafePhase = phase === 'lobby' || phase === 'building';
   const invulnerable = Date.now() < respawnInvulnUntil;
-  const hasSolidFloor = currentFloorType === 'solid' || (inSafePhase && currentFloorType !== 'lava');
+  const floorIsSolid = currentFloorType === 'solid' || (inSafePhase && currentFloorType !== 'lava');
 
-  if ((hasSolidFloor || invulnerable) && playerMesh.position.y < 1) {
+  if ((floorIsSolid || invulnerable) && playerMesh.position.y < 1) {
     playerMesh.position.y = 1;
     playerVelocity.y = 0;
     isGrounded = true;
@@ -921,6 +960,7 @@ document.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
   if (key in keys) keys[key] = true;
   if (key === ' ') { keys.space = true; e.preventDefault(); }
+  if (e.key === 'Shift') keys.shift = true;
 
   // Enter to focus chat
   if (e.key === 'Enter') {
@@ -952,6 +992,7 @@ document.addEventListener('keyup', (e) => {
   const key = e.key.toLowerCase();
   if (key in keys) keys[key] = false;
   if (key === ' ') keys.space = false;
+  if (e.key === 'Shift') keys.shift = false;
 });
 
 // ============================================
@@ -993,11 +1034,39 @@ function setupChat() {
 
 function sendChatMessage(text) {
   sendToServer('chat', { text });
+
+  // Show thinking indicator when @agent is mentioned
+  if (/@agent/i.test(text)) {
+    showAgentThinking();
+  }
+}
+
+let agentThinkingEl = null;
+
+function showAgentThinking() {
+  removeAgentThinking();
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+  agentThinkingEl = document.createElement('div');
+  agentThinkingEl.className = 'chat-msg system agent-thinking';
+  agentThinkingEl.innerHTML = '<span class="text" style="opacity:0.6;font-style:italic">Magician is thinking...</span>';
+  container.appendChild(agentThinkingEl);
+  container.scrollTop = container.scrollHeight;
+}
+
+function removeAgentThinking() {
+  if (agentThinkingEl) {
+    agentThinkingEl.remove();
+    agentThinkingEl = null;
+  }
 }
 
 function displayChatMessage(msg) {
   const container = document.getElementById('chat-messages');
   if (!container) return;
+
+  // Remove "thinking" indicator when agent replies
+  if (msg.senderType === 'agent') removeAgentThinking();
 
   const div = document.createElement('div');
   div.className = `chat-msg ${msg.senderType}`;
@@ -1103,10 +1172,11 @@ function createRemotePlayerMesh(player) {
   const material = new THREE.MeshStandardMaterial({
     color,
     emissive: color,
-    emissiveIntensity: 0.2
+    emissiveIntensity: 0.4
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
+  addPlayerDecorations(mesh, color);
 
   // Add name label
   const canvas = document.createElement('canvas');
@@ -1292,21 +1362,27 @@ function updateUI() {
 // ============================================
 // Network
 // ============================================
+
+function applyWorldState(worldData) {
+  if (worldData.physics) state.physics = worldData.physics;
+  if (worldData.gameState) state.gameState = worldData.gameState;
+  if (worldData.floorType) setFloorType(worldData.floorType);
+  if (worldData.environment) applyEnvironment(worldData.environment);
+  for (const entity of worldData.entities || []) {
+    addEntity(entity);
+  }
+  if (worldData.announcements) {
+    for (const ann of worldData.announcements) {
+      showAnnouncement(ann);
+    }
+  }
+}
+
 async function fetchInitialState() {
   try {
     const response = await fetch(`${API_URL}/api/world/state`);
     const data = await response.json();
-
-    state.physics = data.physics;
-
-    if (data.floorType) {
-      setFloorType(data.floorType);
-    }
-
-    for (const entity of data.entities) {
-      addEntity(entity);
-    }
-
+    applyWorldState(data);
     console.log(`[Init] Loaded ${data.entities.length} entities`);
     return true;
   } catch (error) {
@@ -1443,6 +1519,10 @@ async function connectToServer() {
       setFloorType(data.type);
     });
 
+    room.onMessage('environment_changed', (env) => {
+      applyEnvironment(env);
+    });
+
     room.onMessage('effects_cleared', () => {
       state.activeEffects = [];
       if (playerMesh) playerMesh.scale.set(1, 1, 1);
@@ -1495,20 +1575,10 @@ async function connectToServer() {
       }
     });
 
-    // Init
+    // Init (authoritative state from room)
     room.onMessage('init', (data) => {
       console.log('[Init] Received initial state from room');
-      state.physics = data.worldState.physics;
-      state.gameState = data.worldState.gameState || { phase: 'lobby' };
-      if (data.worldState.floorType) setFloorType(data.worldState.floorType);
-      for (const entity of data.worldState.entities) {
-        addEntity(entity);
-      }
-      if (data.worldState.announcements) {
-        for (const ann of data.worldState.announcements) {
-          showAnnouncement(ann);
-        }
-      }
+      applyWorldState(data.worldState);
       updateUI();
     });
 
@@ -1662,7 +1732,9 @@ async function startAuthFlow() {
         if (result) return result;
       }
     } catch (e) {
-      console.warn('[Auth] OAuth callback failed:', e);
+      console.error('[Auth] OAuth callback failed:', e);
+      setStatus('Twitter login failed: ' + (e.message || 'Unknown error'));
+      window.history.replaceState({}, '', window.location.pathname);
     }
   }
 
@@ -1703,9 +1775,14 @@ async function startAuthFlow() {
   return new Promise((resolve) => {
     document.getElementById('login-screen').style.display = 'flex';
 
-    document.getElementById('btn-twitter-login')?.addEventListener('click', () => {
+    document.getElementById('btn-twitter-login')?.addEventListener('click', async () => {
       setStatus('Redirecting to Twitter...');
-      loginWithTwitter();
+      try {
+        await loginWithTwitter();
+      } catch (e) {
+        console.error('[Auth] Twitter login failed:', e);
+        setStatus('Login failed: ' + (e.message || 'Unknown error'));
+      }
     });
 
     document.getElementById('btn-guest').addEventListener('click', async () => {

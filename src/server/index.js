@@ -150,7 +150,8 @@ app.get('/api/agent/context', (req, res) => {
     recentChat: worldState.getMessages(sinceMessage),
     recentEvents: worldState.getEvents(sinceEvent),
     leaderboard: worldState.getLeaderboard(),
-    cooldownUntil: worldState.gameState.cooldownUntil
+    cooldownUntil: worldState.gameState.cooldownUntil,
+    environment: { ...worldState.environment }
   });
 });
 
@@ -220,6 +221,7 @@ app.post('/api/world/clear', (req, res) => {
     broadcastToRoom('entity_destroyed', { id });
   }
   broadcastToRoom('physics_changed', worldState.physics);
+  broadcastToRoom('environment_changed', worldState.environment);
   res.json({ success: true, cleared: ids.length });
 });
 
@@ -237,6 +239,21 @@ app.post('/api/world/floor', (req, res) => {
 
 app.get('/api/world/floor', (req, res) => {
   res.json({ floorType: worldState.floorType });
+});
+
+// Set environment (sky, fog, lighting)
+app.post('/api/world/environment', (req, res) => {
+  try {
+    const env = worldState.setEnvironment(req.body);
+    broadcastToRoom('environment_changed', env);
+    res.json({ success: true, environment: env });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/world/environment', (req, res) => {
+  res.json({ environment: { ...worldState.environment } });
 });
 
 // Set respawn point
@@ -297,6 +314,12 @@ app.post('/api/world/template', (req, res) => {
     if (template.floorType) {
       worldState.setFloorType(template.floorType);
       broadcastToRoom('floor_changed', { type: template.floorType });
+    }
+
+    // Apply environment overrides if defined
+    if (template.environment) {
+      const env = worldState.setEnvironment(template.environment);
+      broadcastToRoom('environment_changed', env);
     }
 
     res.json({
@@ -612,25 +635,33 @@ const BRIBE_OPTIONS = {
 };
 
 async function executeAutoBribe(bribeType, bribeId) {
-  if (bribeType === 'spawn_obstacles') {
-    for (let i = 0; i < 3; i++) {
-      const x = (Math.random() - 0.5) * 30;
-      const z = (Math.random() - 0.5) * 30;
-      const entity = worldState.spawnEntity('obstacle', [x, 2, z], [1.5, 2, 1.5], {
-        color: '#e74c3c', rotating: true, speed: 3
-      });
-      broadcastToRoom('entity_spawned', entity);
+  switch (bribeType) {
+    case 'spawn_obstacles':
+      for (let i = 0; i < 3; i++) {
+        const x = (Math.random() - 0.5) * 30;
+        const z = (Math.random() - 0.5) * 30;
+        const entity = worldState.spawnEntity('obstacle', [x, 2, z], [1.5, 2, 1.5], {
+          color: '#e74c3c', rotating: true, speed: 3
+        });
+        broadcastToRoom('entity_spawned', entity);
+      }
+      break;
+
+    case 'lava_floor':
+      worldState.setFloorType('lava');
+      broadcastToRoom('floor_changed', { type: 'lava' });
+      break;
+
+    case 'random_spell': {
+      const spellTypes = Object.keys(WorldState.SPELL_TYPES);
+      const randomType = spellTypes[Math.floor(Math.random() * spellTypes.length)];
+      const spell = worldState.castSpell(randomType);
+      broadcastToRoom('spell_cast', spell);
+      break;
     }
-  } else if (bribeType === 'lava_floor') {
-    worldState.setFloorType('lava');
-    broadcastToRoom('floor_changed', { type: 'lava' });
-  } else if (bribeType === 'random_spell') {
-    const spellTypes = Object.keys(WorldState.SPELL_TYPES);
-    const randomType = spellTypes[Math.floor(Math.random() * spellTypes.length)];
-    const spell = worldState.castSpell(randomType);
-    broadcastToRoom('spell_cast', spell);
-  } else {
-    return false;
+
+    default:
+      return false;
   }
 
   await chain.acknowledgeBribe(bribeId, true);

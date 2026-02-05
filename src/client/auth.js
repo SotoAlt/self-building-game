@@ -31,7 +31,7 @@ export async function getPrivyUser() {
 }
 
 export async function loginWithTwitter() {
-  if (!privy) return;
+  if (!privy) throw new Error('Privy not initialized — check VITE_PRIVY_APP_ID and VITE_PRIVY_CLIENT_ID');
   const redirectURI = window.location.origin;
   const { url } = await privy.auth.oauth.generateURL('twitter', redirectURI);
   window.location.href = url;
@@ -45,21 +45,34 @@ export async function handleOAuthCallback() {
   const provider = params.get('privy_oauth_provider');
   if (!code || !state) return null;
 
-  const session = await privy.auth.oauth.loginWithCode(code, state, provider);
-  window.history.replaceState({}, '', window.location.pathname);
-  return session.user;
+  try {
+    const session = await privy.auth.oauth.loginWithCode(code, state, provider);
+    window.history.replaceState({}, '', window.location.pathname);
+    return session.user;
+  } catch (e) {
+    console.error('[Auth] OAuth callback login failed:', e);
+    window.history.replaceState({}, '', window.location.pathname);
+    throw e;
+  }
 }
 
 export async function exchangeForBackendToken() {
-  const privyToken = localStorage.getItem('privy:token');
-  if (!privyToken) return null;
+  if (!privy) return null;
+  const privyToken = await privy.getAccessToken();
+  if (!privyToken) {
+    console.warn('[Auth] No Privy access token available');
+    return null;
+  }
 
   const res = await fetch(`${API_URL}/api/auth/privy`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ accessToken: privyToken })
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.error('[Auth] Backend token exchange failed:', res.status, await res.text().catch(() => ''));
+    return null;
+  }
 
   const data = await res.json();
   localStorage.setItem('game:token', data.token);
@@ -93,4 +106,16 @@ export function getTwitterProfile(user) {
 export async function logout() {
   localStorage.removeItem('game:token');
   if (privy) await privy.auth.logout();
+}
+
+export async function debugAuth() {
+  const info = {
+    privyInitialized: !!privy,
+    gameToken: !!localStorage.getItem('game:token'),
+    privyAccessToken: privy ? !!(await privy.getAccessToken().catch(() => null)) : false,
+    privyUser: privy ? await privy.user.get().then(r => r.user).catch(() => null) : null,
+    urlParams: Object.fromEntries(new URLSearchParams(window.location.search)),
+  };
+  console.table(info);
+  return info;
 }
