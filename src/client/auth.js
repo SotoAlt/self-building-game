@@ -47,12 +47,12 @@ export async function handleOAuthCallback() {
 
   try {
     const session = await privy.auth.oauth.loginWithCode(code, state, provider);
-    window.history.replaceState({}, '', window.location.pathname);
     return session.user;
   } catch (e) {
     console.error('[Auth] OAuth callback login failed:', e);
-    window.history.replaceState({}, '', window.location.pathname);
     throw e;
+  } finally {
+    window.history.replaceState({}, '', window.location.pathname);
   }
 }
 
@@ -109,12 +109,20 @@ export async function logout() {
 }
 
 export async function debugAuth() {
+  let privyAccessToken = false;
+  let privyUser = null;
+
+  if (privy) {
+    privyAccessToken = !!(await privy.getAccessToken().catch(() => null));
+    privyUser = await privy.user.get().then(r => r.user).catch(() => null);
+  }
+
   const info = {
     privyInitialized: !!privy,
     gameToken: !!localStorage.getItem('game:token'),
-    privyAccessToken: privy ? !!(await privy.getAccessToken().catch(() => null)) : false,
-    privyUser: privy ? await privy.user.get().then(r => r.user).catch(() => null) : null,
-    urlParams: Object.fromEntries(new URLSearchParams(window.location.search)),
+    privyAccessToken,
+    privyUser,
+    urlParams: Object.fromEntries(new URLSearchParams(window.location.search))
   };
   console.table(info);
   return info;

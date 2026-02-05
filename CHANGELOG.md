@@ -2,6 +2,16 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.9.1] - 2026-02-05
+
+### Fixed
+- **Twitter Login** — click handler now awaits `loginWithTwitter()` with try/catch instead of fire-and-forget; errors shown to user via status text
+- **Privy Token Exchange** — replaced `localStorage.getItem('privy:token')` (returns JSON-wrapped string) with `privy.getAccessToken()` for correct token retrieval
+- **OAuth Callback Error Handling** — errors logged and re-thrown; URL params cleaned up in `finally` block
+
+### Added
+- `debugAuth()` diagnostic function exposed as `window.debugAuth()` for troubleshooting auth state
+
 ## [0.9.0] - 2026-02-05
 
 ### Added

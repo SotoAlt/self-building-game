@@ -1734,7 +1734,6 @@ async function startAuthFlow() {
     } catch (e) {
       console.error('[Auth] OAuth callback failed:', e);
       setStatus('Twitter login failed: ' + (e.message || 'Unknown error'));
-      window.history.replaceState({}, '', window.location.pathname);
     }
   }
 
