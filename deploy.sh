@@ -43,7 +43,7 @@ PRIVY_APP_ID=cml9kfosm02swkw0b9l2ct7tq
 PRIVY_APP_SECRET=privy_app_secret_4Fbgdo5pAARnf2V3rhrAyGzmB3ZEXrLznuR8BCBLECFCSmNLHZBvX3hK7jj2HqZtYbV5jtZqzdSsFU6d32BEWuiA
 VITE_PRIVY_APP_ID=cml9kfosm02swkw0b9l2ct7tq
 VITE_PRIVY_CLIENT_ID=client-WY6Vr2Mx3BaBS1LuUr5LNdae5ZeqzzNwpCrLkuRaE8LAw
-AI_PLAYERS=true
+AI_PLAYERS=false
 ENVEOF"
 
 # Step 5: Get SSL cert (first time: use HTTP-only nginx, get cert, then restart with HTTPS)

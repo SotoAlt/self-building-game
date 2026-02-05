@@ -25,6 +25,7 @@ const API_URL = isLocalhost
 // Spectator mode detection
 const urlParams = new URLSearchParams(window.location.search);
 const isSpectator = urlParams.get('spectator') === 'true';
+const isDebug = urlParams.get('debug') === 'true';
 
 // ============================================
 // Game State
@@ -1604,6 +1605,49 @@ function renderKillFeed() {
 }
 
 // ============================================
+// Debug Panel
+// ============================================
+function setupDebugPanel() {
+  const panel = document.getElementById('debug-panel');
+  if (!panel) return;
+  panel.style.display = 'block';
+
+  const aiToggle = document.getElementById('toggle-ai');
+  const agentToggle = document.getElementById('toggle-agent');
+  const debugInfo = document.getElementById('debug-info');
+
+  // Fetch initial status
+  async function refreshStatus() {
+    try {
+      const [aiRes, agentRes] = await Promise.all([
+        fetch(`${API_URL}/api/ai/status`),
+        fetch(`${API_URL}/api/agent/status`)
+      ]);
+      const aiData = await aiRes.json();
+      const agentData = await agentRes.json();
+      aiToggle.checked = aiData.enabled;
+      agentToggle.checked = !agentData.paused;
+      debugInfo.textContent = `AI: ${aiData.count} bots | Agent: ${agentData.phase} | Drama: ${agentData.drama}`;
+    } catch { /* silent */ }
+  }
+
+  aiToggle.addEventListener('change', async () => {
+    const endpoint = aiToggle.checked ? '/api/ai/enable' : '/api/ai/disable';
+    await fetch(`${API_URL}${endpoint}`, { method: 'POST' });
+    refreshStatus();
+  });
+
+  agentToggle.addEventListener('change', async () => {
+    const endpoint = agentToggle.checked ? '/api/agent/resume' : '/api/agent/pause';
+    await fetch(`${API_URL}${endpoint}`, { method: 'POST' });
+    refreshStatus();
+  });
+
+  refreshStatus();
+  setInterval(refreshStatus, 5000);
+}
+
+// ============================================
 // Init
 // ============================================
 async function init() {
@@ -1630,6 +1674,7 @@ async function init() {
   } else {
     setupBribeUI();
   }
+  if (isDebug) setupDebugPanel();
 
   // Load existing chat history
   try {

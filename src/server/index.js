@@ -664,6 +664,28 @@ app.post('/api/game/building', (req, res) => {
 });
 
 // ============================================
+// AI Players API
+// ============================================
+
+app.get('/api/ai/status', (req, res) => {
+  res.json({ enabled: aiPlayersEnabled, count: aiPlayers.length });
+});
+
+app.post('/api/ai/enable', (req, res) => {
+  if (aiPlayersEnabled) return res.json({ success: true, status: 'already enabled' });
+  aiPlayersEnabled = true;
+  spawnAIPlayers();
+  res.json({ success: true, status: 'enabled', count: aiPlayers.length });
+});
+
+app.post('/api/ai/disable', (req, res) => {
+  if (!aiPlayersEnabled) return res.json({ success: true, status: 'already disabled' });
+  aiPlayersEnabled = false;
+  despawnAIPlayers();
+  res.json({ success: true, status: 'disabled' });
+});
+
+// ============================================
 // SSE Event Feed (for OBS overlays)
 // ============================================
 
@@ -759,14 +781,28 @@ initDB().then(async (connected) => {
 // Start agent loop
 agentLoop.start();
 
-// Spawn AI players
+// AI players (disabled by default, toggled via API)
 const aiPlayers = [];
-if (process.env.AI_PLAYERS !== 'false') {
+let aiPlayersEnabled = process.env.AI_PLAYERS === 'true';
+
+function spawnAIPlayers() {
+  if (aiPlayers.length > 0) return; // already spawned
   const explorer = new AIPlayer(worldState, broadcastToRoom, 'explorer');
   const chaotic = new AIPlayer(worldState, broadcastToRoom, 'chaotic');
   aiPlayers.push(explorer, chaotic);
   console.log('[AI] Spawned 2 AI players: Explorer Bot, Chaos Bot');
 }
+
+function despawnAIPlayers() {
+  for (const ai of aiPlayers) {
+    worldState.removePlayer(ai.id);
+    broadcastToRoom('player_left', { id: ai.id });
+  }
+  aiPlayers.length = 0;
+  console.log('[AI] Despawned all AI players');
+}
+
+if (aiPlayersEnabled) spawnAIPlayers();
 
 httpServer.listen(PORT, () => {
   console.log(`

@@ -335,6 +335,18 @@
       to { opacity: 1; transform: translateX(0); }
     }
     /* Bribe panel */
+    #debug-panel {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 200;
+      background: rgba(0,0,0,0.85);
+      color: white;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
     #bribe-panel {
       position: fixed;
       bottom: 20px;
@@ -424,6 +436,16 @@
     <div id="bribe-balance" class="bribe-balance"></div>
   </div>
   <div id="ready-indicator">Press R to ready up</div>
+  <div id="debug-panel" style="display:none">
+    <div style="font-weight:bold; margin-bottom:6px;">Debug</div>
+    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11px;">
+      <input type="checkbox" id="toggle-ai"> AI Players
+    </label>
+    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11px; margin-top:4px;">
+      <input type="checkbox" id="toggle-agent"> Agent Loop
+    </label>
+    <div id="debug-info" style="font-size:10px; opacity:0.7; margin-top:6px;"></div>
+  </div>
   <div id="spectator-overlay">
     <div id="agent-status">
       <div>Phase: <span id="agent-phase">WELCOME</span></div>
