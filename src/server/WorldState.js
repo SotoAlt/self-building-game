@@ -158,6 +158,12 @@ export class WorldState {
     return this.respawnPoint;
   }
 
+  _notifyPhaseChange() {
+    if (typeof this.onPhaseChange === 'function') {
+      this.onPhaseChange(this.getGameState());
+    }
+  }
+
   getDefaultColor(type) {
     const colors = {
       platform: '#3498db',
@@ -369,10 +375,7 @@ export class WorldState {
         this.gameState.startTime = Date.now();
         console.log(`[WorldState] Game started: ${gameType}`);
 
-        // Notify listeners of phase transition
-        if (typeof this.onPhaseChange === 'function') {
-          this.onPhaseChange(this.getGameState());
-        }
+        this._notifyPhaseChange();
       }
     }, config.countdownTime || 3000);
 
@@ -401,10 +404,7 @@ export class WorldState {
 
     console.log(`[WorldState] Game ended: ${result}`);
 
-    // Notify listeners of phase transition
-    if (typeof this.onPhaseChange === 'function') {
-      this.onPhaseChange(this.getGameState());
-    }
+    this._notifyPhaseChange();
 
     // Return to lobby after delay (only if no new game started)
     clearTimeout(this._lobbyResetTimer);
@@ -431,10 +431,7 @@ export class WorldState {
     };
     console.log('[WorldState] Game state reset to lobby');
 
-    // Notify listeners of phase transition
-    if (typeof this.onPhaseChange === 'function') {
-      this.onPhaseChange(this.getGameState());
-    }
+    this._notifyPhaseChange();
   }
 
   startBuilding() {

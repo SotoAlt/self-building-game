@@ -102,62 +102,69 @@
 
 ---
 
-## Phase 5: VFX & Game Feel - IN PROGRESS
+## Phase 5: VFX & Game Feel - COMPLETE
+
+*Completed Feb 5, 2026*
 
 ### Camera Effects
-- [ ] Camera shake on death, spell cast, countdown
-- [ ] Screen flash on win/lose
+- [x] Camera shake on death, spell cast, countdown
+- [x] Screen flash on win/lose
 
 ### Enhanced Particles
-- [ ] Death: larger burst with red/orange, 30+ particles
-- [ ] Collection: golden sparkle trail
-- [ ] Spell activation: colored vortex
+- [x] Death: larger burst with red/orange, 50 particles
+- [x] Collection: golden sparkle trail
+- [x] Spell activation: colored vortex
 - [ ] Game start: confetti burst
-- [ ] Lava contact: fire particles
+- [x] Lava contact: fire particles
 
 ### Screen Effects
-- [ ] Speed boost: motion blur vignette
-- [ ] Low gravity: floating dust particles
-- [ ] Game win: golden flash
-- [ ] Game lose: red flash + desaturate
+- [x] Speed boost: green vignette overlay
+- [x] Low gravity: blue vignette overlay
+- [x] Game win: golden flash
+- [x] Game lose: red flash
+- [x] Invert controls: purple vignette overlay
 
 ### Sound
-- [ ] Countdown beeps (3, 2, 1, GO!)
-- [ ] Game win fanfare
-- [ ] Spell cast whoosh
+- [x] Countdown beeps (3, 2, 1, GO!)
+- [x] Game win fanfare (C-E-G-C arpeggio)
+- [x] Spell cast whoosh (filtered sawtooth sweep)
 - [ ] Ambient hum with time-based intensity
 
 ---
 
-## Phase 6: World Dynamics
+## Phase 6: World Dynamics - COMPLETE
+
+*Completed Feb 5, 2026*
 
 ### Floor System
-- [ ] Floor types: none (abyss), solid, lava
-- [ ] Lava floor rendering (animated red/orange plane with glow)
-- [ ] Server `POST /api/world/floor` endpoint
-- [ ] Agent `set_floor` tool
-- [ ] Arena templates define floor types
+- [x] Floor types: none (abyss), solid, lava
+- [x] Lava floor rendering (animated red/orange plane with glow)
+- [x] Server `POST /api/world/floor` endpoint
+- [x] Agent `set_floor` tool
+- [x] Arena templates define floor types
 
 ### Dynamic World
-- [ ] Agent can toggle ground on/off mid-game
-- [ ] Platforms as the only safe ground in abyss mode
-- [ ] Lava = death with fire particles
+- [x] Agent can toggle ground on/off mid-game
+- [x] Platforms as the only safe ground in abyss mode
+- [x] Lava = death with fire particles
 
 ---
 
-## Phase 7: Bribe System Polish
+## Phase 7: Bribe System Polish - COMPLETE
 
-- [ ] Predefined bribe options with token costs
-- [ ] Auto-execute simple bribes server-side
-- [ ] Queue complex bribes for agent
-- [ ] Bribe UI with dropdown/modal and confirmation
+*Completed Feb 5, 2026*
+
+- [x] Predefined bribe options with token costs (6 options, 30-200 tokens)
+- [x] Auto-execute simple bribes server-side (obstacles, lava, spell)
+- [x] Queue complex bribes for agent (move goal, extra time, custom)
+- [x] Bribe UI with dropdown/modal and confirmation
 - [ ] Bribe history tracking per player
 
 ---
 
-## Phase 8: Auth & DB Testing
+## Phase 8: Auth & DB Testing - IN PROGRESS
 
-- [ ] Fix production DB password persistence
+- [x] Fix production DB password persistence
 - [ ] Test Twitter OAuth login on production
 - [ ] Test guest login on production
 - [ ] Verify users table populated
@@ -189,10 +196,10 @@
 | 4 | Chat + multiplayer + tricks | DONE |
 | 5 | Deployment + PostgreSQL | DONE |
 | 5-7 | AI players + streaming + lifecycle | DONE |
-| 7-8 | VFX & game feel | IN PROGRESS |
-| 8-9 | World dynamics (abyss/lava) | TODO |
-| 9-10 | Bribe system polish | TODO |
-| 10-11 | Auth & DB testing | TODO |
+| 7-8 | VFX & game feel | DONE |
+| 8-9 | World dynamics (abyss/lava) | DONE |
+| 9-10 | Bribe system polish | DONE |
+| 10-11 | Auth & DB testing | IN PROGRESS |
 | 12-14 | Demo prep + first stream | TODO |
 
 ---

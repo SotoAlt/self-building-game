@@ -40,6 +40,16 @@ if (process.env.NODE_ENV === 'production') {
 // World state (shared between HTTP API and game room)
 const worldState = new WorldState();
 
+// Phase guard: reject requests during active games (countdown or playing)
+function rejectIfActiveGame(res) {
+  const phase = worldState.gameState.phase;
+  if (phase === 'countdown' || phase === 'playing') {
+    res.status(400).json({ error: `Cannot perform this action during ${phase} phase` });
+    return true;
+  }
+  return false;
+}
+
 // Broadcast game state changes from internal transitions (countdown -> playing)
 worldState.onPhaseChange = function onPhaseChange(gameState) {
   broadcastToRoom('game_state_changed', gameState);
@@ -203,10 +213,7 @@ app.post('/api/world/destroy', (req, res) => {
 
 // Clear all entities
 app.post('/api/world/clear', (req, res) => {
-  const phase = worldState.gameState.phase;
-  if (phase === 'countdown' || phase === 'playing') {
-    return res.status(400).json({ error: `Cannot clear world during ${phase} phase` });
-  }
+  if (rejectIfActiveGame(res)) return;
 
   const ids = worldState.clearEntities();
   for (const id of ids) {
@@ -245,10 +252,7 @@ app.post('/api/world/respawn', (req, res) => {
 
 // Load arena template
 app.post('/api/world/template', (req, res) => {
-  const phase = worldState.gameState.phase;
-  if (phase === 'countdown' || phase === 'playing') {
-    return res.status(400).json({ error: `Cannot load template during ${phase} phase` });
-  }
+  if (rejectIfActiveGame(res)) return;
 
   const { name } = req.body;
   if (!name) {
@@ -765,6 +769,10 @@ app.post('/api/ai/disable', (req, res) => {
 // ============================================
 
 const sseClients = new Set();
+const SSE_EVENTS = new Set([
+  'announcement', 'player_died', 'spell_cast', 'game_state_changed',
+  'player_joined', 'player_left', 'chat_message'
+]);
 
 app.get('/api/stream/events', (req, res) => {
   res.writeHead(200, {
@@ -824,8 +832,7 @@ function broadcastToRoom(event, data) {
     gameRoom.broadcast(event, data);
   }
   // Also push key events to SSE stream
-  if (['announcement', 'player_died', 'spell_cast', 'game_state_changed',
-       'player_joined', 'player_left', 'chat_message'].includes(event)) {
+  if (SSE_EVENTS.has(event)) {
     broadcastSSE(event, data);
   }
 }

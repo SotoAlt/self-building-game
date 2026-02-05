@@ -1395,29 +1395,27 @@ async function connectToServer() {
       triggerCameraShake(0.3, 200);
       playSpellSound();
 
-      // Spell-specific screen effects
-      if (spell.type === 'speed_boost') showVignette('rgba(46,204,113,0.3)', spell.duration);
-      if (spell.type === 'invert_controls') showVignette('rgba(155,89,182,0.4)', spell.duration);
-      if (spell.type === 'low_gravity') showVignette('rgba(52,152,219,0.2)', spell.duration);
+      // Spell-specific vignette overlays
+      const SPELL_VIGNETTES = {
+        speed_boost: 'rgba(46,204,113,0.3)',
+        invert_controls: 'rgba(155,89,182,0.4)',
+        low_gravity: 'rgba(52,152,219,0.2)',
+      };
+      const vignetteColor = SPELL_VIGNETTES[spell.type];
+      if (vignetteColor) showVignette(vignetteColor, spell.duration);
 
-      // Apply scale effects immediately + particle burst
-      if (playerMesh) {
-        if (spell.type === 'giant') {
-          playerMesh.scale.set(2, 2, 2);
-          spawnParticles(playerMesh.position, '#9b59b6', 30, 6);
-        }
-        if (spell.type === 'tiny') {
-          playerMesh.scale.set(0.4, 0.4, 0.4);
-          spawnParticles(playerMesh.position, '#9b59b6', 30, 6);
-        }
+      // Scale effects with particle burst
+      const SPELL_SCALES = { giant: 2, tiny: 0.4 };
+      const scale = SPELL_SCALES[spell.type];
+      if (scale && playerMesh) {
+        playerMesh.scale.setScalar(scale);
+        spawnParticles(playerMesh.position, '#9b59b6', 30, 6);
       }
 
       // Auto-expire
       setTimeout(() => {
         state.activeEffects = (state.activeEffects || []).filter(e => e.id !== spell.id);
-        if (spell.type === 'giant' || spell.type === 'tiny') {
-          if (playerMesh) playerMesh.scale.set(1, 1, 1);
-        }
+        if (scale && playerMesh) playerMesh.scale.setScalar(1);
       }, spell.duration);
     });
 

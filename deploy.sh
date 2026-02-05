@@ -78,9 +78,8 @@ server {
     }
 }
 NGEOF
-    cp /tmp/nginx-http-only.conf $APP_DIR/nginx.conf.tmp
 
-    # Start just nginx for ACME
+    # Start temporary nginx for ACME challenge
     docker compose up -d db
     docker compose up -d game
     docker run -d --name temp-nginx -p 80:80 \
