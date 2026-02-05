@@ -2,6 +2,14 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.8.1] - 2026-02-05
+
+### Fixed
+- **deploy.sh secret regeneration** — DB_PASSWORD and JWT_SECRET now persist across deploys instead of being regenerated each time (which broke PostgreSQL auth since the volume kept the old password)
+
+### Changed
+- Phase 9 blockchain target updated from Solana to **Monad EVM** — `ROADMAP.md` credits system references updated
+
 ## [0.8.0] - 2026-02-05
 
 ### Added

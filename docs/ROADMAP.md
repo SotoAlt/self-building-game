@@ -173,7 +173,7 @@
 - [ ] Items earned through gameplay
 
 ### Credits System (Architecture)
-- [ ] Privy Solana embedded wallets
+- [ ] Privy embedded wallets (Monad EVM)
 - [ ] USDC purchase flow → backend credit balance
 - [ ] In-game spending deducts from balance
 - [ ] On-chain transaction verification

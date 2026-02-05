@@ -32,19 +32,31 @@ echo "[3/6] Syncing project files..."
 rsync -avz --exclude node_modules --exclude dist --exclude .git --exclude .env \
   /Users/rodrigosoto/repos/self-building-game/ $SERVER:$APP_DIR/
 
-# Step 4: Create production .env on server
-echo "[4/6] Creating production .env..."
-ssh $SERVER "cat > $APP_DIR/.env << 'ENVEOF'
+# Step 4: Create production .env on server (preserving secrets across deploys)
+echo "[4/6] Setting up production .env..."
+ssh $SERVER "
+  if [ -f $APP_DIR/.env ]; then
+    echo 'Existing .env found — preserving secrets'
+    EXISTING_DB_PASSWORD=\$(grep '^DB_PASSWORD=' $APP_DIR/.env | cut -d= -f2)
+    EXISTING_JWT_SECRET=\$(grep '^JWT_SECRET=' $APP_DIR/.env | cut -d= -f2)
+  fi
+
+  DB_PASSWORD=\${EXISTING_DB_PASSWORD:-\$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 24)}
+  JWT_SECRET=\${EXISTING_JWT_SECRET:-\$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 48)}
+
+  cat > $APP_DIR/.env << ENVEOF
 PORT=3000
 NODE_ENV=production
-DB_PASSWORD=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 24)
-JWT_SECRET=$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 48)
+DB_PASSWORD=\$DB_PASSWORD
+JWT_SECRET=\$JWT_SECRET
 PRIVY_APP_ID=cml9kfosm02swkw0b9l2ct7tq
 PRIVY_APP_SECRET=privy_app_secret_4Fbgdo5pAARnf2V3rhrAyGzmB3ZEXrLznuR8BCBLECFCSmNLHZBvX3hK7jj2HqZtYbV5jtZqzdSsFU6d32BEWuiA
 VITE_PRIVY_APP_ID=cml9kfosm02swkw0b9l2ct7tq
 VITE_PRIVY_CLIENT_ID=client-WY6Vr2Mx3BaBS1LuUr5LNdae5ZeqzzNwpCrLkuRaE8LAw
 AI_PLAYERS=false
-ENVEOF"
+ENVEOF
+  echo \"DB_PASSWORD persisted: \${DB_PASSWORD:0:4}...\"
+"
 
 # Step 5: Get SSL cert (first time: use HTTP-only nginx, get cert, then restart with HTTPS)
 echo "[5/6] Setting up SSL..."
