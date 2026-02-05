@@ -6,6 +6,7 @@
 
 import Colyseus from 'colyseus';
 const { Room } = Colyseus;
+import { upsertUser } from './db.js';
 
 function detectRequest(text) {
   const lower = text.toLowerCase();
@@ -194,6 +195,9 @@ export class GameRoom extends Room {
   onJoin(client, options) {
     const name = options.name || `Player-${client.sessionId.slice(0, 4)}`;
     const type = options.type || 'human';
+
+    // Fire-and-forget DB upsert
+    upsertUser(client.sessionId, name, type);
 
     if (this.worldState) {
       const player = this.worldState.addPlayer(client.sessionId, name, type);

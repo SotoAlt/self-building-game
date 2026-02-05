@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { updateLeaderboard, loadLeaderboard } from './db.js';
 
 export class WorldState {
   constructor() {
@@ -453,6 +454,10 @@ export class WorldState {
     entry.name = name;
     if (won) entry.wins++;
     entry.totalScore += score;
+
+    // Fire-and-forget DB write
+    updateLeaderboard(playerId, name, won, score);
+
     return entry;
   }
 
@@ -461,6 +466,24 @@ export class WorldState {
       .map(([id, data]) => ({ id, ...data }))
       .sort((a, b) => b.wins - a.wins || b.totalScore - a.totalScore)
       .slice(0, 10);
+  }
+
+  async loadLeaderboardFromDB() {
+    try {
+      const rows = await loadLeaderboard();
+      for (const row of rows) {
+        this.leaderboard.set(row.id, {
+          name: row.name,
+          wins: row.wins,
+          totalScore: row.totalScore
+        });
+      }
+      if (rows.length > 0) {
+        console.log(`[WorldState] Loaded ${rows.length} leaderboard entries from DB`);
+      }
+    } catch (err) {
+      console.error('[WorldState] Failed to load leaderboard from DB:', err.message);
+    }
   }
 
   // ============================================

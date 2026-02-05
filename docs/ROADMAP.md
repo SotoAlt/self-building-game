@@ -99,6 +99,35 @@
 
 ---
 
+## Phase 3.5: Deployment Prep & Persistence (Day 5) - COMPLETE
+
+*Completed Feb 4, 2026*
+
+### Deployment
+- [x] Dynamic client URL detection (auto ws/wss, localhost fallback)
+- [x] Production static file serving (Express serves dist/ in production)
+- [x] SPA catch-all for non-API routes
+- [x] `npm start` script for production
+- [x] Multi-stage Dockerfile (build + runtime)
+- [x] docker-compose.yml (game server + PostgreSQL)
+- [x] .env.example with environment documentation
+
+### PostgreSQL Persistence
+- [x] Database module (src/server/db.js) with auto-schema creation
+- [x] Graceful fallback: no DATABASE_URL = in-memory only (dev still works)
+- [x] Users table with upsert on join
+- [x] Leaderboard table with DB-backed persistence
+- [x] Game history table saved on mini-game end
+- [x] Leaderboard hydrated from DB on startup
+- [x] All DB writes are fire-and-forget (non-blocking)
+- [x] GET /api/stats endpoint (games, players, uptime)
+
+### Documentation
+- [x] README.md rewritten for hackathon submission
+- [x] ROADMAP.md updated
+
+---
+
 ## Phase 4: AI Players & Streaming (Days 5-8)
 
 ### AI Player Agents
@@ -133,6 +162,7 @@
 | 3 | Core game loop | DONE |
 | 4 | Chat + multiplayer polish | DONE |
 | 4 | Agent context + trick system | DONE |
+| 5 | Deployment prep + PostgreSQL | DONE |
 | 5-8 | AI players + streaming | TODO |
 | 9-14 | Polish + demo | TODO |
 
@@ -146,9 +176,9 @@ Browser Client (Three.js)
     | WebSocket (Colyseus)
     |
 Game Server (Express + Colyseus, port 3000)
-    |
-    | HTTP API
-    |
+    |           |
+    | HTTP API  | PostgreSQL
+    |           |
 OpenClaw Agent (Chaos Magician)
     |
     | Telegram
@@ -160,11 +190,13 @@ Human Operator / Viewers
 
 | File | Purpose |
 |------|---------|
+| src/server/index.js | Express API + Colyseus server + game loop |
 | src/server/WorldState.js | Source of truth: entities, players, physics, chat, leaderboard |
 | src/server/GameRoom.js | Colyseus room: player sync, chat, ready system |
-| src/server/index.js | Express API + Colyseus server + game loop |
+| src/server/MiniGame.js | Mini-game base class with trick system |
+| src/server/db.js | PostgreSQL persistence with graceful fallback |
 | src/server/games/ | Mini-game implementations |
 | src/client/main.js | Three.js client: rendering, input, camera, chat UI |
 | index.html | Game HTML with chat panel, leaderboard, announcements |
-| config/openclaw/ | Agent skill definition |
+| config/openclaw/ | Agent skill definition (19 tools) |
 | docs/ | Documentation |

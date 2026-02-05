@@ -6,6 +6,8 @@
 
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import Colyseus from 'colyseus';
 import WSTransport from '@colyseus/ws-transport';
 const { Server } = Colyseus;
@@ -14,12 +16,22 @@ import { createServer } from 'http';
 import { GameRoom } from './GameRoom.js';
 import { WorldState } from './WorldState.js';
 import { createGameSync, GAME_TYPES } from './games/index.js';
+import { initDB, getStats, isDBAvailable } from './db.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3000;
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.join(__dirname, '../../dist');
+  app.use(express.static(distPath));
+}
 
 // World state (shared between HTTP API and game room)
 const worldState = new WorldState();
@@ -331,6 +343,22 @@ app.get('/api/leaderboard', (req, res) => {
 });
 
 // ============================================
+// Stats API
+// ============================================
+
+app.get('/api/stats', async (req, res) => {
+  const dbStats = await getStats();
+  res.json({
+    uptime: Math.floor(process.uptime()),
+    players: worldState.players.size,
+    entities: worldState.entities.size,
+    gamesPlayed: dbStats.totalGames || worldState.statistics.totalChallengesCompleted,
+    totalPlayers: dbStats.totalPlayers || worldState.statistics.playersOnline || 0,
+    dbConnected: dbStats.dbConnected
+  });
+});
+
+// ============================================
 // Spells API
 // ============================================
 
@@ -392,8 +420,27 @@ function broadcastToRoom(event, data) {
 }
 
 // ============================================
+// SPA Catch-All (production)
+// ============================================
+
+if (process.env.NODE_ENV === 'production') {
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(path.join(__dirname, '../../dist/index.html'));
+    }
+  });
+}
+
+// ============================================
 // Start Server
 // ============================================
+
+// Initialize database (non-blocking)
+initDB().then(connected => {
+  if (connected) {
+    worldState.loadLeaderboardFromDB();
+  }
+});
 
 httpServer.listen(PORT, () => {
   console.log(`
@@ -435,8 +482,9 @@ httpServer.listen(PORT, () => {
 ║    GET  /api/chat/messages    - Get chat messages         ║
 ║    POST /api/chat/send        - Agent sends message       ║
 ║                                                           ║
-║  Leaderboard:                                             ║
+║  Leaderboard & Stats:                                     ║
 ║    GET  /api/leaderboard      - Get top 10 players        ║
+║    GET  /api/stats            - Server stats              ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
   `);

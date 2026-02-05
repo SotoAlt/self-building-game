@@ -9,8 +9,13 @@ import { Client } from 'colyseus.js';
 // ============================================
 // Configuration
 // ============================================
-const SERVER_URL = 'ws://localhost:3000';
-const API_URL = 'http://localhost:3000';
+const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const SERVER_URL = window.location.hostname === 'localhost'
+  ? 'ws://localhost:3000'
+  : `${wsProtocol}//${window.location.host}`;
+const API_URL = window.location.hostname === 'localhost'
+  ? 'http://localhost:3000'
+  : `${window.location.protocol}//${window.location.host}`;
 
 // ============================================
 // Game State

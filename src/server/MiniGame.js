@@ -9,6 +9,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { saveGameHistory } from './db.js';
 
 // Game type registry - agents can query this
 export const GAME_TYPES = {
@@ -187,6 +188,17 @@ export class MiniGame {
 
     // End in world state
     this.worldState.endGame(result, winnerId);
+
+    // Fire-and-forget DB write
+    saveGameHistory({
+      id: this.id,
+      type: this.type,
+      startTime: this.startTime,
+      result,
+      winnerId: winnerId || null,
+      playerCount: this.players.size,
+      scores: Object.fromEntries(this.scores)
+    });
 
     // Broadcast game ended
     this.broadcast('minigame_ended', {
