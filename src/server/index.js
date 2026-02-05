@@ -82,7 +82,10 @@ app.get('/api/me', requireAuth, async (req, res) => {
   const user = await findUser(req.user.id);
   if (!user) {
     // JWT is valid but user not in DB (no DB configured or dev mode)
-    return res.json({ id: req.user.id, name: 'Unknown', type: 'guest' });
+    const id = req.user.id;
+    const type = id.startsWith('guest-') ? 'guest' : 'authenticated';
+    const name = id.startsWith('guest-') ? `Guest-${id.split('-')[1]}` : id;
+    return res.json({ id, name, type });
   }
   res.json(user);
 });
