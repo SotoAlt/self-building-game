@@ -7,6 +7,20 @@
 import Colyseus from 'colyseus';
 const { Room } = Colyseus;
 
+function detectRequest(text) {
+  const lower = text.toLowerCase();
+  if (lower.includes('@agent')) {
+    if (/spawn|create|build|make|add/.test(lower)) return 'spawn';
+    if (/destroy|remove|delete|clear/.test(lower)) return 'destroy';
+    if (/gravity|physics|bounce|friction/.test(lower)) return 'physics';
+    if (/start|game|play|challenge/.test(lower)) return 'start_game';
+    if (/spell|cast|effect|curse/.test(lower)) return 'spell';
+    if (/help|easier|hard|difficult/.test(lower)) return 'difficulty';
+    return 'general';
+  }
+  return null;
+}
+
 export class GameRoom extends Room {
   // World state injected by server
   worldState = null;
@@ -16,6 +30,12 @@ export class GameRoom extends Room {
 
   // Rate limiting for chat
   _chatRateLimit = new Map();
+
+  _systemMessage(text) {
+    if (!this.worldState) return;
+    const message = this.worldState.addMessage('System', 'system', text);
+    this.broadcast('chat_message', message);
+  }
 
   onCreate(options) {
     console.log(`[GameRoom] Room created`);
@@ -40,19 +60,22 @@ export class GameRoom extends Room {
     // Player death
     this.onMessage('died', (client, data) => {
       if (this.worldState) {
+        const player = this.worldState.players.get(client.sessionId);
+        const name = player?.name || client.sessionId.slice(0, 8);
         this.worldState.updatePlayer(client.sessionId, { state: 'dead' });
 
-        // Record challenge attempt if relevant
         if (data.challengeId) {
           this.worldState.recordChallengeAttempt(data.challengeId);
         }
 
-        // Broadcast death event (for agent observation)
         this.broadcast('player_died', {
           id: client.sessionId,
           position: data.position,
           challengeId: data.challengeId
         });
+
+        this._systemMessage(`${name} died`);
+        this.worldState.addEvent('player_death', { playerId: client.sessionId, name });
 
         console.log(`[GameRoom] Player died: ${client.sessionId}`);
       }
@@ -61,12 +84,15 @@ export class GameRoom extends Room {
     // Player respawn
     this.onMessage('respawn', (client) => {
       if (this.worldState) {
+        const player = this.worldState.players.get(client.sessionId);
+        const name = player?.name || client.sessionId.slice(0, 8);
         this.worldState.updatePlayer(client.sessionId, {
           state: 'alive',
           position: [0, 2, 0]
         });
 
         this.broadcast('player_respawned', { id: client.sessionId });
+        this._systemMessage(`${name} respawned`);
       }
     });
 
@@ -132,6 +158,10 @@ export class GameRoom extends Room {
       const sender = player?.name || client.sessionId.slice(0, 8);
 
       const message = this.worldState.addMessage(sender, 'player', text);
+      const requestType = detectRequest(text);
+      if (requestType) {
+        message.requestType = requestType;
+      }
       this.broadcast('chat_message', message);
     });
 
@@ -146,6 +176,11 @@ export class GameRoom extends Room {
           name: player.name,
           ready
         });
+        if (ready) {
+          const readyCount = this.worldState.getReadyCount();
+          const total = this.worldState.players.size;
+          this._systemMessage(`${player.name} is ready (${readyCount}/${total})`);
+        }
       }
     });
 
@@ -163,14 +198,14 @@ export class GameRoom extends Room {
     if (this.worldState) {
       const player = this.worldState.addPlayer(client.sessionId, name, type);
 
-      // Send current state to new player
       client.send('init', {
         playerId: client.sessionId,
         worldState: this.worldState.getState()
       });
 
-      // Broadcast new player to others
       this.broadcast('player_joined', player, { except: client });
+      this._systemMessage(`${name} has entered the arena`);
+      this.worldState.addEvent('player_join', { playerId: client.sessionId, name, type });
     }
 
     console.log(`[GameRoom] ${name} joined (${type})`);
@@ -182,8 +217,9 @@ export class GameRoom extends Room {
       const name = player?.name || client.sessionId;
 
       this.worldState.removePlayer(client.sessionId);
-
       this.broadcast('player_left', { id: client.sessionId, name });
+      this._systemMessage(`${name} has left`);
+      this.worldState.addEvent('player_leave', { playerId: client.sessionId, name });
     }
 
     console.log(`[GameRoom] Player left: ${client.sessionId}`);

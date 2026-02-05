@@ -271,6 +271,15 @@ async function clear_spells() {
   return gameRequest('/api/spell/clear', 'POST', {});
 }
 
+/**
+ * Tool: get_context
+ * Get unified agent context (players, game state, chat, events, entities, physics)
+ * This is the primary polling tool - replaces calling multiple endpoints separately.
+ */
+async function get_context({ since_message = 0, since_event = 0 } = {}) {
+  return gameRequest(`/api/agent/context?since_message=${since_message}&since_event=${since_event}`);
+}
+
 // Export tools for OpenClaw
 export {
   spawn_entity,
@@ -289,5 +298,6 @@ export {
   send_chat_message,
   get_chat_messages,
   cast_spell,
-  clear_spells
+  clear_spells,
+  get_context
 };

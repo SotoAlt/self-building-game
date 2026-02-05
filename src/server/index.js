@@ -36,6 +36,38 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
+// Unified agent context (replaces multiple polls)
+app.get('/api/agent/context', (req, res) => {
+  const sinceMessage = parseInt(req.query.since_message) || 0;
+  const sinceEvent = parseInt(req.query.since_event) || 0;
+
+  const players = worldState.getPlayers().map(p => ({
+    id: p.id,
+    name: p.name,
+    position: p.position,
+    state: p.state,
+    ready: p.ready
+  }));
+
+  res.json({
+    players,
+    playerCount: players.length,
+    readyCount: worldState.getReadyCount(),
+    gameState: worldState.getGameState(),
+    entities: Array.from(worldState.entities.values()).map(e => ({
+      id: e.id,
+      type: e.type,
+      position: e.position
+    })),
+    entityCount: worldState.entities.size,
+    physics: { ...worldState.physics },
+    activeEffects: worldState.getActiveEffects(),
+    recentChat: worldState.getMessages(sinceMessage),
+    recentEvents: worldState.getEvents(sinceEvent),
+    leaderboard: worldState.getLeaderboard()
+  });
+});
+
 // Get full world state
 app.get('/api/world/state', (req, res) => {
   res.json(worldState.getState());
@@ -193,6 +225,11 @@ app.post('/api/game/start', (req, res) => {
     // Start the game
     currentMiniGame.start();
 
+    // System message + event
+    const startMsg = worldState.addMessage('System', 'system', `Game started: ${type}`);
+    broadcastToRoom('chat_message', startMsg);
+    worldState.addEvent('game_start', { type, gameId: currentMiniGame.id });
+
     res.json({
       success: true,
       gameId: currentMiniGame.id,
@@ -213,6 +250,13 @@ app.post('/api/game/end', (req, res) => {
   } else {
     worldState.endGame(result || 'cancelled', winnerId);
   }
+
+  // System message + event
+  const winnerPlayer = winnerId ? worldState.players.get(winnerId) : null;
+  const endText = winnerPlayer ? `Game ended - Winner: ${winnerPlayer.name}` : `Game ended: ${result || 'cancelled'}`;
+  const endMsg = worldState.addMessage('System', 'system', endText);
+  broadcastToRoom('chat_message', endMsg);
+  worldState.addEvent('game_end', { result: result || 'cancelled', winnerId });
 
   res.json({ success: true, gameState: worldState.getGameState() });
 });
@@ -283,6 +327,11 @@ app.post('/api/spell/cast', (req, res) => {
   try {
     const spell = worldState.castSpell(type, duration);
     broadcastToRoom('spell_cast', spell);
+
+    const spellMsg = worldState.addMessage('System', 'system', `Spell active: ${spell.name}`);
+    broadcastToRoom('chat_message', spellMsg);
+    worldState.addEvent('spell_cast', { type, name: spell.name });
+
     res.json({ success: true, spell });
   } catch (error) {
     res.status(400).json({ success: false, error: error.message });
@@ -338,6 +387,9 @@ httpServer.listen(PORT, () => {
 ║                                                           ║
 ║  HTTP API:    http://localhost:${PORT}/api                  ║
 ║  WebSocket:   ws://localhost:${PORT}                        ║
+║                                                           ║
+║  Agent Endpoint:                                          ║
+║    GET  /api/agent/context    - Unified agent context     ║
 ║                                                           ║
 ║  World Endpoints:                                         ║
 ║    GET  /api/health           - Server health             ║

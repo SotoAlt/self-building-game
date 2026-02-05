@@ -45,6 +45,10 @@ export class WorldState {
     // Active spells/effects
     this.activeEffects = [];
 
+    // Event log
+    this.events = [];
+    this._eventIdCounter = 0;
+
     // Game state machine
     this.gameState = {
       phase: 'lobby', // lobby, countdown, playing, ended
@@ -548,6 +552,21 @@ export class WorldState {
   clearEffects() {
     this.activeEffects = [];
     console.log('[WorldState] All effects cleared');
+  }
+
+  // ============================================
+  // Event Log
+  // ============================================
+
+  addEvent(type, data) {
+    const id = ++this._eventIdCounter;
+    this.events.push({ id, type, data, timestamp: Date.now() });
+    if (this.events.length > 100) this.events = this.events.slice(-100);
+    return id;
+  }
+
+  getEvents(since = 0) {
+    return since > 0 ? this.events.filter(e => e.id > since) : this.events.slice(-20);
   }
 
   // ============================================
