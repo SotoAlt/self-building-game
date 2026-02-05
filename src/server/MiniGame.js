@@ -66,10 +66,12 @@ export class MiniGame {
     this.tricks = [];
     this._trickIdCounter = 0;
 
-    // Time warnings
-    this._warned30 = false;
-    this._warned10 = false;
-    this._warned5 = false;
+    // Time warnings (data-driven to avoid repetitive boolean flags)
+    this._timeWarnings = [
+      { at: 30000, message: '30 SECONDS!' },
+      { at: 10000, message: '10 SECONDS!' },
+      { at: 5000, message: 'FINAL 5 SECONDS!' },
+    ];
   }
 
   // Start the game
@@ -122,9 +124,12 @@ export class MiniGame {
 
     // Time warnings
     const remaining = this.timeLimit - elapsed;
-    if (remaining <= 30000 && !this._warned30) { this.announce('30 SECONDS!', 'system'); this._warned30 = true; }
-    if (remaining <= 10000 && !this._warned10) { this.announce('10 SECONDS!', 'system'); this._warned10 = true; }
-    if (remaining <= 5000 && !this._warned5) { this.announce('FINAL 5 SECONDS!', 'system'); this._warned5 = true; }
+    for (const warning of this._timeWarnings) {
+      if (remaining <= warning.at && !warning.fired) {
+        this.announce(warning.message, 'system');
+        warning.fired = true;
+      }
+    }
 
     // Check win condition (to be overridden)
     const result = this.checkWinCondition();
@@ -232,6 +237,7 @@ export class MiniGame {
 
   // Cleanup game entities
   cleanup() {
+    const count = this.gameEntities.length;
     for (const entityId of this.gameEntities) {
       try {
         this.worldState.destroyEntity(entityId);
@@ -241,7 +247,7 @@ export class MiniGame {
       }
     }
     this.gameEntities = [];
-    console.log(`[MiniGame] Cleaned up ${this.gameEntities.length} entities`);
+    console.log(`[MiniGame] Cleaned up ${count} entities`);
   }
 
   // ============================================
@@ -304,7 +310,7 @@ export class MiniGame {
         const duration = trick.params.duration ?? 10000;
         const original = this.worldState.physics.gravity;
         this.worldState.setPhysics({ gravity: low });
-        this.announce('GRAVITY SHIFTS!', 'system');
+        this.announce(trick.params.message || 'GRAVITY SHIFTS!', 'system');
         this.broadcast('physics_changed', this.worldState.physics);
         setTimeout(() => {
           if (this.isActive) {

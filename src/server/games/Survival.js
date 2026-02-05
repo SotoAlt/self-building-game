@@ -40,8 +40,8 @@ export class Survival extends MiniGame {
     this.addTrick({ type: 'time', at: 45000 }, 'shrink_platform');
     // Hazard wave at 60s
     this.addTrick({ type: 'time', at: 60000 }, 'hazard_wave');
-    // Brief gravity flip every 30s
-    this.addTrick({ type: 'interval', every: 30000 }, 'gravity_flip');
+    // Brief gravity flip every 30s (uses built-in flip_gravity with custom message)
+    this.addTrick({ type: 'interval', every: 30000 }, 'flip_gravity', { message: 'LOW GRAVITY!' });
   }
 
   update(delta) {
@@ -147,20 +147,6 @@ export class Survival extends MiniGame {
             this.broadcast('entity_destroyed', { id: safeZone.id });
             if (this.isActive) this.announce('The safe zone crumbles...', 'system');
           } catch (e) { /* already gone */ }
-        }, duration);
-        break;
-      }
-      case 'gravity_flip': {
-        const duration = trick.params.duration || 10000;
-        const original = this.worldState.physics.gravity;
-        this.worldState.setPhysics({ gravity: -3 });
-        this.broadcast('physics_changed', this.worldState.physics);
-        this.announce('LOW GRAVITY!', 'system');
-        setTimeout(() => {
-          if (this.isActive) {
-            this.worldState.setPhysics({ gravity: original });
-            this.broadcast('physics_changed', this.worldState.physics);
-          }
         }, duration);
         break;
       }

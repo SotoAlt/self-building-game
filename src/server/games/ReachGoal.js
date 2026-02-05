@@ -142,9 +142,7 @@ export class ReachGoal extends MiniGame {
   // Handle player touching the goal (called from server when trigger activated)
   onPlayerReachedGoal(playerId) {
     if (!this.isActive) return;
-
-    const result = { type: 'win', winnerId: playerId };
-    this.end(result.type, result.winnerId);
+    this.end('win', playerId);
   }
 
   getResultMessage(result, winnerId) {

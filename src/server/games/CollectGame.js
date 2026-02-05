@@ -7,6 +7,10 @@
 
 import { MiniGame } from '../MiniGame.js';
 
+function randomInRange(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
 export class CollectGame extends MiniGame {
   constructor(worldState, broadcastFn, config = {}) {
     super(worldState, broadcastFn, { ...config, type: 'collect' });
@@ -22,9 +26,9 @@ export class CollectGame extends MiniGame {
     // Spawn collectibles
     for (let i = 0; i < this.collectibleCount; i++) {
       const position = [
-        this.randomInRange(this.spawnArea.x[0], this.spawnArea.x[1]),
-        this.randomInRange(this.spawnArea.y[0], this.spawnArea.y[1]),
-        this.randomInRange(this.spawnArea.z[0], this.spawnArea.z[1])
+        randomInRange(this.spawnArea.x[0], this.spawnArea.x[1]),
+        randomInRange(this.spawnArea.y[0], this.spawnArea.y[1]),
+        randomInRange(this.spawnArea.z[0], this.spawnArea.z[1])
       ];
 
       const collectible = this.spawnEntity('collectible', position, [1, 1, 1], {
@@ -50,10 +54,6 @@ export class CollectGame extends MiniGame {
     this.addTrick({ type: 'interval', every: 20000 }, 'announce_remaining');
   }
 
-  randomInRange(min, max) {
-    return Math.random() * (max - min) + min;
-  }
-
   executeTrickAction(trick) {
     switch (trick.action) {
       case 'scatter': {
@@ -62,9 +62,9 @@ export class CollectGame extends MiniGame {
           const entity = this.worldState.entities.get(id);
           if (!entity) continue;
           const newPos = [
-            this.randomInRange(this.spawnArea.x[0], this.spawnArea.x[1]),
-            this.randomInRange(this.spawnArea.y[0], this.spawnArea.y[1]),
-            this.randomInRange(this.spawnArea.z[0], this.spawnArea.z[1])
+            randomInRange(this.spawnArea.x[0], this.spawnArea.x[1]),
+            randomInRange(this.spawnArea.y[0], this.spawnArea.y[1]),
+            randomInRange(this.spawnArea.z[0], this.spawnArea.z[1])
           ];
           this.worldState.modifyEntity(id, { position: newPos });
           this.broadcast('entity_modified', entity);
@@ -76,9 +76,9 @@ export class CollectGame extends MiniGame {
         const count = trick.params.count || 3;
         for (let i = 0; i < count; i++) {
           const pos = [
-            this.randomInRange(this.spawnArea.x[0], this.spawnArea.x[1]),
-            this.randomInRange(this.spawnArea.y[0], this.spawnArea.y[1]),
-            this.randomInRange(this.spawnArea.z[0], this.spawnArea.z[1])
+            randomInRange(this.spawnArea.x[0], this.spawnArea.x[1]),
+            randomInRange(this.spawnArea.y[0], this.spawnArea.y[1]),
+            randomInRange(this.spawnArea.z[0], this.spawnArea.z[1])
           ];
           const bonus = this.spawnEntity('collectible', pos, [1.5, 1.5, 1.5], {
             color: '#f39c12',
@@ -94,9 +94,9 @@ export class CollectGame extends MiniGame {
         const count = trick.params.count || 3;
         for (let i = 0; i < count; i++) {
           const pos = [
-            this.randomInRange(this.spawnArea.x[0], this.spawnArea.x[1]),
-            this.randomInRange(this.spawnArea.y[0], this.spawnArea.y[1]),
-            this.randomInRange(this.spawnArea.z[0], this.spawnArea.z[1])
+            randomInRange(this.spawnArea.x[0], this.spawnArea.x[1]),
+            randomInRange(this.spawnArea.y[0], this.spawnArea.y[1]),
+            randomInRange(this.spawnArea.z[0], this.spawnArea.z[1])
           ];
           this.spawnEntity('collectible', pos, [1, 1, 1], {
             color: '#e74c3c',
