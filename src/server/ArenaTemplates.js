@@ -9,6 +9,7 @@ export const TEMPLATES = {
   spiral_tower: {
     name: 'Spiral of Madness',
     gameType: 'reach',
+    floorType: 'solid',
     respawnPoint: [0, 2, 0],
     goalPosition: [0, 28, 0],
     entities: [
@@ -36,6 +37,7 @@ export const TEMPLATES = {
   floating_islands: {
     name: 'Sky Islands',
     gameType: 'collect',
+    floorType: 'none',
     respawnPoint: [0, 6, 0],
     goalPosition: null,
     entities: [
@@ -73,6 +75,7 @@ export const TEMPLATES = {
   gauntlet: {
     name: 'The Gauntlet',
     gameType: 'reach',
+    floorType: 'lava',
     respawnPoint: [0, 2, 20],
     goalPosition: [0, 5, -40],
     entities: [
@@ -104,6 +107,7 @@ export const TEMPLATES = {
   shrinking_arena: {
     name: 'Closing Walls',
     gameType: 'survival',
+    floorType: 'solid',
     respawnPoint: [0, 2, 0],
     goalPosition: null,
     entities: [
@@ -125,6 +129,7 @@ export const TEMPLATES = {
   parkour_hell: {
     name: 'Parkour Hell',
     gameType: 'reach',
+    floorType: 'none',
     respawnPoint: [0, 2, 25],
     goalPosition: [0, 40, -25],
     entities: [

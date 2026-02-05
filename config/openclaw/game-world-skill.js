@@ -387,6 +387,22 @@ async function start_building() {
 }
 
 /**
+ * Tool: set_floor
+ * Set the floor type. 'solid' = normal ground, 'none' = abyss (void), 'lava' = kills on contact.
+ * Use 'none' to make platforms the only safe ground. Use 'lava' for dramatic moments.
+ */
+async function set_floor({ type }) {
+  if (!type) {
+    return { success: false, error: 'Missing required parameter: type' };
+  }
+  const valid = ['solid', 'none', 'lava'];
+  if (!valid.includes(type)) {
+    return { success: false, error: `Invalid floor type. Must be one of: ${valid.join(', ')}` };
+  }
+  return gameRequest('/api/world/floor', 'POST', { type });
+}
+
+/**
  * Tool: check_bribes
  * Check pending bribes from players. Decide whether to honor them.
  */
@@ -396,29 +412,36 @@ async function check_bribes() {
 
 // Export tools for OpenClaw
 export {
+  // World management
   spawn_entity,
   modify_entity,
   destroy_entity,
   set_physics,
+  set_floor,
+  set_respawn,
+  clear_world,
+  load_template,
   get_world_state,
   get_player_positions,
-  create_challenge,
-  get_challenge_status,
-  announce,
+  // Game lifecycle
   get_game_types,
   start_game,
   end_game,
   get_game_state,
+  start_building,
+  add_trick,
+  // Challenges
+  create_challenge,
+  get_challenge_status,
+  // Communication
+  announce,
   send_chat_message,
   get_chat_messages,
+  // Spells
   cast_spell,
   clear_spells,
-  add_trick,
+  // Agent context
   get_context,
-  clear_world,
-  load_template,
-  set_respawn,
   get_drama_score,
-  start_building,
   check_bribes
 };

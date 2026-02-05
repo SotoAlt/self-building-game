@@ -334,7 +334,7 @@
       from { opacity: 0; transform: translateX(20px); }
       to { opacity: 1; transform: translateX(0); }
     }
-    /* Bribe panel */
+    /* Debug panel */
     #debug-panel {
       position: fixed;
       top: 20px;
@@ -371,6 +371,77 @@
       color: #f1c40f;
       font-size: 11px;
       margin-top: 4px;
+    }
+    /* Bribe modal */
+    #bribe-modal {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .bribe-modal-content {
+      background: #1a1a2e;
+      border: 1px solid rgba(243,156,18,0.4);
+      border-radius: 12px;
+      padding: 20px;
+      min-width: 300px;
+      max-width: 380px;
+    }
+    .bribe-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .bribe-modal-header h3 {
+      color: #f39c12;
+      font-size: 16px;
+      margin: 0;
+    }
+    .bribe-modal-close {
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 20px;
+      cursor: pointer;
+    }
+    .bribe-modal-close:hover { color: white; }
+    .bribe-option {
+      display: flex;
+      flex-wrap: wrap;
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      color: white;
+      text-align: left;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .bribe-option:hover {
+      background: rgba(243,156,18,0.15);
+      border-color: rgba(243,156,18,0.4);
+    }
+    .bribe-opt-label {
+      font-weight: 600;
+      font-size: 13px;
+      flex: 1;
+    }
+    .bribe-opt-cost {
+      color: #f1c40f;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .bribe-opt-desc {
+      width: 100%;
+      font-size: 11px;
+      color: #888;
+      margin-top: 2px;
     }
     /* Crosshair for pointer lock */
     #crosshair {
@@ -434,6 +505,15 @@
   <div id="bribe-panel" style="display:none">
     <button id="btn-bribe" class="bribe-btn">Bribe the Magician</button>
     <div id="bribe-balance" class="bribe-balance"></div>
+  </div>
+  <div id="bribe-modal" style="display:none">
+    <div class="bribe-modal-content">
+      <div class="bribe-modal-header">
+        <h3>Bribe the Magician</h3>
+        <button id="bribe-close" class="bribe-modal-close">&times;</button>
+      </div>
+      <div id="bribe-options-list"></div>
+    </div>
   </div>
   <div id="ready-indicator">Press R to ready up</div>
   <div id="debug-panel" style="display:none">

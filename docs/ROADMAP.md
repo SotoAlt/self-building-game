@@ -5,7 +5,7 @@
 2-week sprint to hackathon demo. AI "Chaos Magician" builds a 3D multiplayer game in real-time.
 
 **Stack**: Three.js + Colyseus + OpenClaw (Agent Framework)
-**Decision**: Hyperfy was evaluated Day 1 but rejected due to physics limitations. Three.js + Colyseus selected for full control.
+**Production**: https://chaos.waweapps.win
 
 ---
 
@@ -23,8 +23,6 @@
 - [x] OpenClaw game-world skill with 13 tools
 - [x] Chaos Magician persona installed (SOUL.md)
 
-**Validation**: Agent spawns platform via Telegram command, appears in 3D world.
-
 ---
 
 ## Phase 2: Core Loop (Days 2-3) - COMPLETE
@@ -36,121 +34,149 @@
 - [x] Vite dev server for hot-reload development
 - [x] Remote player rendering (colored capsules + name labels)
 - [x] WebSocket reconnection with polling backup
-- [x] One-way announcements (agent -> players, CSS-animated overlays)
+- [x] Announcements (agent -> players, CSS-animated overlays)
 - [x] Game state machine: lobby -> countdown -> playing -> ended
 - [x] 3 mini-games: ReachGoal, CollectGame, Survival
 - [x] Mini-game framework with shared base class
-- [x] Agent successfully spawns entities and starts games via Telegram
-
-**Validation**: Full end-to-end loop working. Agent controls world, players see changes in real-time.
 
 ---
 
-## Phase 3: Agent Chat, Multiplayer Polish & Game Mechanics (Days 3-4) - IN PROGRESS
-
-*Started Feb 4, 2026*
-
-### Priority 1: Player <-> Agent Chat
-- [x] Chat message storage in WorldState (last 50 messages)
-- [x] WebSocket chat handler with rate limiting (1/sec, 200 char max)
-- [x] HTTP endpoints for agent: GET /api/chat/messages, POST /api/chat/send
-- [x] Chat panel UI (bottom-left, color-coded by sender type)
-- [x] @agent mention highlighting
-- [x] Enter to focus chat, Escape to blur, keyboard isolation
-- [x] Agent skill: send_chat_message, get_chat_messages tools
-
-### Priority 2: Multiplayer Polish
-- [x] Remote player interpolation (lerp toward target, no jitter)
-- [x] Mouse look camera (pointer lock, orbit, scroll zoom)
-- [x] Camera-relative WASD movement
-- [x] Player ready system (R key toggle, server broadcast)
-
-### Priority 3: Richer Game Mechanics
-- [x] Moving/kinematic platforms (path waypoints, ping-pong, speed control)
-- [x] Player carried by moving platforms (velocity tracking)
-- [x] Wall-slide collision (separate X/Z push-out, not full stop)
-- [x] Score & leaderboard (top 10, wins tracking)
-- [x] Leaderboard panel UI (top-right, auto-refresh)
-
-### Priority 4: Documentation
-- [x] ROADMAP.md rewritten with actual progress
-
-### Priority 5: Agent Context & Event System
-- [x] Unified /api/agent/context endpoint (single-poll agent loop)
-- [x] System messages for player join/leave/death/respawn/ready
-- [x] @agent mention detection with request type classification
-- [x] Event log system in WorldState
-- [x] get_context tool for agent skill
-
-### Priority 6: Trick System (Agent as Game Director)
-- [x] Trick system in MiniGame base class (addTrick, processTricks, triggers)
-- [x] Time warnings (30s, 10s, 5s remaining)
-- [x] ReachGoal tricks: move_goal, spawn_obstacles, spawn_shortcut + defaults
-- [x] CollectGame tricks: scatter, spawn_bonus, spawn_decoys + defaults
-- [x] Survival tricks: shrink_platform, hazard_wave, safe_zone, gravity_flip + defaults
-- [x] POST /api/game/trick endpoint for mid-game trick injection
-- [x] add_trick tool in agent skill
-- [x] AGENTS.md updated with trick documentation
-
-### Remaining / To Verify
-- [ ] Test 2-tab multiplayer with smooth interpolation
-- [ ] Test kinematic platform with ReachGoal game
-- [ ] Leaderboard recording on game end (integrate with mini-game results)
-
----
-
-## Phase 3.5: Deployment Prep & Persistence (Day 5) - COMPLETE
+## Phase 3: Agent Chat, Multiplayer & Mechanics (Days 3-4) - COMPLETE
 
 *Completed Feb 4, 2026*
 
-### Deployment
-- [x] Dynamic client URL detection (auto ws/wss, localhost fallback)
-- [x] Production static file serving (Express serves dist/ in production)
-- [x] SPA catch-all for non-API routes
-- [x] `npm start` script for production
-- [x] Multi-stage Dockerfile (build + runtime)
-- [x] docker-compose.yml (game server + PostgreSQL)
-- [x] .env.example with environment documentation
-
-### PostgreSQL Persistence
-- [x] Database module (src/server/db.js) with auto-schema creation
-- [x] Graceful fallback: no DATABASE_URL = in-memory only (dev still works)
-- [x] Users table with upsert on join
-- [x] Leaderboard table with DB-backed persistence
-- [x] Game history table saved on mini-game end
-- [x] Leaderboard hydrated from DB on startup
-- [x] All DB writes are fire-and-forget (non-blocking)
-- [x] GET /api/stats endpoint (games, players, uptime)
-
-### Documentation
-- [x] README.md rewritten for hackathon submission
-- [x] ROADMAP.md updated
+- [x] Chat system with rate limiting, @agent mentions
+- [x] Mouse look camera with pointer lock and orbit zoom
+- [x] Camera-relative WASD movement
+- [x] Player ready system (R key toggle)
+- [x] Moving/kinematic platforms with waypoints
+- [x] Score & leaderboard (top 10, wins tracking)
+- [x] Unified /api/agent/context endpoint
+- [x] Trick system (time/score/death/interval triggers)
+- [x] Game-specific tricks for each mini-game type
 
 ---
 
-## Phase 4: AI Players & Streaming (Days 5-8)
+## Phase 3.5: Deployment & Persistence (Day 5) - COMPLETE
 
-### AI Player Agents
-- [ ] Player agent architecture (Explorer, Chaotic personalities)
-- [ ] AI player movement commands (pathfinding or simple goal-seeking)
-- [ ] AI player avatars visible in world
-- [ ] Agent observes AI player behavior for adaptation
+*Completed Feb 4, 2026*
 
-### Streaming Integration
-- [ ] OBS scene layout (game + agent reasoning + chat)
-- [ ] Chaos Magician avatar overlay
-- [ ] Agent commentary output for stream overlay
-- [ ] Twitch/YouTube chat integration (viewer suggestions)
+- [x] Production deployment (Docker + nginx + SSL)
+- [x] PostgreSQL persistence with graceful fallback
+- [x] Database tables: users, leaderboard, game_history
+- [x] README.md for hackathon submission
 
 ---
 
-## Phase 5: Polish & Demo (Days 9-14)
+## Phase 4: AI Players, Streaming & Lifecycle (Days 5-7) - COMPLETE
 
-- [ ] Bug bash and stability testing
-- [ ] 30-minute stability test
-- [ ] Demo video recording (backup)
-- [ ] Presentation slides
-- [ ] First public stream
+*Completed Feb 5, 2026*
+
+### AI Players
+- [x] 3 personality types: Explorer, Chaos Bot, Tryhard
+- [x] Goal-seeking movement with platform collision
+- [x] AI player avatars visible in world
+- [x] Runtime toggle (API + debug panel)
+
+### Streaming
+- [x] SSE event feed for OBS overlays
+- [x] Spectator mode with free camera + player follow (1-9 keys)
+- [x] Drama meter + agent phase indicator overlays
+
+### Game Lifecycle
+- [x] Phase guards on 6 endpoints (prevent actions during active games)
+- [x] 8-second cooldown between games
+- [x] Agent auto-pause when 0 human players
+- [x] Building phase in state machine
+
+### Production Fixes
+- [x] Leaderboard recording on game end
+- [x] Drama score initialization fix
+- [x] Death loop prevention (2s cooldown + invulnerability)
+- [x] Agent interval tuning (15-45s)
+- [x] Agent kill switch (pause/resume endpoints)
+
+### Auth
+- [x] Privy authentication (Twitter OAuth + guest mode)
+- [x] JWT token exchange
+
+---
+
+## Phase 5: VFX & Game Feel - IN PROGRESS
+
+### Camera Effects
+- [ ] Camera shake on death, spell cast, countdown
+- [ ] Screen flash on win/lose
+
+### Enhanced Particles
+- [ ] Death: larger burst with red/orange, 30+ particles
+- [ ] Collection: golden sparkle trail
+- [ ] Spell activation: colored vortex
+- [ ] Game start: confetti burst
+- [ ] Lava contact: fire particles
+
+### Screen Effects
+- [ ] Speed boost: motion blur vignette
+- [ ] Low gravity: floating dust particles
+- [ ] Game win: golden flash
+- [ ] Game lose: red flash + desaturate
+
+### Sound
+- [ ] Countdown beeps (3, 2, 1, GO!)
+- [ ] Game win fanfare
+- [ ] Spell cast whoosh
+- [ ] Ambient hum with time-based intensity
+
+---
+
+## Phase 6: World Dynamics
+
+### Floor System
+- [ ] Floor types: none (abyss), solid, lava
+- [ ] Lava floor rendering (animated red/orange plane with glow)
+- [ ] Server `POST /api/world/floor` endpoint
+- [ ] Agent `set_floor` tool
+- [ ] Arena templates define floor types
+
+### Dynamic World
+- [ ] Agent can toggle ground on/off mid-game
+- [ ] Platforms as the only safe ground in abyss mode
+- [ ] Lava = death with fire particles
+
+---
+
+## Phase 7: Bribe System Polish
+
+- [ ] Predefined bribe options with token costs
+- [ ] Auto-execute simple bribes server-side
+- [ ] Queue complex bribes for agent
+- [ ] Bribe UI with dropdown/modal and confirmation
+- [ ] Bribe history tracking per player
+
+---
+
+## Phase 8: Auth & DB Testing
+
+- [ ] Fix production DB password persistence
+- [ ] Test Twitter OAuth login on production
+- [ ] Test guest login on production
+- [ ] Verify users table populated
+- [ ] Verify leaderboard persists across restarts
+
+---
+
+## Phase 9: Blockchain & Credits (Future)
+
+### Persistent Inventory (Design)
+- [ ] Schema: userId, itemType, itemId, quantity, acquiredAt
+- [ ] Cosmetic items (colors, trails, titles)
+- [ ] Items earned through gameplay
+
+### Credits System (Architecture)
+- [ ] Privy Solana embedded wallets
+- [ ] USDC purchase flow → backend credit balance
+- [ ] In-game spending deducts from balance
+- [ ] On-chain transaction verification
 
 ---
 
@@ -160,43 +186,49 @@
 |-----|-----------|--------|
 | 2 | Agent -> World bridge | DONE |
 | 3 | Core game loop | DONE |
-| 4 | Chat + multiplayer polish | DONE |
-| 4 | Agent context + trick system | DONE |
-| 5 | Deployment prep + PostgreSQL | DONE |
-| 5-8 | AI players + streaming | TODO |
-| 9-14 | Polish + demo | TODO |
+| 4 | Chat + multiplayer + tricks | DONE |
+| 5 | Deployment + PostgreSQL | DONE |
+| 5-7 | AI players + streaming + lifecycle | DONE |
+| 7-8 | VFX & game feel | IN PROGRESS |
+| 8-9 | World dynamics (abyss/lava) | TODO |
+| 9-10 | Bribe system polish | TODO |
+| 10-11 | Auth & DB testing | TODO |
+| 12-14 | Demo prep + first stream | TODO |
 
 ---
 
 ## Architecture
 
 ```
-Browser Client (Three.js)
+Browser Client (Three.js + Colyseus)
     |
-    | WebSocket (Colyseus)
+    | WebSocket (real-time sync)
     |
 Game Server (Express + Colyseus, port 3000)
-    |           |
-    | HTTP API  | PostgreSQL
-    |           |
+    |           |            |
+    | HTTP API  | PostgreSQL | SSE Stream
+    |           |            |
 OpenClaw Agent (Chaos Magician)
     |
-    | Telegram
+    | AgentLoop.js (drama-based scheduling)
     |
-Human Operator / Viewers
+Kimi K2.5 via OpenClaw Gateway
 ```
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| src/server/index.js | Express API + Colyseus server + game loop |
-| src/server/WorldState.js | Source of truth: entities, players, physics, chat, leaderboard |
+| src/server/index.js | Express API (40+ endpoints) + Colyseus server |
+| src/server/WorldState.js | Entities, players, physics, chat, leaderboard, spells |
 | src/server/GameRoom.js | Colyseus room: player sync, chat, ready system |
 | src/server/MiniGame.js | Mini-game base class with trick system |
+| src/server/AgentLoop.js | Drama score + autonomous agent scheduling |
+| src/server/AIPlayer.js | 3 AI bot personality types |
+| src/server/ArenaTemplates.js | 5 pre-built arena layouts |
+| src/server/auth.js | Privy JWT verification |
 | src/server/db.js | PostgreSQL persistence with graceful fallback |
-| src/server/games/ | Mini-game implementations |
-| src/client/main.js | Three.js client: rendering, input, camera, chat UI |
-| index.html | Game HTML with chat panel, leaderboard, announcements |
-| config/openclaw/ | Agent skill definition (19 tools) |
-| docs/ | Documentation |
+| src/server/games/ | ReachGoal, CollectGame, Survival implementations |
+| src/client/main.js | Three.js client: rendering, input, camera, UI |
+| index.html | Game HTML with all UI panels |
+| config/openclaw/ | Agent skill (25 tools) + SOUL.md personality |

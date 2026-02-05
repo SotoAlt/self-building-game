@@ -53,6 +53,9 @@ export class WorldState {
     // Respawn point (agent-configurable)
     this.respawnPoint = [0, 2, 0];
 
+    // Floor type: 'solid', 'none' (abyss), 'lava'
+    this.floorType = 'solid';
+
     // Game state machine
     this.gameState = {
       phase: 'lobby', // lobby, building, countdown, playing, ended
@@ -133,9 +136,20 @@ export class WorldState {
     const ids = [...this.entities.keys()];
     this.entities.clear();
     this.physics = { gravity: -9.8, friction: 0.3, bounce: 0.5 };
+    this.floorType = 'solid';
     this.clearEffects();
     console.log(`[WorldState] Cleared ${ids.length} entities`);
     return ids;
+  }
+
+  setFloorType(type) {
+    const valid = ['solid', 'none', 'lava'];
+    if (!valid.includes(type)) {
+      throw new Error(`Invalid floor type: ${type}. Must be one of: ${valid.join(', ')}`);
+    }
+    this.floorType = type;
+    console.log(`[WorldState] Floor type set to: ${type}`);
+    return this.floorType;
   }
 
   setRespawnPoint(position) {
@@ -678,6 +692,7 @@ export class WorldState {
       gameState: this.getGameState(),
       activeEffects: this.getActiveEffects(),
       announcements: this.getAnnouncements(),
+      floorType: this.floorType,
       statistics: {
         ...this.statistics,
         totalEntities: this.entities.size,

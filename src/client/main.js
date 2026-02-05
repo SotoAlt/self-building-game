@@ -139,6 +139,34 @@ scene.add(ground);
 const gridHelper = new THREE.GridHelper(200, 50, 0x444444, 0x333333);
 scene.add(gridHelper);
 
+// Lava floor plane (hidden by default)
+const lavaGeometry = new THREE.PlaneGeometry(200, 200, 20, 20);
+const lavaMaterial = new THREE.MeshStandardMaterial({
+  color: 0xe74c3c,
+  emissive: 0xff4500,
+  emissiveIntensity: 0.6,
+  roughness: 0.3,
+  metalness: 0.1,
+  transparent: true,
+  opacity: 0.9
+});
+const lavaFloor = new THREE.Mesh(lavaGeometry, lavaMaterial);
+lavaFloor.rotation.x = -Math.PI / 2;
+lavaFloor.position.y = -0.5;
+lavaFloor.visible = false;
+scene.add(lavaFloor);
+
+// Current floor type tracked on client
+let currentFloorType = 'solid';
+
+function setFloorType(type) {
+  currentFloorType = type;
+  ground.visible = type === 'solid';
+  gridHelper.visible = type === 'solid';
+  lavaFloor.visible = type === 'lava';
+  console.log(`[Floor] Type changed to: ${type}`);
+}
+
 // ============================================
 // Mouse Look Camera
 // ============================================
@@ -194,10 +222,11 @@ function updateCamera() {
   const offsetY = Math.sin(cameraPitch) * cameraDistance;
   const offsetZ = Math.cos(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
 
+  updateCameraShake();
   camera.position.set(
-    target.x + offsetX,
-    target.y + offsetY + 2,
-    target.z + offsetZ
+    target.x + offsetX + cameraShake.offset.x,
+    target.y + offsetY + 2 + cameraShake.offset.y,
+    target.z + offsetZ + cameraShake.offset.z
   );
   camera.lookAt(target.x, target.y + 1, target.z);
 }
@@ -440,6 +469,64 @@ function updateParticles() {
 }
 
 // ============================================
+// Camera Shake System
+// ============================================
+const cameraShake = { intensity: 0, duration: 0, startTime: 0, offset: new THREE.Vector3() };
+
+function triggerCameraShake(intensity, duration) {
+  cameraShake.intensity = intensity;
+  cameraShake.duration = duration;
+  cameraShake.startTime = Date.now();
+}
+
+function updateCameraShake() {
+  const elapsed = Date.now() - cameraShake.startTime;
+  if (elapsed >= cameraShake.duration) {
+    cameraShake.offset.set(0, 0, 0);
+    return;
+  }
+  const decay = 1 - elapsed / cameraShake.duration;
+  const i = cameraShake.intensity * decay;
+  cameraShake.offset.set(
+    (Math.random() - 0.5) * i,
+    (Math.random() - 0.5) * i,
+    (Math.random() - 0.5) * i
+  );
+}
+
+// ============================================
+// Screen Effects
+// ============================================
+
+function createOverlay(zIndex) {
+  const el = document.createElement('div');
+  el.style.cssText = `position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:${zIndex};opacity:0;transition:opacity 0.3s;`;
+  document.body.appendChild(el);
+  return el;
+}
+
+let screenFlashEl = null;
+let vignetteEl = null;
+
+function screenFlash(color, duration = 300) {
+  if (!screenFlashEl) screenFlashEl = createOverlay(300);
+  screenFlashEl.style.background = color;
+  screenFlashEl.style.transition = 'none';
+  screenFlashEl.style.opacity = '0.4';
+  requestAnimationFrame(() => {
+    screenFlashEl.style.transition = `opacity ${duration}ms`;
+    screenFlashEl.style.opacity = '0';
+  });
+}
+
+function showVignette(color, duration = 2000) {
+  if (!vignetteEl) vignetteEl = createOverlay(299);
+  vignetteEl.style.background = `radial-gradient(ellipse at center, transparent 50%, ${color} 100%)`;
+  vignetteEl.style.opacity = '0.6';
+  setTimeout(() => { vignetteEl.style.opacity = '0'; }, duration);
+}
+
+// ============================================
 // Procedural Sound Effects
 // ============================================
 let audioCtx = null;
@@ -451,57 +538,100 @@ function getAudioCtx() {
   return audioCtx;
 }
 
+function createTone(waveType) {
+  const ctx = getAudioCtx();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = waveType;
+  return { ctx, osc, gain, t: ctx.currentTime };
+}
+
+function playSound(fn) {
+  try { fn(); } catch { /* audio not available */ }
+}
+
 function playJumpSound() {
-  try {
-    const ctx = getAudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(300, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.1);
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.15);
-  } catch { /* audio not available */ }
+  playSound(() => {
+    const { osc, gain, t } = createTone('sine');
+    osc.frequency.setValueAtTime(300, t);
+    osc.frequency.exponentialRampToValueAtTime(600, t + 0.1);
+    gain.gain.setValueAtTime(0.15, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    osc.start(t);
+    osc.stop(t + 0.15);
+  });
 }
 
 function playDeathSound() {
-  try {
-    const ctx = getAudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(400, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.5);
-    gain.gain.setValueAtTime(0.12, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.5);
-  } catch { /* audio not available */ }
+  playSound(() => {
+    const { osc, gain, t } = createTone('sawtooth');
+    osc.frequency.setValueAtTime(400, t);
+    osc.frequency.exponentialRampToValueAtTime(80, t + 0.5);
+    gain.gain.setValueAtTime(0.12, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    osc.start(t);
+    osc.stop(t + 0.5);
+  });
 }
 
 function playCollectSound() {
-  try {
-    const ctx = getAudioCtx();
+  playSound(() => {
     const notes = [523, 659, 784]; // C5, E5, G5 arpeggio
     notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'sine';
+      const { osc, gain, t } = createTone('sine');
       osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.1, ctx.currentTime + i * 0.08);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.08 + 0.2);
-      osc.start(ctx.currentTime + i * 0.08);
-      osc.stop(ctx.currentTime + i * 0.08 + 0.2);
+      gain.gain.setValueAtTime(0.1, t + i * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.2);
+      osc.start(t + i * 0.08);
+      osc.stop(t + i * 0.08 + 0.2);
     });
-  } catch { /* audio not available */ }
+  });
+}
+
+function playCountdownBeep(pitch = 440) {
+  playSound(() => {
+    const { osc, gain, t } = createTone('square');
+    osc.frequency.value = pitch;
+    gain.gain.setValueAtTime(0.08, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    osc.start(t);
+    osc.stop(t + 0.2);
+  });
+}
+
+function playWinFanfare() {
+  playSound(() => {
+    const notes = [523, 659, 784, 1047]; // C5, E5, G5, C6
+    notes.forEach((freq, i) => {
+      const { osc, gain, t } = createTone('sine');
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.12, t + i * 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 0.4);
+      osc.start(t + i * 0.12);
+      osc.stop(t + i * 0.12 + 0.4);
+    });
+  });
+}
+
+function playSpellSound() {
+  playSound(() => {
+    const { ctx, osc, gain, t } = createTone('sawtooth');
+    const filter = ctx.createBiquadFilter();
+    osc.disconnect();
+    osc.connect(filter);
+    filter.connect(gain);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(2000, t);
+    filter.frequency.exponentialRampToValueAtTime(200, t + 0.4);
+    osc.frequency.setValueAtTime(800, t);
+    osc.frequency.exponentialRampToValueAtTime(200, t + 0.4);
+    gain.gain.setValueAtTime(0.08, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    osc.start(t);
+    osc.stop(t + 0.4);
+  });
 }
 
 // ============================================
@@ -604,7 +734,8 @@ function checkCollisions() {
 
 function collectItem(entity) {
   sendToServer('collect', { entityId: entity.id });
-  spawnParticles(entity.position, '#f1c40f', 15, 4);
+  spawnParticles(entity.position, '#f1c40f', 20, 4);
+  spawnParticles(entity.position, '#ffffff', 8, 2); // golden sparkle trail
   playCollectSound();
   removeEntity(entity.id);
   console.log(`[Collect] Picked up ${entity.id}`);
@@ -629,8 +760,12 @@ function playerDie() {
 
   sendToServer('died', { position: playerMesh.position.toArray() });
 
-  spawnParticles(playerMesh.position, '#e74c3c', 30, 8);
+  // Enhanced death VFX
+  spawnParticles(playerMesh.position, '#e74c3c', 35, 8);
+  spawnParticles(playerMesh.position, '#ff6600', 15, 5);
   playDeathSound();
+  triggerCameraShake(0.5, 300);
+  screenFlash('#e74c3c', 400);
 
   playerMesh.material.color.setHex(0xff0000);
   playerMesh.material.emissive.setHex(0xff0000);
@@ -739,13 +874,19 @@ function updatePlayer(delta) {
   playerMesh.position.y += playerVelocity.y * delta;
   playerMesh.position.z += playerVelocity.z * delta;
 
-  // Ground collision — void death during active games
-  const groundActive = state.gameState.phase === 'lobby' || state.gameState.phase === 'building';
+  // Ground collision — depends on floor type and game phase
+  const inSafePhase = state.gameState.phase === 'lobby' || state.gameState.phase === 'building';
   const invulnerable = Date.now() < respawnInvulnUntil;
-  if ((groundActive || invulnerable) && playerMesh.position.y < 1) {
+  const hasSolidFloor = currentFloorType === 'solid' || (inSafePhase && currentFloorType !== 'lava');
+
+  if ((hasSolidFloor || invulnerable) && playerMesh.position.y < 1) {
     playerMesh.position.y = 1;
     playerVelocity.y = 0;
     isGrounded = true;
+  } else if (currentFloorType === 'lava' && playerMesh.position.y < 0) {
+    spawnParticles(playerMesh.position, '#ff4500', 20, 6);
+    spawnParticles(playerMesh.position, '#ffaa00', 10, 4);
+    playerDie();
   } else if (playerMesh.position.y < -20) {
     playerDie();
   }
@@ -1142,6 +1283,10 @@ async function fetchInitialState() {
 
     state.physics = data.physics;
 
+    if (data.floorType) {
+      setFloorType(data.floorType);
+    }
+
     for (const entity of data.entities) {
       addEntity(entity);
     }
@@ -1247,16 +1392,23 @@ async function connectToServer() {
       if (!state.activeEffects) state.activeEffects = [];
       state.activeEffects.push(spell);
       showSpellEffect(spell);
+      triggerCameraShake(0.3, 200);
+      playSpellSound();
+
+      // Spell-specific screen effects
+      if (spell.type === 'speed_boost') showVignette('rgba(46,204,113,0.3)', spell.duration);
+      if (spell.type === 'invert_controls') showVignette('rgba(155,89,182,0.4)', spell.duration);
+      if (spell.type === 'low_gravity') showVignette('rgba(52,152,219,0.2)', spell.duration);
 
       // Apply scale effects immediately + particle burst
       if (playerMesh) {
         if (spell.type === 'giant') {
           playerMesh.scale.set(2, 2, 2);
-          spawnParticles(playerMesh.position, '#9b59b6', 25, 6);
+          spawnParticles(playerMesh.position, '#9b59b6', 30, 6);
         }
         if (spell.type === 'tiny') {
           playerMesh.scale.set(0.4, 0.4, 0.4);
-          spawnParticles(playerMesh.position, '#9b59b6', 25, 6);
+          spawnParticles(playerMesh.position, '#9b59b6', 30, 6);
         }
       }
 
@@ -1273,6 +1425,10 @@ async function connectToServer() {
       state.respawnPoint = data.position;
     });
 
+    room.onMessage('floor_changed', (data) => {
+      setFloorType(data.type);
+    });
+
     room.onMessage('effects_cleared', () => {
       state.activeEffects = [];
       if (playerMesh) playerMesh.scale.set(1, 1, 1);
@@ -1281,11 +1437,30 @@ async function connectToServer() {
     // Game state
     room.onMessage('game_state_changed', (gameState) => {
       console.log('[Event] Game state changed:', gameState.phase);
+      const prevPhase = state.gameState.phase;
       state.gameState = gameState;
       updateGameStateUI();
-      // Refresh leaderboard when game ends
+
+      // Phase transition VFX
+      if (gameState.phase === 'countdown' && prevPhase !== 'countdown') {
+        triggerCameraShake(0.1, 3000);
+        // Countdown beeps: 3, 2, 1, GO!
+        playCountdownBeep(440);
+        setTimeout(() => playCountdownBeep(440), 1000);
+        setTimeout(() => playCountdownBeep(440), 2000);
+        setTimeout(() => playCountdownBeep(880), 3000); // higher pitch for GO
+      }
+
       if (gameState.phase === 'ended') {
         setTimeout(fetchLeaderboard, 1000);
+        const isWinner = gameState.result === 'win' && gameState.winners?.includes(room.sessionId);
+        if (isWinner) {
+          screenFlash('#f1c40f', 600);
+          playWinFanfare();
+          if (playerMesh) spawnParticles(playerMesh.position, '#f1c40f', 40, 10);
+        } else if (gameState.result === 'win') {
+          screenFlash('#e74c3c', 500);
+        }
       }
     });
 
@@ -1294,6 +1469,7 @@ async function connectToServer() {
       console.log('[Init] Received initial state from room');
       state.physics = data.worldState.physics;
       state.gameState = data.worldState.gameState || { phase: 'lobby' };
+      if (data.worldState.floorType) setFloorType(data.worldState.floorType);
       for (const entity of data.worldState.entities) {
         addEntity(entity);
       }
@@ -1360,6 +1536,12 @@ function animate() {
     if (mesh.userData.entity?.type === 'collectible') {
       mesh.position.y = mesh.userData.entity.position[1] + Math.sin(Date.now() * 0.003) * 0.3;
     }
+  }
+
+  // Animate lava floor
+  if (lavaFloor.visible) {
+    lavaMaterial.emissiveIntensity = 0.5 + Math.sin(Date.now() * 0.002) * 0.2;
+    lavaFloor.position.y = -0.5 + Math.sin(Date.now() * 0.001) * 0.1;
   }
 
   // Update particles
@@ -1511,17 +1693,21 @@ async function startAuthFlow() {
 // ============================================
 // Bribe System
 // ============================================
+let bribeOptions = null;
+
 function setupBribeUI() {
   if (isSpectator) return;
 
   const panel = document.getElementById('bribe-panel');
   const btn = document.getElementById('btn-bribe');
   const balanceEl = document.getElementById('bribe-balance');
+  const modal = document.getElementById('bribe-modal');
+  const optionsList = document.getElementById('bribe-options-list');
+  const closeBtn = document.getElementById('bribe-close');
   if (!panel || !btn) return;
 
   panel.style.display = 'block';
 
-  // Fetch initial balance
   async function updateBalance() {
     if (!state.room) return;
     try {
@@ -1533,26 +1719,58 @@ function setupBribeUI() {
   updateBalance();
   setInterval(updateBalance, 10000);
 
+  // Fetch bribe options
+  fetch(`${API_URL}/api/bribe/options`)
+    .then(r => r.json())
+    .then(data => { bribeOptions = data.options; })
+    .catch(() => {});
+
   btn.addEventListener('click', () => {
     if (document.pointerLockElement) document.exitPointerLock();
-    const request = prompt('What do you want the Magician to do?');
-    if (!request || !request.trim()) return;
-    const amount = 50; // fixed bribe cost for MVP
+    if (!bribeOptions || !modal || !optionsList) return;
 
-    fetch(`${API_URL}/api/bribe`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        playerId: state.room.sessionId,
-        amount,
-        request: request.trim()
-      })
-    }).then(r => r.json()).then(data => {
-      if (data.success) {
-        updateBalance();
-      }
-    }).catch(() => {});
+    optionsList.innerHTML = '';
+    for (const [key, opt] of Object.entries(bribeOptions)) {
+      const item = document.createElement('button');
+      item.className = 'bribe-option';
+      item.innerHTML = `<span class="bribe-opt-label">${opt.label}</span><span class="bribe-opt-cost">${opt.cost} tokens</span><span class="bribe-opt-desc">${opt.description}</span>`;
+      item.addEventListener('click', () => submitBribe(key, opt));
+      optionsList.appendChild(item);
+    }
+    modal.style.display = 'flex';
   });
+
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+  }
+
+  async function submitBribe(bribeType, opt) {
+    let request = null;
+    if (bribeType === 'custom') {
+      request = prompt('What do you want the Magician to do?');
+      if (!request || !request.trim()) return;
+      request = request.trim();
+    }
+
+    modal.style.display = 'none';
+
+    try {
+      const res = await fetch(`${API_URL}/api/bribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playerId: state.room.sessionId,
+          bribeType,
+          request
+        })
+      });
+      const data = await res.json();
+      if (data.success) updateBalance();
+      if (data.error) console.warn('[Bribe]', data.error);
+    } catch { /* silent */ }
+  }
 }
 
 // ============================================
@@ -1660,20 +1878,13 @@ async function init() {
     authUser = await startAuthFlow();
   }
   await fetchInitialState();
-  if (!isSpectator) {
-    await connectToServer();
-    createPlayer();
-  } else {
-    // Spectator still connects to receive events
-    await connectToServer();
-  }
+  await connectToServer();
+  if (!isSpectator) createPlayer();
+
   setupChat();
   fetchLeaderboard();
-  if (isSpectator) {
-    setupSpectatorOverlay();
-  } else {
-    setupBribeUI();
-  }
+  if (isSpectator) setupSpectatorOverlay();
+  else setupBribeUI();
   if (isDebug) setupDebugPanel();
 
   // Load existing chat history

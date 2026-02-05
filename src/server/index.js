@@ -216,6 +216,22 @@ app.post('/api/world/clear', (req, res) => {
   res.json({ success: true, cleared: ids.length });
 });
 
+// Set floor type
+app.post('/api/world/floor', (req, res) => {
+  const { type } = req.body;
+  try {
+    const floorType = worldState.setFloorType(type);
+    broadcastToRoom('floor_changed', { type: floorType });
+    res.json({ success: true, floorType });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/world/floor', (req, res) => {
+  res.json({ floorType: worldState.floorType });
+});
+
 // Set respawn point
 app.post('/api/world/respawn', (req, res) => {
   const { position } = req.body;
@@ -273,11 +289,18 @@ app.post('/api/world/template', (req, res) => {
       broadcastToRoom('respawn_point_changed', { position: template.respawnPoint });
     }
 
+    // Set floor type if defined
+    if (template.floorType) {
+      worldState.setFloorType(template.floorType);
+      broadcastToRoom('floor_changed', { type: template.floorType });
+    }
+
     res.json({
       success: true,
       template: name,
       name: template.name,
       gameType: template.gameType,
+      floorType: template.floorType || 'solid',
       entitiesSpawned: spawned.length,
       goalPosition: template.goalPosition || null
     });
@@ -575,36 +598,88 @@ app.get('/api/spell/active', (req, res) => {
 // Bribe System
 // ============================================
 
+const BRIBE_OPTIONS = {
+  spawn_obstacles: { label: 'Spawn Obstacles', cost: 50, description: 'Obstacles near other players' },
+  lava_floor: { label: 'Turn Floor to Lava', cost: 100, description: 'Floor becomes deadly lava' },
+  random_spell: { label: 'Cast Random Spell', cost: 30, description: 'Random spell on all players' },
+  move_goal: { label: 'Move the Goal', cost: 75, description: 'Relocate the goal (reach games)' },
+  extra_time: { label: 'Extra Time (+15s)', cost: 40, description: 'Add 15 seconds to the clock' },
+  custom: { label: 'Custom Request', cost: 200, description: 'Free-text request for the Magician' }
+};
+
+async function executeAutoBribe(bribeType, bribeId) {
+  if (bribeType === 'spawn_obstacles') {
+    for (let i = 0; i < 3; i++) {
+      const x = (Math.random() - 0.5) * 30;
+      const z = (Math.random() - 0.5) * 30;
+      const entity = worldState.spawnEntity('obstacle', [x, 2, z], [1.5, 2, 1.5], {
+        color: '#e74c3c', rotating: true, speed: 3
+      });
+      broadcastToRoom('entity_spawned', entity);
+    }
+  } else if (bribeType === 'lava_floor') {
+    worldState.setFloorType('lava');
+    broadcastToRoom('floor_changed', { type: 'lava' });
+  } else if (bribeType === 'random_spell') {
+    const spellTypes = Object.keys(WorldState.SPELL_TYPES);
+    const randomType = spellTypes[Math.floor(Math.random() * spellTypes.length)];
+    const spell = worldState.castSpell(randomType);
+    broadcastToRoom('spell_cast', spell);
+  } else {
+    return false;
+  }
+
+  await chain.acknowledgeBribe(bribeId, true);
+  return true;
+}
+
+app.get('/api/bribe/options', (req, res) => {
+  res.json({ options: BRIBE_OPTIONS });
+});
+
 app.post('/api/bribe', async (req, res) => {
-  const { playerId, amount, request } = req.body;
-  if (!playerId || !amount || !request) {
-    return res.status(400).json({ error: 'Missing required: playerId, amount, request' });
+  const { playerId, bribeType, request } = req.body;
+  if (!playerId || !bribeType) {
+    return res.status(400).json({ error: 'Missing required: playerId, bribeType' });
+  }
+
+  const option = BRIBE_OPTIONS[bribeType];
+  if (!option) {
+    return res.status(400).json({ error: `Invalid bribe type. Available: ${Object.keys(BRIBE_OPTIONS).join(', ')}` });
+  }
+
+  if (bribeType === 'custom' && !request) {
+    return res.status(400).json({ error: 'Custom bribe requires a request text' });
   }
 
   const balance = await chain.getBalance(playerId);
-  if (balance < amount) {
+  if (balance < option.cost) {
     return res.status(400).json({ error: 'Insufficient balance', balance });
   }
 
-  const bribe = await chain.submitBribe(playerId, amount, request);
+  const description = bribeType === 'custom' ? request : option.label;
+  const bribe = await chain.submitBribe(playerId, option.cost, description);
 
-  // Announce the bribe
   const player = worldState.players.get(playerId);
   const name = player?.name || playerId.slice(0, 8);
   const announcement = worldState.announce(
-    `${name} bribed the Magician with ${amount} tokens: "${request}"`,
+    `${name} bribed the Magician (${option.label}) for ${option.cost} tokens!`,
     'player', 8000
   );
   broadcastToRoom('announcement', announcement);
 
-  // Add to chat
-  const msg = worldState.addMessage('System', 'system', `Bribe received: ${amount} tokens from ${name}`);
+  const msg = worldState.addMessage('System', 'system', `Bribe: ${option.label} from ${name}`);
   broadcastToRoom('chat_message', msg);
 
-  // Add event for agent context
-  worldState.addEvent('bribe', { playerId, name, amount, request, bribeId: bribe.id });
+  worldState.addEvent('bribe', {
+    playerId, name, amount: option.cost, bribeType,
+    request: description, bribeId: bribe.id
+  });
 
-  res.json({ success: true, bribe, balance: await chain.getBalance(playerId) });
+  // Auto-execute simple bribes server-side; others are queued for agent
+  const autoExecuted = await executeAutoBribe(bribeType, bribe.id);
+
+  res.json({ success: true, bribe, autoExecuted, balance: await chain.getBalance(playerId) });
 });
 
 app.get('/api/bribe/pending', async (req, res) => {

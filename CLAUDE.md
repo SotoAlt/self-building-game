@@ -2,80 +2,114 @@
 
 ## Project Overview
 
-An AI agent (Claude) acts as a "Chaos Magician" that builds a 3D multiplayer game in real-time while players play and audiences watch via livestream.
+An AI agent ("Chaos Magician") builds a 3D multiplayer game in real-time while players play and audiences watch via livestream. The agent spawns arenas, starts mini-games, casts spells, and reacts to player behavior — all autonomously.
 
 ## Current Phase
 
-**Research & Documentation** - Evaluating tech stack and planning implementation.
+**Production** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
 
-## Key Decisions
+## Architecture
 
-- **Primary Stack**: Three.js + Colyseus + Claude Agent SDK (physics-first)
-- **Fallback Stack**: Hyperfy + ElizaOS (if pivoting away from physics)
-- **Agent Vision**: Dual mode (JSON for logic, screenshots for commentary)
-- **Persistence**: Git + JSON files (world-state.json)
-- **AI Players**: Core feature (not stretch goal)
+```
+Browser Client (Three.js + Colyseus)
+    |
+    | WebSocket (real-time sync)
+    |
+Game Server (Express + Colyseus, port 3000)
+    |           |            |
+    | HTTP API  | PostgreSQL | SSE Stream
+    |           |            |
+OpenClaw Agent (Chaos Magician)
+    |
+    | AgentLoop.js (in-server, drama-based scheduling)
+    |
+Kimi K2.5 via OpenClaw Gateway
+```
+
+**Stack**: Three.js + Colyseus + Express + OpenClaw + PostgreSQL
 
 ## Directory Structure
 
 ```
 /self-building-game
-├── docs/
-│   ├── PRD.md              # Product requirements
-│   ├── CONCEPT.md          # Technical architecture
-│   ├── ROADMAP.md          # Development timeline
-│   └── STACK-EVALUATION.md # Technology comparison
-├── src/                    # (To be created)
-│   ├── agent/              # Claude agent code
-│   ├── world/              # Three.js/Hyperfy world
-│   └── orchestrator/       # Multi-agent coordination
-├── game-world/             # (To be created)
-│   ├── world-state.json    # Persistent world state
-│   ├── entities/           # Individual entity data
-│   └── logs/               # Agent action logs
-└── CLAUDE.md               # This file
+├── src/
+│   ├── server/
+│   │   ├── index.js          # Express API (40+ endpoints) + Colyseus setup
+│   │   ├── WorldState.js     # Entities, players, leaderboard, spells, events
+│   │   ├── GameRoom.js       # WebSocket message handlers
+│   │   ├── MiniGame.js       # Game lifecycle, trick system, scoring
+│   │   ├── AgentLoop.js      # Drama score, phase detection, agent scheduling
+│   │   ├── AgentBridge.js    # OpenClaw CLI invocation
+│   │   ├── AIPlayer.js       # Personality-driven AI bots
+│   │   ├── ArenaTemplates.js # 5 pre-built arena layouts
+│   │   ├── auth.js           # Privy JWT verification
+│   │   ├── db.js             # PostgreSQL with in-memory fallback
+│   │   ├── blockchain/       # Mock chain interface (bribe system)
+│   │   └── games/            # ReachGoal, CollectGame, Survival
+│   └── client/
+│       ├── main.js           # Three.js renderer, physics, player controls
+│       └── auth.js           # Privy client-side auth
+├── config/openclaw/
+│   ├── game-world-skill.js   # 25 agent tools (HTTP API wrappers)
+│   └── SOUL.md               # Chaos Magician personality
+├── docs/                     # PRD, CONCEPT, ROADMAP, STACK-EVALUATION
+├── index.html                # Game UI (login, chat, leaderboard, spectator)
+├── agent-runner.js           # Standalone agent loop (alternative to AgentLoop.js)
+├── deploy.sh                 # Production deployment script
+├── docker-compose.yml        # Game server + PostgreSQL + nginx + certbot
+├── Dockerfile                # Multi-stage build
+└── nginx.conf                # SSL termination + WebSocket/SSE proxy
 ```
 
 ## Development Commands
 
 ```bash
-# Setup (TBD)
-npm install
-
-# Run world server (TBD)
-npm run world
-
-# Run agent (TBD)
-npm run agent
-
-# Run all (TBD)
-npm run dev
+npm install          # Install dependencies
+npm run dev          # Vite dev server + game server (hot-reload)
+npm start            # Production server (serves dist/)
+npm run build        # Build client for production
 ```
 
-## Testing Strategy
+## Key API Endpoints
 
-1. **Day 3 Checkpoint**: Agent spawns object → Player sees it
-2. **Day 7 Checkpoint**: Challenge creation and completion working
-3. **Day 10 Checkpoint**: Human + AI players together
-4. **Day 14**: 30-minute stable stream session
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/agent/context` | Full game state for agent decisions |
+| `POST /api/game/start` | Start a mini-game |
+| `POST /api/entity/spawn` | Spawn entity in world |
+| `POST /api/spell/cast` | Cast spell on players |
+| `POST /api/arena/load` | Load arena template |
+| `POST /api/agent/pause` | Kill switch — pause agent |
+| `POST /api/agent/resume` | Resume agent |
+| `POST /api/ai-players/toggle` | Enable/disable AI bots |
+| `GET /api/stream/events` | SSE feed for OBS overlays |
+
+## Agent System
+
+- **AgentLoop.js** runs in-server, invokes agent every 15-45s based on drama score
+- **Drama score** (0-100) rises with player activity, decays over time
+- **Session phases**: welcome → warmup → gaming → intermission → escalation → finale
+- **Agent auto-pauses** when 0 human players connected
+- Model: Kimi K2.5 (free via OpenClaw/Moonshot)
 
 ## Key Files to Read
 
 When starting a session:
-1. `docs/CONCEPT.md` - Architecture overview
-2. `docs/ROADMAP.md` - Current progress
-3. `game-world/world-state.json` - Current world (when exists)
+1. `docs/ROADMAP.md` — Current progress and upcoming phases
+2. `src/server/index.js` — HTTP API surface
+3. `src/server/WorldState.js` — Game state structure
+4. `CHANGELOG.md` — What changed recently
 
-## Constraints
+## Debug & Testing
 
-- Hyperfy has NO dynamic physics (gravity) - use Three.js if needed
-- 2-week timeline to hackathon demo
-- Team of 2-3 people
-- Must support 2-4 concurrent players
+- **Debug panel**: Add `?debug=true` to URL for runtime controls
+- **Spectator mode**: Add `?spectator=true` for free camera
+- **Agent status**: `curl localhost:3000/api/agent/status`
+- **World state**: `curl localhost:3000/api/world`
 
 ## Links
 
-- [Hyperfy Docs](https://docs.hyperfy.io)
+- [Production](https://chaos.waweapps.win)
+- [GitHub](https://github.com/SotoAlt/self-building-game)
 - [Three.js Docs](https://threejs.org/docs/)
 - [Colyseus Docs](https://docs.colyseus.io)
-- [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview)

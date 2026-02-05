@@ -2,6 +2,58 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.8.0] - 2026-02-05
+
+### Added
+- **VFX & Game Feel (Phase 5)**
+  - Camera shake system: death (strong), spell cast (medium), countdown (rumble)
+  - Screen flash effects: red on death, golden on win, red on lose
+  - Vignette overlays for spell effects (speed boost green, invert purple, low gravity blue)
+  - Enhanced death particles: dual-color burst (red + orange, 50 total)
+  - Golden sparkle trail on item collection
+  - Countdown beeps (3, 2, 1, GO! with ascending pitch)
+  - Win fanfare (C-E-G-C arpeggio)
+  - Spell cast whoosh sound (filtered sawtooth sweep)
+- **Floor System (Phase 6)**
+  - Three floor types: `solid` (default), `none` (abyss), `lava` (kills on contact)
+  - Animated lava floor with pulsing glow and subtle wave motion
+  - `POST /api/world/floor` endpoint + `GET /api/world/floor`
+  - `set_floor` agent tool for drama-driven floor changes
+  - Arena templates define floor types: parkour_hell/floating_islands → `none`, gauntlet → `lava`
+  - Floor type broadcast via WebSocket (`floor_changed` event)
+  - Lava death spawns fire particles (orange + yellow burst)
+- **Bribe System Polish (Phase 7)**
+  - 6 predefined bribe options with token costs (30-200 tokens)
+  - Auto-execute simple bribes server-side: spawn obstacles, lava floor, random spell
+  - Complex bribes (move goal, extra time, custom) queued for agent
+  - Bribe modal UI replacing browser prompt() — styled dropdown with costs
+  - `GET /api/bribe/options` endpoint for client to fetch available bribes
+- **Phase 8-9 roadmap** — Auth/DB testing steps and blockchain architecture documented
+
+### Changed
+- Ground collision logic respects floor type (abyss = no ground, lava = death at y<0)
+- `WorldState.clearEntities()` resets floor type to `solid`
+- `WorldState.getState()` includes `floorType` field
+- Template loader sets floor type from template definition
+- Bribe API now accepts `bribeType` instead of free-text `request` + `amount`
+
+## [0.7.0] - 2026-02-05
+
+### Added
+- **Game lifecycle enforcement** — phase guards on 6 endpoints prevent invalid actions during active games
+- **8-second cooldown** between games to prevent rapid-fire game starts
+- **Agent auto-pause** when 0 human players connected (resumes when humans join)
+- **AI player runtime toggle** — API endpoints to enable/disable AI bots without restart
+  - `POST /api/ai-players/toggle` with `{ enabled: true/false }`
+  - Debug panel integration for one-click toggle
+- **Debug panel** at `?debug=true` — runtime controls for agent pause/resume, AI player toggle, world state inspection
+
+### Changed
+- Consistent `cooldownUntil` timestamp pattern across game lifecycle
+- Extracted `checkNotInActiveGame()` helper for DRY endpoint guards
+- Player type (`human`/`ai`) included in agent context for smarter decision-making
+- Code simplifier pass: consistent naming, reduced duplication
+
 ## [0.6.0] - 2026-02-05
 
 ### Added
