@@ -5,6 +5,10 @@
 
 import * as THREE from 'three';
 import { Client } from 'colyseus.js';
+import {
+  initPrivy, handleOAuthCallback, exchangeForBackendToken,
+  loginAsGuest, loginWithTwitter, getPrivyUser, getToken
+} from './auth.js';
 
 // ============================================
 // Configuration
@@ -34,6 +38,9 @@ const state = {
   chatFocused: false,
   activeEffects: []
 };
+
+// Auth state
+let authUser = null;
 
 // Remote players
 const remotePlayers = new Map();
@@ -896,7 +903,16 @@ async function fetchInitialState() {
 async function connectToServer() {
   try {
     const client = new Client(SERVER_URL);
-    const room = await client.joinOrCreate('game', { name: `Player-${Date.now().toString(36)}` });
+    const user = authUser?.user;
+    const playerName = user?.twitterUsername || user?.name || `Player-${Date.now().toString(36)}`;
+    const joinOptions = { name: playerName };
+
+    if (authUser?.token) {
+      joinOptions.token = authUser.token;
+      joinOptions.type = user.type;
+    }
+
+    const room = await client.joinOrCreate('game', joinOptions);
 
     state.room = room;
     state.connected = true;
@@ -1125,51 +1141,132 @@ async function pollForUpdates() {
 }
 
 // ============================================
+// Auth Flow
+// ============================================
+async function startAuthFlow() {
+  const statusEl = document.getElementById('login-status');
+
+  function setStatus(text) {
+    if (statusEl) statusEl.textContent = text;
+  }
+
+  // Init Privy if credentials are available (env vars injected by Vite)
+  const appId = import.meta.env.VITE_PRIVY_APP_ID;
+  const clientId = import.meta.env.VITE_PRIVY_CLIENT_ID;
+  const privyEnabled = !!(appId && clientId);
+
+  if (privyEnabled) {
+    initPrivy(appId, clientId);
+  } else {
+    const twitterBtn = document.getElementById('btn-twitter-login');
+    if (twitterBtn) twitterBtn.style.display = 'none';
+  }
+
+  // Check for OAuth callback (returning from Twitter redirect)
+  if (privyEnabled) {
+    try {
+      setStatus('Checking login...');
+      const callbackUser = await handleOAuthCallback();
+      if (callbackUser) {
+        setStatus('Authenticating...');
+        const result = await exchangeForBackendToken();
+        if (result) return result;
+      }
+    } catch (e) {
+      console.warn('[Auth] OAuth callback failed:', e);
+    }
+  }
+
+  // Check for existing backend session (page reload)
+  const existingToken = getToken();
+  if (existingToken) {
+    try {
+      setStatus('Restoring session...');
+      const res = await fetch(`${API_URL}/api/me`, {
+        headers: { Authorization: `Bearer ${existingToken}` }
+      });
+      if (res.ok) {
+        const user = await res.json();
+        return { token: existingToken, user };
+      }
+      localStorage.removeItem('game:token');
+    } catch {
+      localStorage.removeItem('game:token');
+    }
+  }
+
+  // Check for existing Privy session
+  if (privyEnabled) {
+    try {
+      const privyUser = await getPrivyUser();
+      if (privyUser) {
+        setStatus('Authenticating...');
+        const result = await exchangeForBackendToken();
+        if (result) return result;
+      }
+    } catch (e) {
+      console.warn('[Auth] Privy session check failed:', e);
+    }
+  }
+
+  // No session found -- show login screen and wait for user action
+  setStatus('');
+  return new Promise((resolve) => {
+    document.getElementById('login-screen').style.display = 'flex';
+
+    document.getElementById('btn-twitter-login')?.addEventListener('click', () => {
+      setStatus('Redirecting to Twitter...');
+      loginWithTwitter();
+    });
+
+    document.getElementById('btn-guest').addEventListener('click', async () => {
+      setStatus('Creating guest session...');
+      const result = await loginAsGuest();
+      if (result) {
+        document.getElementById('login-screen').style.display = 'none';
+        resolve(result);
+      } else {
+        setStatus('Failed to create session. Try again.');
+      }
+    });
+  });
+}
+
+// ============================================
 // Init
 // ============================================
 async function init() {
   console.log('[Game] Initializing...');
 
-  // Fetch initial state
+  authUser = await startAuthFlow();
   await fetchInitialState();
-
-  // Connect to WebSocket
   await connectToServer();
-
-  // Create player
   createPlayer();
-
-  // Setup chat
   setupChat();
-
-  // Fetch initial leaderboard
   fetchLeaderboard();
 
-  // Fetch initial chat messages
+  // Load existing chat history
   try {
     const chatResp = await fetch(`${API_URL}/api/chat/messages`);
     const chatData = await chatResp.json();
     for (const msg of chatData.messages) {
       displayChatMessage(msg);
     }
-  } catch (e) { /* ok */ }
+  } catch {
+    // Chat history is non-critical
+  }
 
-  // Hide loading, show UI
-  document.getElementById('loading').style.display = 'none';
+  // Transition from login screen to game UI
+  document.getElementById('login-screen').style.display = 'none';
   document.getElementById('ui').style.display = 'block';
   document.getElementById('controls').style.display = 'block';
   document.getElementById('chat-panel').style.display = 'flex';
 
-  // Start animation
   animate();
 
-  // Poll for updates every 2 seconds (backup)
+  // Backup polling and periodic refreshes
   setInterval(pollForUpdates, 2000);
-
-  // Refresh leaderboard periodically
   setInterval(fetchLeaderboard, 10000);
-
-  // Backup position sync
   setInterval(() => {
     if (playerMesh && state.room) {
       sendToServer('move', {

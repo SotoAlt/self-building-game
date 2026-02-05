@@ -18,6 +18,9 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - DATABASE_URL=postgresql://game:${DB_PASSWORD:-changeme}@db:5432/selfbuilding
+      - JWT_SECRET=${JWT_SECRET}
+      - PRIVY_APP_ID=${PRIVY_APP_ID}
+      - PRIVY_APP_SECRET=${PRIVY_APP_SECRET}
     depends_on:
       - db
 

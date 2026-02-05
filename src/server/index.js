@@ -16,7 +16,8 @@ import { createServer } from 'http';
 import { GameRoom } from './GameRoom.js';
 import { WorldState } from './WorldState.js';
 import { createGameSync, GAME_TYPES } from './games/index.js';
-import { initDB, getStats, isDBAvailable } from './db.js';
+import { initDB, getStats, isDBAvailable, upsertUser, findUser } from './db.js';
+import { initAuth, verifyPrivyToken, signToken, requireAuth } from './auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,6 +39,53 @@ const worldState = new WorldState();
 
 // Current mini-game instance
 let currentMiniGame = null;
+
+// ============================================
+// Auth Endpoints
+// ============================================
+
+// Exchange Privy token for backend JWT
+app.post('/api/auth/privy', async (req, res) => {
+  const { accessToken } = req.body;
+  if (!accessToken) return res.status(400).json({ error: 'Missing accessToken' });
+
+  const privyResult = await verifyPrivyToken(accessToken);
+  if (!privyResult) return res.status(401).json({ error: 'Invalid Privy token' });
+
+  const { privyUserId, twitterUsername, twitterAvatar, displayName } = privyResult;
+  const name = twitterUsername || displayName || `User-${privyUserId.slice(-6)}`;
+
+  // Fire-and-forget DB persistence
+  upsertUser(privyUserId, name, 'authenticated', { privyUserId, twitterUsername, twitterAvatar });
+
+  const token = signToken(privyUserId);
+  res.json({
+    token,
+    user: { id: privyUserId, name, type: 'authenticated', twitterUsername, twitterAvatar }
+  });
+});
+
+// Create anonymous guest session
+app.post('/api/auth/guest', (req, res) => {
+  const name = req.body.name || `Guest-${Date.now().toString(36)}`;
+  const guestId = `guest-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+  // Fire-and-forget DB persistence
+  upsertUser(guestId, name, 'guest');
+
+  const token = signToken(guestId);
+  res.json({ token, user: { id: guestId, name, type: 'guest' } });
+});
+
+// Get current user profile
+app.get('/api/me', requireAuth, async (req, res) => {
+  const user = await findUser(req.user.id);
+  if (!user) {
+    // JWT is valid but user not in DB (no DB configured or dev mode)
+    return res.json({ id: req.user.id, name: 'Unknown', type: 'guest' });
+  }
+  res.json(user);
+});
 
 // ============================================
 // HTTP API for Agent Control
@@ -432,6 +480,9 @@ if (process.env.NODE_ENV === 'production') {
 // Start Server
 // ============================================
 
+// Initialize auth
+initAuth();
+
 // Initialize database (non-blocking)
 initDB().then(async (connected) => {
   if (connected) {
@@ -447,6 +498,11 @@ httpServer.listen(PORT, () => {
 ║                                                           ║
 ║  HTTP API:    http://localhost:${PORT}/api                  ║
 ║  WebSocket:   ws://localhost:${PORT}                        ║
+║                                                           ║
+║  Auth Endpoints:                                          ║
+║    POST /api/auth/privy       - Exchange Privy token      ║
+║    POST /api/auth/guest       - Guest session             ║
+║    GET  /api/me               - Current user profile      ║
 ║                                                           ║
 ║  Agent Endpoint:                                          ║
 ║    GET  /api/agent/context    - Unified agent context     ║

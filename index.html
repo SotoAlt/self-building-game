@@ -35,14 +35,70 @@
       font-size: 11px;
       z-index: 140;
     }
-    #loading {
+    #login-screen {
       position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      color: white;
-      font-size: 24px;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       z-index: 1000;
+      background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a15 100%);
+    }
+    .login-container {
+      text-align: center;
+      padding: 40px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      backdrop-filter: blur(10px);
+      min-width: 320px;
+    }
+    .login-container h1 {
+      color: #fff;
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+    .login-subtitle {
+      color: rgba(255,255,255,0.5);
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+    .login-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .login-btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.2s;
+    }
+    .login-btn:hover { transform: scale(1.02); }
+    .login-btn:active { transform: scale(0.98); }
+    .login-btn.twitter {
+      background: #1d9bf0;
+      color: white;
+    }
+    .login-btn.guest {
+      background: rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.8);
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .login-btn.guest:hover { background: rgba(255,255,255,0.15); }
+    .login-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .login-status {
+      color: rgba(255,255,255,0.4);
+      font-size: 12px;
+      margin-top: 16px;
+      min-height: 18px;
     }
     #announcements {
       position: fixed;
@@ -218,7 +274,21 @@
   </style>
 </head>
 <body>
-  <div id="loading">Connecting to game world...</div>
+  <div id="login-screen">
+    <div class="login-container">
+      <h1>Self-Building Game</h1>
+      <p class="login-subtitle">The Chaos Magician awaits...</p>
+      <div class="login-buttons">
+        <button id="btn-twitter-login" class="login-btn twitter">
+          Login with X (Twitter)
+        </button>
+        <button id="btn-guest" class="login-btn guest">
+          Play as Guest
+        </button>
+      </div>
+      <p id="login-status" class="login-status"></p>
+    </div>
+  </div>
   <div id="ui" style="display:none">
     <h1>🎭 Self-Building Game</h1>
     <div id="stats">

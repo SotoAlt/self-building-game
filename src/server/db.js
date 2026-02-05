@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS users (
   id            TEXT PRIMARY KEY,
   name          TEXT NOT NULL,
   type          TEXT DEFAULT 'human',
+  privy_user_id TEXT UNIQUE,
+  twitter_username TEXT,
+  twitter_avatar TEXT,
   created_at    TIMESTAMPTZ DEFAULT NOW(),
   last_seen     TIMESTAMPTZ DEFAULT NOW()
 );
@@ -53,6 +56,12 @@ export async function initDB() {
     pool = new Pool({ connectionString: url });
     await pool.query('SELECT 1');
     await pool.query(SCHEMA);
+    // Safe migration for existing DBs
+    await pool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS privy_user_id TEXT UNIQUE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_username TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_avatar TEXT;
+    `);
     dbAvailable = true;
     console.log('[DB] PostgreSQL connected, tables ready');
     return true;
@@ -70,17 +79,36 @@ export function isDBAvailable() {
 
 // --- Users ---
 
-export async function upsertUser(id, name, type = 'human') {
+export async function upsertUser(id, name, type = 'human', meta = {}) {
   if (!dbAvailable) return;
   try {
     await pool.query(
-      `INSERT INTO users (id, name, type, last_seen)
-       VALUES ($1, $2, $3, NOW())
-       ON CONFLICT (id) DO UPDATE SET name = $2, last_seen = NOW()`,
-      [id, name, type]
+      `INSERT INTO users (id, name, type, privy_user_id, twitter_username, twitter_avatar, last_seen)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (id) DO UPDATE SET
+         name = $2, type = $3,
+         privy_user_id = COALESCE($4, users.privy_user_id),
+         twitter_username = COALESCE($5, users.twitter_username),
+         twitter_avatar = COALESCE($6, users.twitter_avatar),
+         last_seen = NOW()`,
+      [id, name, type, meta.privyUserId || null, meta.twitterUsername || null, meta.twitterAvatar || null]
     );
   } catch (err) {
     console.error('[DB] upsertUser error:', err.message);
+  }
+}
+
+export async function findUser(id) {
+  if (!dbAvailable) return null;
+  try {
+    const result = await pool.query(
+      'SELECT id, name, type, twitter_username, twitter_avatar, created_at FROM users WHERE id = $1',
+      [id]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    console.error('[DB] findUser error:', err.message);
+    return null;
   }
 }
 
