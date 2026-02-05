@@ -1215,6 +1215,16 @@ function showSpellEffect(spell) {
 // Game State UI
 // ============================================
 
+// Tracked so we can clear it if a new countdown starts or the phase changes
+let countdownIntervalId = null;
+
+function clearCountdownInterval() {
+  if (countdownIntervalId !== null) {
+    clearInterval(countdownIntervalId);
+    countdownIntervalId = null;
+  }
+}
+
 function updateGameStateUI() {
   const statusEl = document.getElementById('game-status');
   const phaseEl = document.getElementById('game-phase');
@@ -1242,13 +1252,19 @@ function updateGameStateUI() {
   typeEl.textContent = state.gameState.gameType ? `Mode: ${state.gameState.gameType}` : '';
 
   if (state.gameState.phase === 'playing' && state.gameState.timeRemaining !== undefined) {
+    clearCountdownInterval();
     const seconds = Math.ceil(state.gameState.timeRemaining / 1000);
     timerEl.textContent = `${seconds}s`;
     timerEl.style.color = seconds <= 10 ? '#e74c3c' : 'white';
   } else if (state.gameState.phase === 'countdown') {
-    timerEl.textContent = '3...';
-    timerEl.style.color = '#f39c12';
+    // Countdown display is driven by the interval in game_state_changed handler.
+    // Only set the initial text if the interval has not started yet.
+    if (countdownIntervalId === null) {
+      timerEl.textContent = '3...';
+      timerEl.style.color = '#f39c12';
+    }
   } else {
+    clearCountdownInterval();
     timerEl.textContent = '';
   }
 }
@@ -1447,6 +1463,23 @@ async function connectToServer() {
         setTimeout(() => playCountdownBeep(440), 1000);
         setTimeout(() => playCountdownBeep(440), 2000);
         setTimeout(() => playCountdownBeep(880), 3000); // higher pitch for GO
+
+        // Ticking countdown display — clear any prior interval to prevent leaks
+        clearCountdownInterval();
+        const timerEl = document.getElementById('game-timer');
+        timerEl.textContent = '3...';
+        timerEl.style.color = '#f39c12';
+        let countdownSec = 3;
+        countdownIntervalId = setInterval(() => {
+          countdownSec--;
+          if (countdownSec > 0) {
+            timerEl.textContent = `${countdownSec}...`;
+          } else {
+            timerEl.textContent = 'GO!';
+            timerEl.style.color = '#2ecc71';
+            clearCountdownInterval();
+          }
+        }, 1000);
       }
 
       if (gameState.phase === 'ended') {

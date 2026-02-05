@@ -62,6 +62,9 @@ export class MiniGame {
     this.tricks = [];
     this._trickIdCounter = 0;
 
+    // Tracks whether the first real update tick (post-countdown) has fired
+    this._gameStarted = false;
+
     // Time warnings (data-driven to avoid repetitive boolean flags)
     this._timeWarnings = [
       { at: 30000, message: '30 SECONDS!' },
@@ -106,6 +109,15 @@ export class MiniGame {
   // Called every tick
   update(delta) {
     if (!this.isActive) return;
+
+    // Don't process game logic during countdown — players can't move yet
+    if (this.worldState.gameState.phase === 'countdown') return;
+
+    // Reset startTime on first real update tick (after countdown ends)
+    if (!this._gameStarted) {
+      this._gameStarted = true;
+      this.startTime = Date.now();
+    }
 
     const elapsed = Date.now() - this.startTime;
 

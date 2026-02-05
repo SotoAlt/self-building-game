@@ -156,6 +156,18 @@ export const TEMPLATES = {
       { type: 'platform', position: [0, 38, -25], size: [4, 1, 4], properties: { color: '#f1c40f' } },
       { type: 'trigger', position: [0, 40, -25], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } }
     ]
+  },
+
+  blank_canvas: {
+    name: 'The Void',
+    gameType: 'survival',
+    floorType: 'none',
+    respawnPoint: [0, 3, 0],
+    goalPosition: null,
+    entities: [
+      // Single small starting platform — the agent builds the rest
+      { type: 'platform', position: [0, 1, 0], size: [6, 1, 6], properties: { color: '#2c3e50' } },
+    ]
   }
 };
 
