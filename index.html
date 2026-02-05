@@ -108,6 +108,111 @@
       text-align: center;
       margin-top: 5px;
     }
+    /* Chat Panel */
+    #chat-panel {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      width: 360px;
+      z-index: 150;
+      background: rgba(0, 0, 0, 0.75);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      max-height: 300px;
+    }
+    #chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      font-size: 13px;
+      max-height: 240px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.2) transparent;
+    }
+    .chat-msg {
+      margin-bottom: 4px;
+      line-height: 1.4;
+      word-wrap: break-word;
+    }
+    .chat-msg .sender {
+      font-weight: bold;
+      margin-right: 4px;
+    }
+    .chat-msg.player .sender { color: #ecf0f1; }
+    .chat-msg.agent .sender { color: #9b59b6; }
+    .chat-msg.system .sender { color: #f39c12; }
+    .chat-msg .text { color: #ddd; }
+    .chat-msg .text .at-agent { color: #9b59b6; font-weight: bold; }
+    #chat-input {
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.15);
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      padding: 8px 12px;
+      font-size: 13px;
+      outline: none;
+      border-radius: 0 0 8px 8px;
+    }
+    #chat-input::placeholder { color: rgba(255,255,255,0.4); }
+    /* Leaderboard Panel */
+    #leaderboard-panel {
+      position: fixed;
+      top: 140px;
+      right: 20px;
+      width: 200px;
+      z-index: 100;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 12px;
+      border-radius: 8px;
+      color: white;
+      display: none;
+    }
+    #leaderboard-panel h3 {
+      font-size: 13px;
+      margin-bottom: 8px;
+      color: #f1c40f;
+    }
+    .lb-entry {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      padding: 2px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .lb-rank { color: #888; width: 20px; }
+    .lb-name { flex: 1; }
+    .lb-wins { color: #2ecc71; width: 40px; text-align: right; }
+    /* Ready indicator */
+    #ready-indicator {
+      position: fixed;
+      bottom: 60px;
+      right: 20px;
+      z-index: 100;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 8px 14px;
+      border-radius: 8px;
+      color: #888;
+      font-size: 13px;
+    }
+    #ready-indicator.is-ready {
+      color: #2ecc71;
+      border: 1px solid #2ecc71;
+    }
+    /* Crosshair for pointer lock */
+    #crosshair {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 4px;
+      height: 4px;
+      background: rgba(255,255,255,0.6);
+      border-radius: 50%;
+      z-index: 50;
+      pointer-events: none;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -121,8 +226,13 @@
     </div>
     <div id="entities"></div>
   </div>
+  <div id="crosshair"></div>
+  <div id="chat-panel" style="display:none">
+    <div id="chat-messages"></div>
+    <input id="chat-input" placeholder="Chat... (@agent to tag)" maxlength="200" />
+  </div>
   <div id="controls" style="display:none">
-    WASD: Move | Space: Jump | Mouse: Look
+    WASD: Move | Space: Jump | Click: Mouse Look | R: Ready | Enter: Chat
   </div>
   <div id="announcements"></div>
   <div id="game-status" style="display:none">
@@ -130,6 +240,11 @@
     <div id="game-type"></div>
     <div id="game-timer"></div>
   </div>
+  <div id="leaderboard-panel">
+    <h3>Leaderboard</h3>
+    <div id="leaderboard-entries"></div>
+  </div>
+  <div id="ready-indicator">Press R to ready up</div>
   <div id="game"></div>
   <script type="module" src="/src/client/main.js"></script>
 </body>

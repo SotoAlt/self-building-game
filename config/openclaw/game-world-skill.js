@@ -227,6 +227,26 @@ async function get_game_state() {
   return gameRequest('/api/game/state');
 }
 
+/**
+ * Tool: send_chat_message
+ * Send a chat message as the agent
+ */
+async function send_chat_message({ text }) {
+  if (!text) {
+    return { success: false, error: 'Missing required parameter: text' };
+  }
+
+  return gameRequest('/api/chat/send', 'POST', { text });
+}
+
+/**
+ * Tool: get_chat_messages
+ * Get recent chat messages (for reading player chats)
+ */
+async function get_chat_messages({ since = 0, limit = 20 } = {}) {
+  return gameRequest(`/api/chat/messages?since=${since}&limit=${limit}`);
+}
+
 // Export tools for OpenClaw
 export {
   spawn_entity,
@@ -241,5 +261,7 @@ export {
   get_game_types,
   start_game,
   end_game,
-  get_game_state
+  get_game_state,
+  send_chat_message,
+  get_chat_messages
 };

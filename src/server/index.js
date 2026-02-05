@@ -171,7 +171,7 @@ app.post('/api/game/start', (req, res) => {
     return res.status(400).json({ error: 'Missing required: type' });
   }
 
-  if (currentMiniGame && currentMiniGame.isActive) {
+  if (currentMiniGame?.isActive) {
     return res.status(400).json({ error: 'A game is already in progress' });
   }
 
@@ -207,7 +207,7 @@ app.post('/api/game/start', (req, res) => {
 app.post('/api/game/end', (req, res) => {
   const { result, winnerId } = req.body;
 
-  if (currentMiniGame && currentMiniGame.isActive) {
+  if (currentMiniGame?.isActive) {
     currentMiniGame.end(result || 'cancelled', winnerId);
     currentMiniGame = null;
   } else {
@@ -236,11 +236,38 @@ app.post('/api/game/winner', (req, res) => {
 
 // Get current mini-game status
 app.get('/api/game/minigame', (req, res) => {
-  if (currentMiniGame) {
-    res.json({ miniGame: currentMiniGame.getStatus() });
-  } else {
-    res.json({ miniGame: null });
+  res.json({ miniGame: currentMiniGame?.getStatus() ?? null });
+});
+
+// ============================================
+// Chat API
+// ============================================
+
+// Get chat messages (agent polls this)
+app.get('/api/chat/messages', (req, res) => {
+  const since = parseInt(req.query.since) || 0;
+  const limit = parseInt(req.query.limit) || 20;
+  res.json({ messages: worldState.getMessages(since, limit) });
+});
+
+// Send chat message (agent sends via this)
+app.post('/api/chat/send', (req, res) => {
+  const { text } = req.body;
+  if (!text || String(text).trim().length === 0) {
+    return res.status(400).json({ error: 'Missing required: text' });
   }
+
+  const message = worldState.addMessage('Chaos Magician', 'agent', String(text).trim());
+  broadcastToRoom('chat_message', message);
+  res.json({ success: true, message });
+});
+
+// ============================================
+// Leaderboard API
+// ============================================
+
+app.get('/api/leaderboard', (req, res) => {
+  res.json({ leaderboard: worldState.getLeaderboard() });
 });
 
 // ============================================
@@ -253,31 +280,22 @@ const gameServer = new Server({
   transport: new WebSocketTransport({ server: httpServer })
 });
 
-// Reference to current room for game updates
+// Reference to current room for broadcasting and game updates
 let gameRoom = null;
 
 // Register game room
 gameServer.define('game', GameRoom).on('create', (room) => {
   console.log(`Game room created: ${room.roomId}`);
-  // Share world state with room
   room.worldState = worldState;
   gameRoom = room;
-  currentRoom = room;
 });
 
-// Broadcast function for HTTP API → WebSocket clients
-let currentRoom = null;
-
+// Broadcast function for HTTP API -> WebSocket clients
 function broadcastToRoom(event, data) {
-  if (currentRoom) {
-    currentRoom.broadcast(event, data);
+  if (gameRoom) {
+    gameRoom.broadcast(event, data);
   }
 }
-
-// Track current room for broadcasting
-gameServer.onShutdown(() => {
-  console.log('Game server shutting down');
-});
 
 // ============================================
 // Start Server
@@ -315,13 +333,19 @@ httpServer.listen(PORT, () => {
 ║    GET  /api/game/state       - Get game state            ║
 ║    POST /api/game/winner      - Record winner             ║
 ║                                                           ║
+║  Chat Endpoints:                                          ║
+║    GET  /api/chat/messages    - Get chat messages         ║
+║    POST /api/chat/send        - Agent sends message       ║
+║                                                           ║
+║  Leaderboard:                                             ║
+║    GET  /api/leaderboard      - Get top 10 players        ║
+║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
 });
 
-// Handle room creation to enable broadcasting
 gameServer.onShutdown(() => {
-  console.log('Shutting down...');
+  console.log('Game server shutting down');
 });
 
 // Game loop for mini-game updates (10 ticks per second)
@@ -331,13 +355,14 @@ setInterval(() => {
   const delta = (now - lastUpdateTime) / 1000;
   lastUpdateTime = now;
 
-  if (currentMiniGame && currentMiniGame.isActive) {
-    currentMiniGame.update(delta);
+  // Update kinematic (moving) entities
+  const movedEntities = worldState.updateKinematicEntities(delta);
+  for (const entity of movedEntities) {
+    broadcastToRoom('entity_modified', entity);
+  }
 
-    // Share mini-game with room for event handling
-    if (gameRoom) {
-      gameRoom.currentMiniGame = currentMiniGame;
-    }
+  if (currentMiniGame?.isActive) {
+    currentMiniGame.update(delta);
   }
 }, 100);
 

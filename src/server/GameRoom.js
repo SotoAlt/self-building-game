@@ -14,6 +14,9 @@ export class GameRoom extends Room {
   // Current mini-game instance (injected by server)
   currentMiniGame = null;
 
+  // Rate limiting for chat
+  _chatRateLimit = new Map();
+
   onCreate(options) {
     console.log(`[GameRoom] Room created`);
 
@@ -92,10 +95,8 @@ export class GameRoom extends Room {
       });
 
       // Notify mini-game if active
-      if (this.currentMiniGame && this.currentMiniGame.isActive) {
-        if (typeof this.currentMiniGame.onCollect === 'function') {
-          this.currentMiniGame.onCollect(client.sessionId, data.entityId);
-        }
+      if (this.currentMiniGame?.isActive && typeof this.currentMiniGame.onCollect === 'function') {
+        this.currentMiniGame.onCollect(client.sessionId, data.entityId);
       }
     });
 
@@ -109,14 +110,42 @@ export class GameRoom extends Room {
       });
 
       // Notify mini-game if active
-      if (this.currentMiniGame) {
-        console.log(`[GameRoom] Mini-game active: ${this.currentMiniGame.isActive}`);
-        if (this.currentMiniGame.isActive && typeof this.currentMiniGame.onPlayerReachedGoal === 'function') {
-          console.log(`[GameRoom] Calling onPlayerReachedGoal for ${client.sessionId}`);
-          this.currentMiniGame.onPlayerReachedGoal(client.sessionId);
-        }
-      } else {
-        console.log('[GameRoom] No mini-game active');
+      if (this.currentMiniGame?.isActive && typeof this.currentMiniGame.onPlayerReachedGoal === 'function') {
+        this.currentMiniGame.onPlayerReachedGoal(client.sessionId);
+      }
+    });
+
+    // Player chat messages
+    this.onMessage('chat', (client, data) => {
+      if (!this.worldState || !data.text) return;
+
+      const text = String(data.text).trim();
+      if (text.length === 0 || text.length > 200) return;
+
+      // Rate limit: 1 message per second per player
+      const now = Date.now();
+      const lastSent = this._chatRateLimit.get(client.sessionId) || 0;
+      if (now - lastSent < 1000) return;
+      this._chatRateLimit.set(client.sessionId, now);
+
+      const player = this.worldState.players.get(client.sessionId);
+      const sender = player?.name || client.sessionId.slice(0, 8);
+
+      const message = this.worldState.addMessage(sender, 'player', text);
+      this.broadcast('chat_message', message);
+    });
+
+    // Player ready toggle
+    this.onMessage('ready', (client, data) => {
+      if (!this.worldState) return;
+      const ready = !!data.ready;
+      const player = this.worldState.setPlayerReady(client.sessionId, ready);
+      if (player) {
+        this.broadcast('player_ready', {
+          id: client.sessionId,
+          name: player.name,
+          ready
+        });
       }
     });
 
@@ -147,7 +176,7 @@ export class GameRoom extends Room {
     console.log(`[GameRoom] ${name} joined (${type})`);
   }
 
-  onLeave(client, consented) {
+  onLeave(client) {
     if (this.worldState) {
       const player = this.worldState.players.get(client.sessionId);
       const name = player?.name || client.sessionId;

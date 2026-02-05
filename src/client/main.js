@@ -23,7 +23,9 @@ const state = {
   room: null,
   gameState: { phase: 'lobby' },
   announcements: new Map(),
-  connected: false
+  connected: false,
+  isReady: false,
+  chatFocused: false
 };
 
 // Remote players
@@ -118,6 +120,68 @@ const gridHelper = new THREE.GridHelper(200, 50, 0x444444, 0x333333);
 scene.add(gridHelper);
 
 // ============================================
+// Mouse Look Camera
+// ============================================
+let cameraYaw = 0;
+let cameraPitch = 0.3; // slight downward angle
+let cameraDistance = 20;
+let pointerLocked = false;
+
+const MIN_PITCH = -Math.PI / 6;  // -30 degrees
+const MAX_PITCH = Math.PI / 3;    // 60 degrees
+const MIN_DISTANCE = 8;
+const MAX_DISTANCE = 40;
+
+renderer.domElement.addEventListener('click', () => {
+  if (!state.chatFocused) {
+    renderer.domElement.requestPointerLock();
+  }
+});
+
+document.addEventListener('pointerlockchange', () => {
+  pointerLocked = document.pointerLockElement === renderer.domElement;
+  const crosshair = document.getElementById('crosshair');
+  if (crosshair) crosshair.style.display = pointerLocked ? 'block' : 'none';
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!pointerLocked) return;
+  cameraYaw -= e.movementX * 0.003;
+  cameraPitch -= e.movementY * 0.003;
+  cameraPitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, cameraPitch));
+});
+
+document.addEventListener('wheel', (e) => {
+  cameraDistance += e.deltaY * 0.02;
+  cameraDistance = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, cameraDistance));
+});
+
+function updateCamera() {
+  if (!playerMesh) return;
+
+  const target = playerMesh.position;
+
+  // Spherical coordinates around player
+  const offsetX = Math.sin(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
+  const offsetY = Math.sin(cameraPitch) * cameraDistance;
+  const offsetZ = Math.cos(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
+
+  camera.position.set(
+    target.x + offsetX,
+    target.y + offsetY + 2,
+    target.z + offsetZ
+  );
+  camera.lookAt(target.x, target.y + 1, target.z);
+}
+
+// Get camera-relative forward and right vectors (Y=0 plane)
+function getCameraDirections() {
+  const forward = new THREE.Vector3(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw)).normalize();
+  const right = new THREE.Vector3(forward.z, 0, -forward.x);
+  return { forward, right };
+}
+
+// ============================================
 // Entity Rendering
 // ============================================
 const entityMeshes = new Map();
@@ -141,8 +205,6 @@ function createEntityMesh(entity) {
 
   if (entity.type === 'collectible') {
     geometry = new THREE.SphereGeometry(0.5, 16, 16);
-  } else if (entity.type === 'ramp') {
-    geometry = new THREE.BoxGeometry(...entity.size);
   } else {
     geometry = new THREE.BoxGeometry(...entity.size);
   }
@@ -192,7 +254,18 @@ function updateEntity(entity) {
   const mesh = entityMeshes.get(entity.id);
   if (!mesh) return addEntity(entity);
 
-  mesh.position.set(...entity.position);
+  // Store target position for smooth interpolation
+  if (!mesh.userData.targetPosition) {
+    mesh.userData.targetPosition = new THREE.Vector3(...entity.position);
+  } else {
+    mesh.userData.targetPosition.set(...entity.position);
+  }
+
+  // Immediate update for non-kinematic
+  if (!entity.properties?.kinematic) {
+    mesh.position.set(...entity.position);
+  }
+
   if (entity.size) {
     mesh.geometry.dispose();
     mesh.geometry = new THREE.BoxGeometry(...entity.size);
@@ -201,6 +274,7 @@ function updateEntity(entity) {
     mesh.material.color.set(entity.properties.color);
     mesh.material.emissive.set(entity.properties.color);
   }
+  mesh.userData.entity = entity;
   mesh.userData.rotating = entity.properties?.rotating;
   mesh.userData.speed = entity.properties?.speed || 1;
 
@@ -222,40 +296,84 @@ function removeEntity(id) {
 }
 
 // ============================================
-// Collision Detection
+// Collision Detection (Wall-Slide)
 // ============================================
 const playerBox = new THREE.Box3();
 const entityBox = new THREE.Box3();
-const collisionResponse = new THREE.Vector3();
+
+let standingOnEntity = null; // Track what entity we're standing on
 
 function checkCollisions() {
   if (!playerMesh) return;
 
-  // Update player bounding box
   playerBox.setFromObject(playerMesh);
 
   let standingOnPlatform = false;
   let platformY = 0;
+  let platformVelocity = null;
+  standingOnEntity = null;
 
-  for (const [id, mesh] of entityMeshes) {
+  for (const [, mesh] of entityMeshes) {
     const entity = mesh.userData.entity;
     if (!entity) continue;
 
-    // Update entity bounding box
     entityBox.setFromObject(mesh);
 
-    if (playerBox.intersectsBox(entityBox)) {
-      handleCollision(entity, mesh, entityBox);
+    if (!playerBox.intersectsBox(entityBox)) continue;
 
-      // Check if standing on platform
-      if (entity.type === 'platform' || entity.type === 'ramp') {
-        const playerBottom = playerMesh.position.y - 1; // Player capsule bottom
-        const platformTop = mesh.position.y + (entity.size[1] / 2);
+    // Handle special entity types first
+    if (entity.type === 'collectible') {
+      collectItem(entity);
+      continue;
+    }
+    if (entity.type === 'obstacle') {
+      playerDie();
+      continue;
+    }
+    if (entity.type === 'trigger') {
+      triggerEvent(entity);
+      continue;
+    }
 
-        // If player is above platform and falling
-        if (playerBottom >= platformTop - 0.5 && playerVelocity.y <= 0) {
-          standingOnPlatform = true;
-          platformY = platformTop + 1; // +1 for player capsule height
+    // Solid collision (platform/ramp) - wall-slide resolution
+    if (entity.type === 'platform' || entity.type === 'ramp') {
+      const halfSize = entity.size.map(s => s / 2);
+      const entityPos = mesh.position;
+
+      // Calculate overlaps on each axis
+      const overlapX = (0.5 + halfSize[0]) - Math.abs(playerMesh.position.x - entityPos.x);
+      const overlapY = (1 + halfSize[1]) - Math.abs(playerMesh.position.y - entityPos.y);
+      const overlapZ = (0.5 + halfSize[2]) - Math.abs(playerMesh.position.z - entityPos.z);
+
+      if (overlapX <= 0 || overlapY <= 0 || overlapZ <= 0) continue;
+
+      // Check if standing on top
+      const playerBottom = playerMesh.position.y - 1;
+      const platformTop = entityPos.y + halfSize[1];
+
+      if (playerBottom >= platformTop - 0.5 && playerVelocity.y <= 0) {
+        standingOnPlatform = true;
+        platformY = platformTop + 1;
+        standingOnEntity = entity;
+
+        // Track kinematic platform velocity for carry
+        if (entity.properties?.kinematic && mesh.userData.lastPosition) {
+          platformVelocity = new THREE.Vector3(
+            mesh.position.x - mesh.userData.lastPosition.x,
+            mesh.position.y - mesh.userData.lastPosition.y,
+            mesh.position.z - mesh.userData.lastPosition.z
+          );
+        }
+      } else {
+        // Wall slide - push out on minimum penetration axis (X or Z only)
+        if (overlapX < overlapZ) {
+          const pushDir = playerMesh.position.x > entityPos.x ? 1 : -1;
+          playerMesh.position.x += overlapX * pushDir;
+          playerVelocity.x = 0;
+        } else {
+          const pushDir = playerMesh.position.z > entityPos.z ? 1 : -1;
+          playerMesh.position.z += overlapZ * pushDir;
+          playerVelocity.z = 0;
         }
       }
     }
@@ -266,37 +384,18 @@ function checkCollisions() {
     playerMesh.position.y = platformY;
     playerVelocity.y = 0;
     isGrounded = true;
-  }
-}
 
-function handleCollision(entity, mesh, box) {
-  switch (entity.type) {
-    case 'platform':
-    case 'ramp':
-      // Handled in checkCollisions for vertical resolution
-      break;
-
-    case 'collectible':
-      collectItem(entity);
-      break;
-
-    case 'obstacle':
-      playerDie();
-      break;
-
-    case 'trigger':
-      triggerEvent(entity);
-      break;
+    // Carry player with moving platform
+    if (platformVelocity) {
+      playerMesh.position.x += platformVelocity.x;
+      playerMesh.position.z += platformVelocity.z;
+    }
   }
 }
 
 function collectItem(entity) {
-  // Notify server
   sendToServer('collect', { entityId: entity.id });
-
-  // Remove from local state immediately for responsive feel
   removeEntity(entity.id);
-
   console.log(`[Collect] Picked up ${entity.id}`);
 }
 
@@ -309,29 +408,19 @@ function playerDie() {
     state.localPlayer.state = 'dead';
   }
 
-  // Notify server
-  sendToServer('died', {
-    position: playerMesh.position.toArray()
-  });
+  sendToServer('died', { position: playerMesh.position.toArray() });
 
-  // Visual feedback - turn red briefly
   playerMesh.material.color.setHex(0xff0000);
   playerMesh.material.emissive.setHex(0xff0000);
 
-  // Respawn after delay
-  setTimeout(() => {
-    respawnPlayer();
-  }, 1500);
+  setTimeout(respawnPlayer, 1500);
 }
 
 function respawnPlayer() {
   if (!playerMesh) return;
 
-  // Reset position
   playerMesh.position.set(0, 2, 0);
   playerVelocity.set(0, 0, 0);
-
-  // Reset color
   playerMesh.material.color.setHex(0x00ff88);
   playerMesh.material.emissive.setHex(0x00ff88);
 
@@ -339,14 +428,11 @@ function respawnPlayer() {
     state.localPlayer.state = 'alive';
   }
 
-  // Notify server
   sendToServer('respawn', {});
-
   console.log('[Player] Respawned');
 }
 
 function triggerEvent(entity) {
-  // Triggers can activate challenges, teleport, etc.
   console.log(`[Trigger] Activated: ${entity.id}`);
   sendToServer('trigger_activated', { entityId: entity.id });
 }
@@ -374,17 +460,18 @@ function updatePlayer(delta) {
   const speed = 15;
   const jumpForce = 12;
 
-  // Input
-  const direction = new THREE.Vector3();
-  if (keys.w) direction.z -= 1;
-  if (keys.s) direction.z += 1;
-  if (keys.a) direction.x -= 1;
-  if (keys.d) direction.x += 1;
-  direction.normalize();
+  // Camera-relative movement
+  const { forward, right } = getCameraDirections();
+  const moveDir = new THREE.Vector3();
 
-  // Apply movement
-  playerVelocity.x = direction.x * speed;
-  playerVelocity.z = direction.z * speed;
+  if (keys.w) moveDir.add(forward);
+  if (keys.s) moveDir.sub(forward);
+  if (keys.d) moveDir.add(right);
+  if (keys.a) moveDir.sub(right);
+  moveDir.normalize();
+
+  playerVelocity.x = moveDir.x * speed;
+  playerVelocity.z = moveDir.z * speed;
 
   // Gravity
   playerVelocity.y += state.physics.gravity * delta;
@@ -407,11 +494,8 @@ function updatePlayer(delta) {
     isGrounded = true;
   }
 
-  // Camera follow
-  camera.position.x = playerMesh.position.x;
-  camera.position.y = playerMesh.position.y + 10;
-  camera.position.z = playerMesh.position.z + 20;
-  camera.lookAt(playerMesh.position);
+  // Camera follow (orbit)
+  updateCamera();
 
   // Send position to server (throttled)
   const now = performance.now();
@@ -428,19 +512,174 @@ function updatePlayer(delta) {
 // Input
 // ============================================
 document.addEventListener('keydown', (e) => {
+  // Don't process game keys when chat is focused
+  if (state.chatFocused) {
+    if (e.key === 'Escape') {
+      document.getElementById('chat-input').blur();
+      state.chatFocused = false;
+    }
+    return;
+  }
+
   const key = e.key.toLowerCase();
   if (key in keys) keys[key] = true;
-  if (key === ' ') keys.space = true;
+  if (key === ' ') { keys.space = true; e.preventDefault(); }
+
+  // Enter to focus chat
+  if (e.key === 'Enter') {
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) {
+      chatInput.focus();
+      state.chatFocused = true;
+      if (document.pointerLockElement) {
+        document.exitPointerLock();
+      }
+    }
+  }
+
+  // R to toggle ready
+  if (key === 'r') {
+    state.isReady = !state.isReady;
+    sendToServer('ready', { ready: state.isReady });
+    updateReadyUI();
+  }
 });
 
 document.addEventListener('keyup', (e) => {
+  if (state.chatFocused) return;
   const key = e.key.toLowerCase();
   if (key in keys) keys[key] = false;
   if (key === ' ') keys.space = false;
 });
 
 // ============================================
-// Remote Player Rendering
+// Chat System
+// ============================================
+let lastChatMessageId = 0;
+
+function setupChat() {
+  const chatInput = document.getElementById('chat-input');
+  if (!chatInput) return;
+
+  chatInput.addEventListener('focus', () => {
+    state.chatFocused = true;
+    // Clear all held keys
+    for (const k in keys) keys[k] = false;
+  });
+
+  chatInput.addEventListener('blur', () => {
+    state.chatFocused = false;
+  });
+
+  chatInput.addEventListener('keydown', (e) => {
+    e.stopPropagation(); // Prevent game input handling
+
+    if (e.key === 'Enter') {
+      const text = chatInput.value.trim();
+      if (text.length > 0) {
+        sendChatMessage(text);
+        chatInput.value = '';
+      }
+      chatInput.blur();
+      state.chatFocused = false;
+    }
+
+    if (e.key === 'Escape') {
+      chatInput.blur();
+      state.chatFocused = false;
+    }
+  });
+}
+
+function sendChatMessage(text) {
+  sendToServer('chat', { text });
+}
+
+function displayChatMessage(msg) {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+
+  if (msg.id > lastChatMessageId) {
+    lastChatMessageId = msg.id;
+  }
+
+  const div = document.createElement('div');
+  div.className = `chat-msg ${msg.senderType}`;
+
+  const sender = document.createElement('span');
+  sender.className = 'sender';
+  sender.textContent = `${msg.sender}:`;
+
+  const textSpan = document.createElement('span');
+  textSpan.className = 'text';
+
+  // Highlight @agent mentions
+  const textContent = msg.text.replace(/@agent/gi, (match) => {
+    return `<span class="at-agent">${match}</span>`;
+  });
+  textSpan.innerHTML = textContent;
+
+  div.appendChild(sender);
+  div.appendChild(textSpan);
+  container.appendChild(div);
+
+  // Auto-scroll
+  container.scrollTop = container.scrollHeight;
+}
+
+// ============================================
+// Leaderboard
+// ============================================
+
+async function fetchLeaderboard() {
+  try {
+    const response = await fetch(`${API_URL}/api/leaderboard`);
+    const data = await response.json();
+    updateLeaderboardUI(data.leaderboard);
+  } catch (e) {
+    // Silent fail
+  }
+}
+
+function updateLeaderboardUI(leaderboard) {
+  const panel = document.getElementById('leaderboard-panel');
+  const entries = document.getElementById('leaderboard-entries');
+  if (!panel || !entries) return;
+
+  if (!leaderboard || leaderboard.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  panel.style.display = 'block';
+  entries.innerHTML = leaderboard.map((entry, i) =>
+    `<div class="lb-entry">
+      <span class="lb-rank">${i + 1}.</span>
+      <span class="lb-name">${entry.name}</span>
+      <span class="lb-wins">${entry.wins}W</span>
+    </div>`
+  ).join('');
+}
+
+// ============================================
+// Ready System
+// ============================================
+
+function updateReadyUI() {
+  const indicator = document.getElementById('ready-indicator');
+  if (!indicator) return;
+
+  if (state.isReady) {
+    indicator.textContent = 'READY';
+    indicator.classList.add('is-ready');
+  } else {
+    indicator.textContent = 'Press R to ready up';
+    indicator.classList.remove('is-ready');
+  }
+}
+
+// ============================================
+// Remote Player Rendering (with interpolation)
 // ============================================
 
 function createRemotePlayerMesh(player) {
@@ -474,6 +713,13 @@ function createRemotePlayerMesh(player) {
   sprite.position.y = 2;
   mesh.add(sprite);
 
+  // Initialize interpolation target
+  mesh.userData.targetPosition = new THREE.Vector3();
+  if (player.position) {
+    mesh.userData.targetPosition.set(...player.position);
+    mesh.position.set(...player.position);
+  }
+
   return mesh;
 }
 
@@ -488,7 +734,8 @@ function updateRemotePlayer(player) {
   }
 
   if (player.position) {
-    mesh.position.set(...player.position);
+    // Set target for interpolation (don't snap)
+    mesh.userData.targetPosition.set(...player.position);
   }
 }
 
@@ -510,7 +757,6 @@ function removeRemotePlayer(id) {
 function showAnnouncement(announcement) {
   const container = document.getElementById('announcements');
 
-  // Check if already showing this announcement
   if (state.announcements.has(announcement.id)) return;
 
   const div = document.createElement('div');
@@ -521,7 +767,6 @@ function showAnnouncement(announcement) {
 
   state.announcements.set(announcement.id, true);
 
-  // Schedule removal
   const duration = announcement.duration || 5000;
   setTimeout(() => {
     div.classList.add('fade-out');
@@ -554,7 +799,6 @@ function updateGameStateUI() {
   phaseEl.textContent = state.gameState.phase.toUpperCase();
   typeEl.textContent = state.gameState.gameType ? `Mode: ${state.gameState.gameType}` : '';
 
-  // Update timer
   if (state.gameState.phase === 'playing' && state.gameState.timeRemaining !== undefined) {
     const seconds = Math.ceil(state.gameState.timeRemaining / 1000);
     timerEl.textContent = `${seconds}s`;
@@ -593,7 +837,6 @@ async function fetchInitialState() {
 
     state.physics = data.physics;
 
-    // Add all existing entities
     for (const entity of data.entities) {
       addEntity(entity);
     }
@@ -614,14 +857,12 @@ async function connectToServer() {
     state.room = room;
     state.connected = true;
     console.log('[Network] Connected to room:', room.roomId);
-    console.log('[Network] Room send test - connection alive');
 
-    // Handle disconnection
     room.onLeave((code) => {
       console.warn('[Network] Disconnected from room, code:', code);
       state.room = null;
       state.connected = false;
-      if (code !== 1000) { // Not a clean close
+      if (code !== 1000) {
         setTimeout(attemptReconnect, 1000);
       }
     });
@@ -630,28 +871,26 @@ async function connectToServer() {
       console.error('[Network] Room error:', code, message);
     });
 
-    // Handle events from server
+    // Entity events
     room.onMessage('entity_spawned', (entity) => {
       console.log('[Event] Entity spawned:', entity.id);
       addEntity(entity);
     });
 
     room.onMessage('entity_modified', (entity) => {
-      console.log('[Event] Entity modified:', entity.id);
       updateEntity(entity);
     });
 
     room.onMessage('entity_destroyed', ({ id }) => {
-      console.log('[Event] Entity destroyed:', id);
       removeEntity(id);
     });
 
     room.onMessage('physics_changed', (physics) => {
-      console.log('[Event] Physics changed:', physics);
       state.physics = physics;
       updateUI();
     });
 
+    // Player events
     room.onMessage('player_joined', (player) => {
       console.log('[Event] Player joined:', player.name);
       state.players.set(player.id, player);
@@ -659,30 +898,41 @@ async function connectToServer() {
       updateUI();
     });
 
-    room.onMessage('player_left', ({ id, name }) => {
+    room.onMessage('player_left', ({ id }) => {
       state.players.delete(id);
       removeRemotePlayer(id);
       updateUI();
-      console.log('[Event] Player left:', name || id);
     });
 
     room.onMessage('player_moved', ({ id, position, velocity }) => {
-      if (id === room.sessionId) return; // Ignore self
+      if (id === room.sessionId) return;
       const player = state.players.get(id) || { id, position };
       player.position = position;
       updateRemotePlayer(player);
     });
 
-    room.onMessage('announcement', (announcement) => {
-      showAnnouncement(announcement);
+    room.onMessage('player_ready', ({ name, ready }) => {
+      console.log(`[Event] ${name} is ${ready ? 'ready' : 'not ready'}`);
     });
 
+    // Chat
+    room.onMessage('chat_message', displayChatMessage);
+
+    // Announcements
+    room.onMessage('announcement', showAnnouncement);
+
+    // Game state
     room.onMessage('game_state_changed', (gameState) => {
       console.log('[Event] Game state changed:', gameState.phase);
       state.gameState = gameState;
       updateGameStateUI();
+      // Refresh leaderboard when game ends
+      if (gameState.phase === 'ended') {
+        setTimeout(fetchLeaderboard, 1000);
+      }
     });
 
+    // Init
     room.onMessage('init', (data) => {
       console.log('[Init] Received initial state from room');
       state.physics = data.worldState.physics;
@@ -690,7 +940,6 @@ async function connectToServer() {
       for (const entity of data.worldState.entities) {
         addEntity(entity);
       }
-      // Show any existing announcements
       if (data.worldState.announcements) {
         for (const ann of data.worldState.announcements) {
           showAnnouncement(ann);
@@ -699,7 +948,6 @@ async function connectToServer() {
       updateUI();
     });
 
-    state.connected = true;
     return true;
   } catch (error) {
     console.error('[Network] Connection failed:', error);
@@ -724,8 +972,29 @@ function animate() {
   // Check collisions with entities
   checkCollisions();
 
-  // Rotate entities
-  for (const [id, mesh] of entityMeshes) {
+  // Interpolate remote players
+  for (const [, mesh] of remotePlayers) {
+    if (mesh.userData.targetPosition) {
+      mesh.position.lerp(mesh.userData.targetPosition, 0.15);
+    }
+  }
+
+  // Animate entities
+  for (const [, mesh] of entityMeshes) {
+    // Store last position for kinematic velocity tracking
+    if (mesh.userData.entity?.properties?.kinematic) {
+      if (!mesh.userData.lastPosition) {
+        mesh.userData.lastPosition = mesh.position.clone();
+      } else {
+        mesh.userData.lastPosition.copy(mesh.position);
+      }
+
+      // Smooth interpolation for kinematic entities
+      if (mesh.userData.targetPosition) {
+        mesh.position.lerp(mesh.userData.targetPosition, 0.2);
+      }
+    }
+
     if (mesh.userData.rotating) {
       mesh.rotation.y += mesh.userData.speed * delta;
     }
@@ -756,18 +1025,14 @@ async function pollForUpdates() {
     const response = await fetch(`${API_URL}/api/world/state`);
     const data = await response.json();
 
-    // Update physics
     state.physics = data.physics;
 
-    // Update game state
     if (data.gameState) {
       state.gameState = data.gameState;
     }
 
-    // Sync entities
     const serverIds = new Set(data.entities.map(e => e.id));
 
-    // Add/update entities
     for (const entity of data.entities) {
       if (!entityMeshes.has(entity.id)) {
         addEntity(entity);
@@ -776,7 +1041,6 @@ async function pollForUpdates() {
       }
     }
 
-    // Remove deleted entities
     for (const id of entityMeshes.keys()) {
       if (!serverIds.has(id)) {
         removeEntity(id);
@@ -804,10 +1068,26 @@ async function init() {
   // Create player
   createPlayer();
 
+  // Setup chat
+  setupChat();
+
+  // Fetch initial leaderboard
+  fetchLeaderboard();
+
+  // Fetch initial chat messages
+  try {
+    const chatResp = await fetch(`${API_URL}/api/chat/messages`);
+    const chatData = await chatResp.json();
+    for (const msg of chatData.messages) {
+      displayChatMessage(msg);
+    }
+  } catch (e) { /* ok */ }
+
   // Hide loading, show UI
   document.getElementById('loading').style.display = 'none';
   document.getElementById('ui').style.display = 'block';
   document.getElementById('controls').style.display = 'block';
+  document.getElementById('chat-panel').style.display = 'flex';
 
   // Start animation
   animate();
@@ -815,17 +1095,16 @@ async function init() {
   // Poll for updates every 2 seconds (backup)
   setInterval(pollForUpdates, 2000);
 
-  // Backup position sync (independent of animation loop)
+  // Refresh leaderboard periodically
+  setInterval(fetchLeaderboard, 10000);
+
+  // Backup position sync
   setInterval(() => {
     if (playerMesh && state.room) {
-      try {
-        state.room.send('move', {
-          position: playerMesh.position.toArray(),
-          velocity: playerVelocity.toArray()
-        });
-      } catch (e) {
-        // silent
-      }
+      sendToServer('move', {
+        position: playerMesh.position.toArray(),
+        velocity: playerVelocity.toArray()
+      });
     }
   }, 100);
 

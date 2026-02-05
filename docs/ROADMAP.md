@@ -2,261 +2,152 @@
 
 ## Overview
 
-2-week sprint to hackathon demo. Team of 2-3 people working in parallel.
+2-week sprint to hackathon demo. AI "Chaos Magician" builds a 3D multiplayer game in real-time.
+
+**Stack**: Three.js + Colyseus + OpenClaw (Agent Framework)
+**Decision**: Hyperfy was evaluated Day 1 but rejected due to physics limitations. Three.js + Colyseus selected for full control.
 
 ---
 
-## Phase 1: Foundation (Days 1-3)
+## Phase 1: Foundation (Days 1-2) - COMPLETE
 
-### Goal
-Prove the core technology works: Agent can modify a 3D world that players see.
+*Completed Feb 3-4, 2026*
 
-### Day 1: Setup & Spike
+- [x] Research & feasibility analysis (competitive landscape, tech options)
+- [x] Agent stack selection: OpenClaw chosen over Claude Agent SDK
+- [x] Three.js + Colyseus game server on port 3000
+- [x] Express HTTP API for agent control (13 endpoints)
+- [x] Colyseus WebSocket room for real-time multiplayer
+- [x] World state management (entities, players, physics, challenges)
+- [x] 5 entity types: platform, ramp, collectible, obstacle, trigger
+- [x] OpenClaw game-world skill with 13 tools
+- [x] Chaos Magician persona installed (SOUL.md)
 
-**All Hands**
-- [ ] Clone Hyperfy repo, run locally
-- [ ] Clone eliza-3d-hyperfy-starter, understand structure
-- [ ] Set up Claude Agent SDK project
-- [ ] Create project Discord/Slack for coordination
-
-**Deliverable**: Everyone has dev environment working
-
-### Day 2: Agent → World Bridge
-
-**Lead (Agent Dev)**
-- [ ] Claude Agent SDK "hello world" - agent that writes files
-- [ ] Define action schema: `{ action, type, params }`
-- [ ] Agent reads/writes world-state.json
-
-**Game Dev**
-- [ ] Hyperfy world with basic terrain
-- [ ] Spawn a cube via code (not editor)
-- [ ] WebSocket listener for external commands
-
-**Deliverable**: Agent writes JSON → Game reads it → Object appears
-
-### Day 3: Validation Checkpoint #1
-
-**Integration Test**
-- [ ] Agent spawns a platform
-- [ ] Platform appears in Hyperfy world
-- [ ] Human player joins, sees platform
-- [ ] Agent can move/delete platform
-
-**Decision Point**: Does Hyperfy work for our use case?
-- If yes: Continue with Hyperfy
-- If no (physics too limited): Switch to Three.js + Colyseus
+**Validation**: Agent spawns platform via Telegram command, appears in 3D world.
 
 ---
 
-## Phase 2: Core Loop (Days 4-7)
+## Phase 2: Core Loop (Days 2-3) - COMPLETE
 
-### Goal
-Working game loop: Agent builds → Player plays → Agent adapts
+*Completed Feb 4, 2026*
 
-### Day 4: Physics Sandbox
+- [x] Three.js browser client with WASD + jump controls
+- [x] AABB collision detection (platforms, collectibles, obstacles, triggers)
+- [x] Vite dev server for hot-reload development
+- [x] Remote player rendering (colored capsules + name labels)
+- [x] WebSocket reconnection with polling backup
+- [x] One-way announcements (agent -> players, CSS-animated overlays)
+- [x] Game state machine: lobby -> countdown -> playing -> ended
+- [x] 3 mini-games: ReachGoal, CollectGame, Survival
+- [x] Mini-game framework with shared base class
+- [x] Agent successfully spawns entities and starts games via Telegram
 
-**Game Dev**
-- [ ] Multiple object types (platforms, ramps, collectibles)
-- [ ] Player movement & jumping
-- [ ] Object properties (size, position, rotation)
-- [ ] If Hyperfy: kinematic body animations
-- [ ] If Three.js: proper physics engine setup
-
-**Lead**
-- [ ] Agent decision loop (every 10-30 seconds)
-- [ ] World state reading
-- [ ] Action execution pipeline
-
-### Day 5: Player Tracking
-
-**Game Dev**
-- [ ] Player position broadcast
-- [ ] Collision detection with objects
-- [ ] Collectible pickup system
-
-**Lead**
-- [ ] Agent receives player position data
-- [ ] Agent tracks player success/failure
-- [ ] Basic adaptation logic (if player struggling, help)
-
-### Day 6: Challenge System
-
-**Lead**
-- [ ] Challenge schema: type, target, completion criteria
-- [ ] Challenge creation: "reach platform-001"
-- [ ] Challenge tracking: attempts, successes
-
-**Game Dev**
-- [ ] Visual indicators for challenge targets
-- [ ] Success/failure feedback
-- [ ] Multiplayer: both players see same challenges
-
-### Day 7: Validation Checkpoint #2
-
-**Integration Test**
-- [ ] Agent creates challenge: "reach the platform"
-- [ ] Player attempts challenge
-- [ ] Challenge completion detected
-- [ ] Agent responds (creates new challenge or modifies difficulty)
-- [ ] 2-3 players simultaneously
-
-**Demo**: Core loop working, show to team
+**Validation**: Full end-to-end loop working. Agent controls world, players see changes in real-time.
 
 ---
 
-## Phase 3: Multi-Agent (Days 8-10)
+## Phase 3: Agent Chat, Multiplayer Polish & Game Mechanics (Days 3-4) - IN PROGRESS
 
-### Goal
-AI players join the world and play alongside humans.
+*Started Feb 4, 2026*
 
-### Day 8: AI Player Architecture
+### Priority 1: Player <-> Agent Chat
+- [x] Chat message storage in WorldState (last 50 messages)
+- [x] WebSocket chat handler with rate limiting (1/sec, 200 char max)
+- [x] HTTP endpoints for agent: GET /api/chat/messages, POST /api/chat/send
+- [x] Chat panel UI (bottom-left, color-coded by sender type)
+- [x] @agent mention highlighting
+- [x] Enter to focus chat, Escape to blur, keyboard isolation
+- [x] Agent skill: send_chat_message, get_chat_messages tools
 
-**Lead**
-- [ ] Player agent prompts (Explorer, Chaotic personalities)
-- [ ] Player agent action space (move, jump, interact)
-- [ ] Connect player agents to world state
+### Priority 2: Multiplayer Polish
+- [x] Remote player interpolation (lerp toward target, no jitter)
+- [x] Mouse look camera (pointer lock, orbit, scroll zoom)
+- [x] Camera-relative WASD movement
+- [x] Player ready system (R key toggle, server broadcast)
 
-**Game Dev**
-- [ ] AI player avatars in world
-- [ ] AI player movement commands
-- [ ] AI players visible to humans
+### Priority 3: Richer Game Mechanics
+- [x] Moving/kinematic platforms (path waypoints, ping-pong, speed control)
+- [x] Player carried by moving platforms (velocity tracking)
+- [x] Wall-slide collision (separate X/Z push-out, not full stop)
+- [x] Score & leaderboard (top 10, wins tracking)
+- [x] Leaderboard panel UI (top-right, auto-refresh)
 
-### Day 9: Agent Interactions
+### Priority 4: Documentation
+- [x] ROADMAP.md rewritten with actual progress
 
-**Lead**
-- [ ] Explorer agent tries to complete challenges
-- [ ] Chaotic agent tests edge cases
-- [ ] Builder agent observes AI player behavior
-
-**Game Dev**
-- [ ] AI player position sync
-- [ ] AI player collision with objects
-- [ ] Visual differentiation (human vs AI)
-
-### Day 10: Validation Checkpoint #3
-
-**Integration Test**
-- [ ] 2 human players + 2 AI players in world
-- [ ] AI players attempt challenges
-- [ ] Builder agent creates new challenges
-- [ ] Emergent interactions observed
-- [ ] 10-minute stable session
+### Remaining / To Verify
+- [ ] Agent commentary triggers (respond to @agent, deaths, wins, silence)
+- [ ] Test 2-tab multiplayer with smooth interpolation
+- [ ] Test kinematic platform with ReachGoal game
+- [ ] Leaderboard recording on game end (integrate with mini-game results)
 
 ---
 
-## Phase 4: Streaming (Days 11-12)
+## Phase 4: AI Players & Streaming (Days 5-8)
 
-### Goal
-Stream-ready: OBS layout, chat integration, agent commentary.
+### AI Player Agents
+- [ ] Player agent architecture (Explorer, Chaotic personalities)
+- [ ] AI player movement commands (pathfinding or simple goal-seeking)
+- [ ] AI player avatars visible in world
+- [ ] Agent observes AI player behavior for adaptation
 
-### Day 11: OBS Setup
-
-**Streamer/UX (or Lead if 2-person team)**
-- [ ] OBS scene with game capture
-- [ ] Split layout: game + agent reasoning + chat
-- [ ] Test stream to unlisted channel
-- [ ] Chaos magician avatar overlay
-
-**Lead**
-- [ ] Agent commentary output (text for overlay)
-- [ ] Screenshot capture for agent vision
-- [ ] Combined prompt with vision + JSON
-
-### Day 12: Chat Integration
-
-**Streamer/UX**
-- [ ] Twitch chat bot setup
-- [ ] Message filtering (suggestions only)
-- [ ] Chat → Agent pipeline
-
-**Lead**
-- [ ] Agent receives suggestions
-- [ ] Agent incorporates suggestions into decisions
-- [ ] Agent acknowledges suggestions on stream
+### Streaming Integration
+- [ ] OBS scene layout (game + agent reasoning + chat)
+- [ ] Chaos Magician avatar overlay
+- [ ] Agent commentary output for stream overlay
+- [ ] Twitch/YouTube chat integration (viewer suggestions)
 
 ---
 
-## Phase 5: Polish (Days 13-14)
+## Phase 5: Polish & Demo (Days 9-14)
 
-### Goal
-Hackathon-ready: Stable, demonstrable, presentable.
-
-### Day 13: Bug Bash
-
-**All Hands**
-- [ ] Fix critical bugs from testing
-- [ ] Stability improvements
-- [ ] Edge case handling
-- [ ] Performance optimization
-
-### Day 14: Demo Prep
-
-**All Hands**
+- [ ] Bug bash and stability testing
 - [ ] 30-minute stability test
 - [ ] Demo video recording (backup)
 - [ ] Presentation slides
-- [ ] First public stream (if ready)
+- [ ] First public stream
 
 ---
 
-## Milestones Summary
+## Milestones
 
-| Day | Milestone | Success Criteria |
-|-----|-----------|------------------|
-| 3 | Agent → World | Agent spawns object, player sees it |
-| 7 | Core Loop | Challenge creation & completion working |
-| 10 | Multi-Agent | Human + AI players together |
-| 12 | Stream Ready | OBS + chat integration working |
-| 14 | Demo Ready | 30-min stable session |
-
----
-
-## Risk Checkpoints
-
-### Day 3: Technology Decision
-If Hyperfy physics too limited:
-- Switch to Three.js + Colyseus
-- Adds ~2 days to timeline
-- Cut streaming features if needed
-
-### Day 7: Scope Check
-If behind schedule:
-- Cut AI player agents to stretch goal
-- Focus on builder agent + human players
-- Simplify streaming to screen capture only
-
-### Day 10: Feature Freeze
-- No new features after Day 10
-- Focus on stability and polish
-- Anything not working gets cut
+| Day | Milestone | Status |
+|-----|-----------|--------|
+| 2 | Agent -> World bridge | DONE |
+| 3 | Core game loop | DONE |
+| 4 | Chat + multiplayer polish | DONE |
+| 5-8 | AI players + streaming | TODO |
+| 9-14 | Polish + demo | TODO |
 
 ---
 
-## Team Allocation
+## Architecture
 
-### If 3 People
+```
+Browser Client (Three.js)
+    |
+    | WebSocket (Colyseus)
+    |
+Game Server (Express + Colyseus, port 3000)
+    |
+    | HTTP API
+    |
+OpenClaw Agent (Chaos Magician)
+    |
+    | Telegram
+    |
+Human Operator / Viewers
+```
 
-| Role | Person | Focus |
-|------|--------|-------|
-| Lead | Person A | Agent SDK, prompts, orchestration |
-| Game Dev | Person B | Hyperfy/Three.js, multiplayer |
-| Streamer | Person C | OBS, chat, presentation |
+### Key Files
 
-### If 2 People
-
-| Role | Person | Focus |
-|------|--------|-------|
-| Lead | Person A | Agent SDK, orchestration, streaming |
-| Game Dev | Person B | Hyperfy/Three.js, multiplayer |
-
----
-
-## Daily Standup Format
-
-Quick async update (Discord/Slack):
-1. What I did yesterday
-2. What I'm doing today
-3. Blockers
-
-Sync call: 15 min at end of day if needed.
+| File | Purpose |
+|------|---------|
+| src/server/WorldState.js | Source of truth: entities, players, physics, chat, leaderboard |
+| src/server/GameRoom.js | Colyseus room: player sync, chat, ready system |
+| src/server/index.js | Express API + Colyseus server + game loop |
+| src/server/games/ | Mini-game implementations |
+| src/client/main.js | Three.js client: rendering, input, camera, chat UI |
+| index.html | Game HTML with chat panel, leaderboard, announcements |
+| config/openclaw/ | Agent skill definition |
+| docs/ | Documentation |

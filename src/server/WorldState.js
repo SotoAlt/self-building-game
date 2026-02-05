@@ -35,6 +35,13 @@ export class WorldState {
     // Announcements queue
     this.announcements = [];
 
+    // Chat messages (keep last 50)
+    this.messages = [];
+    this._messageIdCounter = 0;
+
+    // Leaderboard: playerId → { name, wins, totalScore }
+    this.leaderboard = new Map();
+
     // Game state machine
     this.gameState = {
       phase: 'lobby', // lobby, countdown, playing, ended
@@ -112,11 +119,11 @@ export class WorldState {
 
   getDefaultColor(type) {
     const colors = {
-      platform: '#3498db',  // Blue
-      ramp: '#2ecc71',      // Green
-      collectible: '#f1c40f', // Yellow
-      obstacle: '#e74c3c',   // Red
-      trigger: '#9b59b6'     // Purple
+      platform: '#3498db',
+      ramp: '#2ecc71',
+      collectible: '#f1c40f',
+      obstacle: '#e74c3c',
+      trigger: '#9b59b6'
     };
     return colors[type] || '#95a5a6';
   }
@@ -163,6 +170,7 @@ export class WorldState {
       position: [0, 2, 0],
       velocity: [0, 0, 0],
       state: 'alive',
+      ready: false,
       joinedAt: Date.now()
     };
 
@@ -383,6 +391,114 @@ export class WorldState {
     if (this.gameState.phase === 'playing') {
       this.gameState.losers.push(playerId);
     }
+  }
+
+  // ============================================
+  // Chat Messages
+  // ============================================
+
+  addMessage(sender, senderType, text) {
+    const id = ++this._messageIdCounter;
+    const message = { id, sender, senderType, text, timestamp: Date.now() };
+    this.messages.push(message);
+    // Keep only last 50
+    if (this.messages.length > 50) {
+      this.messages = this.messages.slice(-50);
+    }
+    return message;
+  }
+
+  getMessages(since = 0, limit = 20) {
+    let msgs = since > 0
+      ? this.messages.filter(m => m.id > since)
+      : this.messages;
+    return msgs.slice(-limit);
+  }
+
+  // ============================================
+  // Player Ready
+  // ============================================
+
+  setPlayerReady(id, ready) {
+    const player = this.players.get(id);
+    if (!player) return null;
+    player.ready = ready;
+    return player;
+  }
+
+  getReadyCount() {
+    return Array.from(this.players.values()).filter(p => p.ready).length;
+  }
+
+  // ============================================
+  // Leaderboard
+  // ============================================
+
+  recordGameResult(playerId, won, score = 0) {
+    const player = this.players.get(playerId);
+    const name = player?.name || playerId;
+
+    let entry = this.leaderboard.get(playerId);
+    if (!entry) {
+      entry = { name, wins: 0, totalScore: 0 };
+      this.leaderboard.set(playerId, entry);
+    }
+    entry.name = name;
+    if (won) entry.wins++;
+    entry.totalScore += score;
+    return entry;
+  }
+
+  getLeaderboard() {
+    return Array.from(this.leaderboard.entries())
+      .map(([id, data]) => ({ id, ...data }))
+      .sort((a, b) => b.wins - a.wins || b.totalScore - a.totalScore)
+      .slice(0, 10);
+  }
+
+  // ============================================
+  // Kinematic Entities
+  // ============================================
+
+  updateKinematicEntities(delta) {
+    const moved = [];
+    for (const entity of this.entities.values()) {
+      if (!entity.properties?.kinematic || !entity.properties?.path) continue;
+
+      const path = entity.properties.path;
+      if (path.length < 2) continue;
+
+      // Initialize animation state
+      if (entity._pathProgress === undefined) {
+        entity._pathProgress = 0;
+        entity._pathDirection = 1;
+      }
+
+      const speed = (entity.properties.speed || 2) * delta;
+      entity._pathProgress += speed * entity._pathDirection;
+
+      // Ping-pong
+      if (entity._pathProgress >= 1) {
+        entity._pathProgress = 1;
+        entity._pathDirection = -1;
+      } else if (entity._pathProgress <= 0) {
+        entity._pathProgress = 0;
+        entity._pathDirection = 1;
+      }
+
+      // Lerp between first and last waypoint
+      const start = path[0];
+      const end = path.at(-1);
+      const t = entity._pathProgress;
+      entity.position = [
+        start[0] + (end[0] - start[0]) * t,
+        start[1] + (end[1] - start[1]) * t,
+        start[2] + (end[2] - start[2]) * t
+      ];
+
+      moved.push(entity);
+    }
+    return moved;
   }
 
   // ============================================
