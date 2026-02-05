@@ -75,8 +75,24 @@
 ### Priority 4: Documentation
 - [x] ROADMAP.md rewritten with actual progress
 
+### Priority 5: Agent Context & Event System
+- [x] Unified /api/agent/context endpoint (single-poll agent loop)
+- [x] System messages for player join/leave/death/respawn/ready
+- [x] @agent mention detection with request type classification
+- [x] Event log system in WorldState
+- [x] get_context tool for agent skill
+
+### Priority 6: Trick System (Agent as Game Director)
+- [x] Trick system in MiniGame base class (addTrick, processTricks, triggers)
+- [x] Time warnings (30s, 10s, 5s remaining)
+- [x] ReachGoal tricks: move_goal, spawn_obstacles, spawn_shortcut + defaults
+- [x] CollectGame tricks: scatter, spawn_bonus, spawn_decoys + defaults
+- [x] Survival tricks: shrink_platform, hazard_wave, safe_zone, gravity_flip + defaults
+- [x] POST /api/game/trick endpoint for mid-game trick injection
+- [x] add_trick tool in agent skill
+- [x] AGENTS.md updated with trick documentation
+
 ### Remaining / To Verify
-- [ ] Agent commentary triggers (respond to @agent, deaths, wins, silence)
 - [ ] Test 2-tab multiplayer with smooth interpolation
 - [ ] Test kinematic platform with ReachGoal game
 - [ ] Leaderboard recording on game end (integrate with mini-game results)
@@ -116,6 +132,7 @@
 | 2 | Agent -> World bridge | DONE |
 | 3 | Core game loop | DONE |
 | 4 | Chat + multiplayer polish | DONE |
+| 4 | Agent context + trick system | DONE |
 | 5-8 | AI players + streaming | TODO |
 | 9-14 | Polish + demo | TODO |
 

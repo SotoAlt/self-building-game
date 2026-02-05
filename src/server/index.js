@@ -278,6 +278,22 @@ app.post('/api/game/winner', (req, res) => {
   res.json({ success: true, gameState: worldState.getGameState() });
 });
 
+// Add trick to current mini-game
+app.post('/api/game/trick', (req, res) => {
+  const { trigger, action, params } = req.body;
+
+  if (!trigger || !action) {
+    return res.status(400).json({ error: 'Missing required: trigger, action' });
+  }
+
+  if (!currentMiniGame?.isActive) {
+    return res.status(400).json({ error: 'No active game' });
+  }
+
+  const id = currentMiniGame.addTrick(trigger, action, params);
+  res.json({ success: true, trickId: id });
+});
+
 // Get current mini-game status
 app.get('/api/game/minigame', (req, res) => {
   res.json({ miniGame: currentMiniGame?.getStatus() ?? null });
@@ -411,6 +427,7 @@ httpServer.listen(PORT, () => {
 ║  Game State Endpoints:                                    ║
 ║    POST /api/game/start       - Start mini-game           ║
 ║    POST /api/game/end         - End current game          ║
+║    POST /api/game/trick       - Add trick mid-game        ║
 ║    GET  /api/game/state       - Get game state            ║
 ║    POST /api/game/winner      - Record winner             ║
 ║                                                           ║

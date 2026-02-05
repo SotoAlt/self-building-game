@@ -39,8 +39,85 @@ export class CollectGame extends MiniGame {
     return this;
   }
 
+  setupDefaultTricks() {
+    // Scatter remaining collectibles at 15s
+    this.addTrick({ type: 'time', at: 15000 }, 'scatter');
+    // Spawn bonus items at 30s
+    this.addTrick({ type: 'time', at: 30000 }, 'spawn_bonus');
+    // Speed burst when any player hits 5
+    this.addTrick({ type: 'score', player: 'any', value: 5 }, 'speed_burst');
+    // Announce remaining count every 20s
+    this.addTrick({ type: 'interval', every: 20000 }, 'announce_remaining');
+  }
+
   randomInRange(min, max) {
     return Math.random() * (max - min) + min;
+  }
+
+  executeTrickAction(trick) {
+    switch (trick.action) {
+      case 'scatter': {
+        // Teleport remaining collectibles to new random positions
+        for (const id of this.collectibleIds) {
+          const entity = this.worldState.entities.get(id);
+          if (!entity) continue;
+          const newPos = [
+            this.randomInRange(this.spawnArea.x[0], this.spawnArea.x[1]),
+            this.randomInRange(this.spawnArea.y[0], this.spawnArea.y[1]),
+            this.randomInRange(this.spawnArea.z[0], this.spawnArea.z[1])
+          ];
+          this.worldState.modifyEntity(id, { position: newPos });
+          this.broadcast('entity_modified', entity);
+        }
+        this.announce('ITEMS SCATTERED!', 'system');
+        break;
+      }
+      case 'spawn_bonus': {
+        const count = trick.params.count || 3;
+        for (let i = 0; i < count; i++) {
+          const pos = [
+            this.randomInRange(this.spawnArea.x[0], this.spawnArea.x[1]),
+            this.randomInRange(this.spawnArea.y[0], this.spawnArea.y[1]),
+            this.randomInRange(this.spawnArea.z[0], this.spawnArea.z[1])
+          ];
+          const bonus = this.spawnEntity('collectible', pos, [1.5, 1.5, 1.5], {
+            color: '#f39c12',
+            value: 3,
+            bonus: true
+          });
+          this.collectibleIds.push(bonus.id);
+        }
+        this.announce('BONUS ITEMS APPEARED! (3x value)', 'system');
+        break;
+      }
+      case 'spawn_decoys': {
+        const count = trick.params.count || 3;
+        for (let i = 0; i < count; i++) {
+          const pos = [
+            this.randomInRange(this.spawnArea.x[0], this.spawnArea.x[1]),
+            this.randomInRange(this.spawnArea.y[0], this.spawnArea.y[1]),
+            this.randomInRange(this.spawnArea.z[0], this.spawnArea.z[1])
+          ];
+          this.spawnEntity('collectible', pos, [1, 1, 1], {
+            color: '#e74c3c',
+            value: -1,
+            decoy: true
+          });
+          // Decoys are not tracked in collectibleIds — they don't contribute to "all collected" win
+        }
+        this.announce('Beware the RED ones...', 'system');
+        break;
+      }
+      case 'announce_remaining': {
+        const remaining = this.collectibleIds.filter(id => this.worldState.entities.has(id)).length;
+        if (remaining > 0) {
+          this.announce(`${remaining} items remain!`, 'system');
+        }
+        break;
+      }
+      default:
+        super.executeTrickAction(trick);
+    }
   }
 
   // Called when a player collects an item
@@ -59,7 +136,7 @@ export class CollectGame extends MiniGame {
 
     // Announce score milestone
     const score = this.scores.get(playerId) || 0;
-    if (score % 5 === 0) {
+    if (score % 2 === 0) {
       const player = this.worldState.players.get(playerId);
       this.announce(`${player?.name || 'Player'}: ${score} items!`, 'player');
     }

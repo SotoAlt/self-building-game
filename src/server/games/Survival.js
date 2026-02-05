@@ -33,6 +33,17 @@ export class Survival extends MiniGame {
     return this;
   }
 
+  setupDefaultTricks() {
+    // Shrink platform at 20s
+    this.addTrick({ type: 'time', at: 20000 }, 'shrink_platform');
+    // Shrink again at 45s
+    this.addTrick({ type: 'time', at: 45000 }, 'shrink_platform');
+    // Hazard wave at 60s
+    this.addTrick({ type: 'time', at: 60000 }, 'hazard_wave');
+    // Brief gravity flip every 30s
+    this.addTrick({ type: 'interval', every: 30000 }, 'gravity_flip');
+  }
+
   update(delta) {
     super.update(delta);
 
@@ -102,6 +113,60 @@ export class Survival extends MiniGame {
     });
 
     console.log(`[Survival] Spawned expanding obstacle`);
+  }
+
+  executeTrickAction(trick) {
+    switch (trick.action) {
+      case 'shrink_platform': {
+        const platform = this.worldState.entities.get(this.platformId);
+        if (platform) {
+          const newSize = platform.size.map(s => Math.max(s * 0.8, 5));
+          this.worldState.modifyEntity(this.platformId, { size: newSize });
+          this.broadcast('entity_modified', platform);
+          this.announce('THE ARENA SHRINKS!', 'system');
+        }
+        break;
+      }
+      case 'hazard_wave': {
+        const count = trick.params.count || 5;
+        for (let i = 0; i < count; i++) {
+          this.spawnRandomHazard();
+        }
+        this.announce('HAZARD WAVE INCOMING!', 'system');
+        break;
+      }
+      case 'safe_zone': {
+        const duration = trick.params.duration || 8000;
+        const safeZone = this.spawnEntity('platform', [0, 0.5, 0], [6, 0.5, 6], {
+          color: '#2ecc71'
+        });
+        this.announce('A safe zone appears! Quick!', 'system');
+        setTimeout(() => {
+          try {
+            this.worldState.destroyEntity(safeZone.id);
+            this.broadcast('entity_destroyed', { id: safeZone.id });
+            if (this.isActive) this.announce('The safe zone crumbles...', 'system');
+          } catch (e) { /* already gone */ }
+        }, duration);
+        break;
+      }
+      case 'gravity_flip': {
+        const duration = trick.params.duration || 10000;
+        const original = this.worldState.physics.gravity;
+        this.worldState.setPhysics({ gravity: -3 });
+        this.broadcast('physics_changed', this.worldState.physics);
+        this.announce('LOW GRAVITY!', 'system');
+        setTimeout(() => {
+          if (this.isActive) {
+            this.worldState.setPhysics({ gravity: original });
+            this.broadcast('physics_changed', this.worldState.physics);
+          }
+        }, duration);
+        break;
+      }
+      default:
+        super.executeTrickAction(trick);
+    }
   }
 
   // Called when player dies

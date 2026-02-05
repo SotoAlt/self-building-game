@@ -272,6 +272,30 @@ async function clear_spells() {
 }
 
 /**
+ * Tool: add_trick
+ * Add a trick (timed/conditional event) to the current mini-game.
+ * Tricks fire automatically during gameplay based on triggers.
+ *
+ * Trigger types:
+ *   { type: 'time', at: 15000 }               — fire at 15s elapsed
+ *   { type: 'interval', every: 10000 }         — fire every 10s
+ *   { type: 'score', player: 'any', value: 3 } — when any player reaches 3
+ *   { type: 'deaths', count: 2 }               — when 2 players eliminated
+ *
+ * Actions (built-in): flip_gravity, speed_burst, announce
+ * Actions (ReachGoal): move_goal, spawn_obstacles, spawn_shortcut
+ * Actions (CollectGame): scatter, spawn_bonus, spawn_decoys
+ * Actions (Survival): shrink_platform, hazard_wave, safe_zone, gravity_flip
+ */
+async function add_trick({ trigger, action, params = {} }) {
+  if (!trigger || !action) {
+    return { success: false, error: 'Missing required parameters: trigger, action' };
+  }
+
+  return gameRequest('/api/game/trick', 'POST', { trigger, action, params });
+}
+
+/**
  * Tool: get_context
  * Get unified agent context (players, game state, chat, events, entities, physics)
  * This is the primary polling tool - replaces calling multiple endpoints separately.
@@ -299,5 +323,6 @@ export {
   get_chat_messages,
   cast_spell,
   clear_spells,
+  add_trick,
   get_context
 };

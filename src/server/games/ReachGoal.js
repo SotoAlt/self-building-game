@@ -38,6 +38,28 @@ export class ReachGoal extends MiniGame {
     return this;
   }
 
+  setupDefaultTricks() {
+    // Move the goal to a new random position at 20s
+    this.addTrick({ type: 'time', at: 20000 }, 'move_goal');
+    // Spawn obstacles near the goal at 40s
+    this.addTrick({ type: 'time', at: 40000 }, 'spawn_obstacles');
+    // Taunt every 15s
+    this.addTrick({ type: 'interval', every: 15000 }, 'announce', {
+      text: this._randomTaunt(), type: 'system'
+    });
+  }
+
+  _randomTaunt() {
+    const taunts = [
+      'The goal watches and waits...',
+      'Getting warmer? Or colder?',
+      'Tick tock, challengers!',
+      'The Magician grows impatient...',
+      'Perhaps a shortcut? No... that would be too easy.'
+    ];
+    return taunts[Math.floor(Math.random() * taunts.length)];
+  }
+
   checkWinCondition() {
     // Check if any player is touching the target
     const targetEntity = this.worldState.entities.get(this.targetEntityId);
@@ -68,6 +90,53 @@ export class ReachGoal extends MiniGame {
     }
 
     return null;
+  }
+
+  executeTrickAction(trick) {
+    switch (trick.action) {
+      case 'move_goal': {
+        const newPos = [
+          (Math.random() - 0.5) * 40,
+          3 + Math.random() * 8,
+          (Math.random() - 0.5) * 40
+        ];
+        const entity = this.worldState.entities.get(this.targetEntityId);
+        if (entity) {
+          this.worldState.modifyEntity(this.targetEntityId, { position: newPos });
+          this.broadcast('entity_modified', entity);
+          this.announce('THE GOAL HAS SHIFTED!', 'system');
+        }
+        break;
+      }
+      case 'spawn_obstacles': {
+        const goalEntity = this.worldState.entities.get(this.targetEntityId);
+        const goalPos = goalEntity?.position || [0, 5, -30];
+        for (let i = 0; i < 3; i++) {
+          const offset = [(Math.random() - 0.5) * 10, 0, (Math.random() - 0.5) * 10];
+          this.spawnEntity('obstacle', [
+            goalPos[0] + offset[0],
+            goalPos[1] - 2,
+            goalPos[2] + offset[2]
+          ], [2, 3, 2], { color: '#e74c3c' });
+        }
+        this.announce('Obstacles appear near the goal!', 'system');
+        break;
+      }
+      case 'spawn_shortcut': {
+        // Create a ramp toward the goal for struggling players
+        const goalEntity = this.worldState.entities.get(this.targetEntityId);
+        const goalPos = goalEntity?.position || [0, 5, -30];
+        this.spawnEntity('ramp', [
+          goalPos[0] - 5,
+          goalPos[1] - 3,
+          goalPos[2]
+        ], [4, 1, 8], { color: '#2ecc71' });
+        this.announce('A mysterious ramp appears...', 'system');
+        break;
+      }
+      default:
+        super.executeTrickAction(trick);
+    }
   }
 
   // Handle player touching the goal (called from server when trigger activated)

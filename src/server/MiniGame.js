@@ -61,6 +61,15 @@ export class MiniGame {
 
     // Entities created for this game (for cleanup)
     this.gameEntities = [];
+
+    // Trick system — timed/conditional events the agent configures
+    this.tricks = [];
+    this._trickIdCounter = 0;
+
+    // Time warnings
+    this._warned30 = false;
+    this._warned10 = false;
+    this._warned5 = false;
   }
 
   // Start the game
@@ -83,6 +92,9 @@ export class MiniGame {
       countdownTime: this.config.countdownTime || 3000
     });
 
+    // Setup default tricks (overridden by subclasses)
+    this.setupDefaultTricks();
+
     // Announce start
     this.announce(`${GAME_TYPES[this.type]?.name || this.type} starting!`, 'system');
 
@@ -90,16 +102,29 @@ export class MiniGame {
     return this;
   }
 
+  // Override in subclasses to add default tricks
+  setupDefaultTricks() {}
+
   // Called every tick
   update(delta) {
     if (!this.isActive) return;
 
-    // Check time limit
     const elapsed = Date.now() - this.startTime;
+
+    // Check time limit
     if (elapsed >= this.timeLimit) {
       this.end('timeout');
       return;
     }
+
+    // Process tricks
+    this.processTricks(elapsed);
+
+    // Time warnings
+    const remaining = this.timeLimit - elapsed;
+    if (remaining <= 30000 && !this._warned30) { this.announce('30 SECONDS!', 'system'); this._warned30 = true; }
+    if (remaining <= 10000 && !this._warned10) { this.announce('10 SECONDS!', 'system'); this._warned10 = true; }
+    if (remaining <= 5000 && !this._warned5) { this.announce('FINAL 5 SECONDS!', 'system'); this._warned5 = true; }
 
     // Check win condition (to be overridden)
     const result = this.checkWinCondition();
@@ -219,6 +244,94 @@ export class MiniGame {
     console.log(`[MiniGame] Cleaned up ${this.gameEntities.length} entities`);
   }
 
+  // ============================================
+  // Trick System
+  // ============================================
+
+  addTrick(trigger, action, params = {}) {
+    const id = ++this._trickIdCounter;
+    this.tricks.push({ id, trigger, action, params, fired: false, lastFired: 0 });
+    return id;
+  }
+
+  processTricks(elapsed) {
+    for (const trick of this.tricks) {
+      if (trick.fired && trick.trigger.type !== 'interval') continue;
+      if (this.shouldFireTrick(trick, elapsed)) {
+        this.executeTrick(trick, elapsed);
+        trick.fired = true;
+        trick.lastFired = elapsed;
+      }
+    }
+  }
+
+  shouldFireTrick(trick, elapsed) {
+    switch (trick.trigger.type) {
+      case 'time':
+        return elapsed >= trick.trigger.at;
+      case 'score':
+        return this.checkScoreTrigger(trick.trigger);
+      case 'deaths':
+        return this.losers.length >= trick.trigger.count;
+      case 'interval':
+        return elapsed - trick.lastFired >= trick.trigger.every;
+      default:
+        return false;
+    }
+  }
+
+  checkScoreTrigger(trigger) {
+    if (trigger.player === 'any') {
+      for (const [, score] of this.scores) {
+        if (score >= trigger.value) return true;
+      }
+    } else if (trigger.player) {
+      return (this.scores.get(trigger.player) || 0) >= trigger.value;
+    }
+    return false;
+  }
+
+  executeTrick(trick, elapsed) {
+    console.log(`[MiniGame] Trick fired: ${trick.action}`);
+
+    // Built-in actions
+    switch (trick.action) {
+      case 'announce':
+        this.announce(trick.params.text || 'The Magician stirs...', trick.params.type || 'system');
+        return;
+      case 'flip_gravity': {
+        const low = trick.params.gravity ?? -3;
+        const duration = trick.params.duration ?? 10000;
+        const original = this.worldState.physics.gravity;
+        this.worldState.setPhysics({ gravity: low });
+        this.announce('GRAVITY SHIFTS!', 'system');
+        this.broadcast('physics_changed', this.worldState.physics);
+        setTimeout(() => {
+          if (this.isActive) {
+            this.worldState.setPhysics({ gravity: original });
+            this.broadcast('physics_changed', this.worldState.physics);
+          }
+        }, duration);
+        return;
+      }
+      case 'speed_burst': {
+        const duration = trick.params.duration ?? 8000;
+        const spell = this.worldState.castSpell('speed_boost', duration);
+        this.broadcast('spell_cast', spell);
+        this.announce('SPEED SURGE!', 'system');
+        return;
+      }
+      default:
+        // Delegate to game-specific handler
+        this.executeTrickAction(trick);
+    }
+  }
+
+  // Override in subclasses for game-specific trick actions
+  executeTrickAction(trick) {
+    console.log(`[MiniGame] Unhandled trick action: ${trick.action}`);
+  }
+
   // Get game status
   getStatus() {
     return {
@@ -228,7 +341,9 @@ export class MiniGame {
       timeRemaining: this.isActive ? Math.max(0, this.timeLimit - (Date.now() - this.startTime)) : 0,
       players: Object.fromEntries(this.players),
       scores: Object.fromEntries(this.scores),
-      winners: this.winners
+      winners: this.winners,
+      trickCount: this.tricks.length,
+      tricksFired: this.tricks.filter(t => t.fired).length
     };
   }
 }
