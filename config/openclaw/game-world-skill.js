@@ -198,9 +198,22 @@ async function start_game({ type, timeLimit, goalPosition, collectibleCount }) {
     return { success: false, error: 'Missing required parameter: type' };
   }
 
-  const validTypes = ['reach', 'collect', 'survival', 'obstacle'];
+  const validTypes = ['reach', 'collect', 'survival'];
   if (!validTypes.includes(type)) {
     return { success: false, error: `Invalid type. Must be one of: ${validTypes.join(', ')}` };
+  }
+
+  // Pre-flight: reject unless in lobby or building, and not in cooldown
+  const state = await gameRequest('/api/game/state');
+  if (state.success && state.gameState) {
+    const phase = state.gameState.phase;
+    if (phase !== 'lobby' && phase !== 'building') {
+      return { success: false, error: `Cannot start game — current phase is '${phase}'. Wait for lobby.` };
+    }
+    if (state.gameState.cooldownUntil > Date.now()) {
+      const remaining = Math.ceil((state.gameState.cooldownUntil - Date.now()) / 1000);
+      return { success: false, error: `Cooldown active — wait ${remaining}s before starting a new game.` };
+    }
   }
 
   const body = { type };
@@ -296,12 +309,89 @@ async function add_trick({ trigger, action, params = {} }) {
 }
 
 /**
+ * Pre-flight check: reject if a game is actively running (countdown or playing).
+ * Returns an error object if blocked, or null if safe to proceed.
+ */
+async function checkNotInActiveGame(actionName) {
+  const state = await gameRequest('/api/game/state');
+  if (state.success && state.gameState) {
+    const phase = state.gameState.phase;
+    if (phase === 'countdown' || phase === 'playing') {
+      return { success: false, error: `Cannot ${actionName} during '${phase}' phase. Wait for the game to end.` };
+    }
+  }
+  return null;
+}
+
+/**
  * Tool: get_context
  * Get unified agent context (players, game state, chat, events, entities, physics)
  * This is the primary polling tool - replaces calling multiple endpoints separately.
  */
 async function get_context({ since_message = 0, since_event = 0 } = {}) {
   return gameRequest(`/api/agent/context?since_message=${since_message}&since_event=${since_event}`);
+}
+
+/**
+ * Tool: clear_world
+ * Remove all entities and reset physics. Use before building a new arena.
+ */
+async function clear_world() {
+  const blocked = await checkNotInActiveGame('clear world');
+  if (blocked) return blocked;
+
+  return gameRequest('/api/world/clear', 'POST', {});
+}
+
+/**
+ * Tool: load_template
+ * Load a pre-built arena template. Clears the world first.
+ * Available templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell
+ */
+async function load_template({ name }) {
+  if (!name) {
+    return { success: false, error: 'Missing required parameter: name' };
+  }
+
+  const blocked = await checkNotInActiveGame('load template');
+  if (blocked) return blocked;
+
+  return gameRequest('/api/world/template', 'POST', { name });
+}
+
+/**
+ * Tool: set_respawn
+ * Set the respawn point for players. Call before starting a game.
+ */
+async function set_respawn({ position }) {
+  if (!position || !Array.isArray(position)) {
+    return { success: false, error: 'Missing required parameter: position [x,y,z]' };
+  }
+  return gameRequest('/api/world/respawn', 'POST', { position });
+}
+
+/**
+ * Tool: get_drama_score
+ * Check the current drama level (0-100) and session phase.
+ */
+async function get_drama_score() {
+  return gameRequest('/api/agent/drama');
+}
+
+/**
+ * Tool: start_building
+ * Enter building phase. Signals to players that the arena is being constructed.
+ */
+async function start_building() {
+  return gameRequest('/api/game/building', 'POST', {});
+}
+
+/**
+ * Tool: check_bribes
+ * Check pending bribes from players. Decide whether to honor them.
+ */
+async function check_bribes() {
+  return gameRequest('/api/bribe/pending');
 }
 
 // Export tools for OpenClaw
@@ -324,5 +414,11 @@ export {
   cast_spell,
   clear_spells,
   add_trick,
-  get_context
+  get_context,
+  clear_world,
+  load_template,
+  set_respawn,
+  get_drama_score,
+  start_building,
+  check_bribes
 };

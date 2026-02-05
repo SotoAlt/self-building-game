@@ -1,0 +1,77 @@
+/**
+ * ChainInterface - Abstract blockchain interface + mock implementation
+ *
+ * Later: swap MockChainInterface for MonadChainInterface (EVM).
+ */
+
+export class ChainInterface {
+  async submitBribe(playerId, amount, request) {
+    throw new Error('Not implemented');
+  }
+  async checkPendingBribes() {
+    throw new Error('Not implemented');
+  }
+  async getBalance(playerId) {
+    throw new Error('Not implemented');
+  }
+  async recordResult(gameId, winnerId, scores) {
+    throw new Error('Not implemented');
+  }
+}
+
+export class MockChainInterface extends ChainInterface {
+  constructor() {
+    super();
+    this.bribes = [];
+    this.balances = new Map();
+    this._nextId = 1;
+  }
+
+  async submitBribe(playerId, amount, request) {
+    const bribe = {
+      id: `bribe-${this._nextId++}`,
+      playerId,
+      amount,
+      request,
+      status: 'pending',
+      timestamp: Date.now()
+    };
+    this.bribes.push(bribe);
+
+    // Deduct mock balance
+    const balance = this.balances.get(playerId) || 1000;
+    this.balances.set(playerId, Math.max(0, balance - amount));
+
+    console.log(`[Chain] Bribe submitted: ${amount} tokens from ${playerId} — "${request}"`);
+    return bribe;
+  }
+
+  async checkPendingBribes() {
+    return this.bribes.filter(b => b.status === 'pending');
+  }
+
+  async acknowledgeBribe(bribeId, honored) {
+    const bribe = this.bribes.find(b => b.id === bribeId);
+    if (bribe) {
+      bribe.status = honored ? 'honored' : 'rejected';
+      // Refund if rejected
+      if (!honored) {
+        const balance = this.balances.get(bribe.playerId) || 0;
+        this.balances.set(bribe.playerId, balance + bribe.amount);
+      }
+    }
+    return bribe;
+  }
+
+  async getBalance(playerId) {
+    if (!this.balances.has(playerId)) {
+      this.balances.set(playerId, 1000); // Starting balance
+    }
+    return this.balances.get(playerId);
+  }
+
+  async recordResult(gameId, winnerId, scores) {
+    console.log(`[Chain] Game ${gameId} result recorded (mock)`);
+    return { gameId, winnerId, scores, recorded: true };
+  }
+}

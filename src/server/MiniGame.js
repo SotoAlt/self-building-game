@@ -5,7 +5,6 @@
  * - reach: First to touch target wins
  * - collect: Most collectibles in time wins
  * - survival: Last player standing wins
- * - obstacle: Complete course without dying
  */
 
 import { randomUUID } from 'crypto';
@@ -33,13 +32,6 @@ export const GAME_TYPES = {
     minPlayers: 2,
     hasTimer: true,
     defaultTimeLimit: 90000
-  },
-  obstacle: {
-    name: 'Obstacle Course',
-    description: 'Complete the course without dying',
-    minPlayers: 1,
-    hasTimer: true,
-    defaultTimeLimit: 120000
   }
 };
 
@@ -62,6 +54,9 @@ export class MiniGame {
 
     // Entities created for this game (for cleanup)
     this.gameEntities = [];
+
+    // Callback for when game ends (set by server to notify AgentLoop)
+    this.onEnd = null;
 
     // Trick system — timed/conditional events the agent configures
     this.tricks = [];
@@ -189,6 +184,16 @@ export class MiniGame {
     // End in world state
     this.worldState.endGame(result, winnerId);
 
+    // Record results to leaderboard
+    if (winnerId) {
+      this.worldState.recordGameResult(winnerId, true, this.scores.get(winnerId) || 0);
+    }
+    for (const [playerId] of this.players) {
+      if (playerId !== winnerId) {
+        this.worldState.recordGameResult(playerId, false, this.scores.get(playerId) || 0);
+      }
+    }
+
     // Fire-and-forget DB write
     saveGameHistory({
       id: this.id,
@@ -212,6 +217,9 @@ export class MiniGame {
 
     // Cleanup game entities after delay
     setTimeout(() => this.cleanup(), 5000);
+
+    // Notify server (AgentLoop, cleanup currentMiniGame reference)
+    this.onEnd?.();
 
     return { result, winners: this.winners, scores: Object.fromEntries(this.scores) };
   }

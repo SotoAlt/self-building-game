@@ -50,13 +50,17 @@ export class WorldState {
     this.events = [];
     this._eventIdCounter = 0;
 
+    // Respawn point (agent-configurable)
+    this.respawnPoint = [0, 2, 0];
+
     // Game state machine
     this.gameState = {
-      phase: 'lobby', // lobby, countdown, playing, ended
+      phase: 'lobby', // lobby, building, countdown, playing, ended
       currentGame: null,
       gameType: null,
       startTime: null,
       timeLimit: null,
+      cooldownUntil: 0,
       winners: [],
       losers: []
     };
@@ -125,6 +129,21 @@ export class WorldState {
     console.log(`[WorldState] Destroyed ${id}`);
   }
 
+  clearEntities() {
+    const ids = [...this.entities.keys()];
+    this.entities.clear();
+    this.physics = { gravity: -9.8, friction: 0.3, bounce: 0.5 };
+    this.clearEffects();
+    console.log(`[WorldState] Cleared ${ids.length} entities`);
+    return ids;
+  }
+
+  setRespawnPoint(position) {
+    this.respawnPoint = [...position];
+    console.log(`[WorldState] Respawn point set to [${position.join(', ')}]`);
+    return this.respawnPoint;
+  }
+
   getDefaultColor(type) {
     const colors = {
       platform: '#3498db',
@@ -175,7 +194,7 @@ export class WorldState {
       id,
       name,
       type, // 'human' or 'ai'
-      position: [0, 2, 0],
+      position: [...this.respawnPoint],
       velocity: [0, 0, 0],
       state: 'alive',
       ready: false,
@@ -309,7 +328,7 @@ export class WorldState {
   // ============================================
 
   startGame(gameType, config = {}) {
-    const validTypes = ['reach', 'collect', 'survival', 'obstacle'];
+    const validTypes = ['reach', 'collect', 'survival'];
     if (!validTypes.includes(gameType)) {
       throw new Error(`Invalid game type: ${gameType}`);
     }
@@ -323,17 +342,23 @@ export class WorldState {
       gameType,
       startTime: Date.now(),
       timeLimit,
+      cooldownUntil: 0,
       targetEntity: config.targetEntity || null,
       winners: [],
       losers: []
     };
 
     // Transition to playing after countdown
-    setTimeout(() => {
+    this._countdownTimer = setTimeout(() => {
       if (this.gameState.currentGame === gameId && this.gameState.phase === 'countdown') {
         this.gameState.phase = 'playing';
         this.gameState.startTime = Date.now();
         console.log(`[WorldState] Game started: ${gameType}`);
+
+        // Notify listeners of phase transition
+        if (typeof this.onPhaseChange === 'function') {
+          this.onPhaseChange(this.getGameState());
+        }
       }
     }, config.countdownTime || 3000);
 
@@ -346,9 +371,15 @@ export class WorldState {
       return this.gameState;
     }
 
+    // Cancel countdown timer if game ends during countdown
+    clearTimeout(this._countdownTimer);
+
+    const endedGameId = this.gameState.currentGame;
+
     this.gameState.phase = 'ended';
     this.gameState.endTime = Date.now();
     this.gameState.result = result; // 'win', 'lose', 'timeout', 'cancelled'
+    this.gameState.cooldownUntil = Date.now() + 8000;
 
     if (winnerId) {
       this.gameState.winners.push(winnerId);
@@ -356,25 +387,55 @@ export class WorldState {
 
     console.log(`[WorldState] Game ended: ${result}`);
 
-    // Return to lobby after delay
-    setTimeout(() => {
-      this.resetGameState();
+    // Notify listeners of phase transition
+    if (typeof this.onPhaseChange === 'function') {
+      this.onPhaseChange(this.getGameState());
+    }
+
+    // Return to lobby after delay (only if no new game started)
+    clearTimeout(this._lobbyResetTimer);
+    this._lobbyResetTimer = setTimeout(() => {
+      if (this.gameState.phase === 'ended' && this.gameState.currentGame === endedGameId) {
+        this.resetGameState();
+      }
     }, 5000);
 
     return { ...this.gameState };
   }
 
   resetGameState() {
+    const { cooldownUntil } = this.gameState;
     this.gameState = {
       phase: 'lobby',
       currentGame: null,
       gameType: null,
       startTime: null,
       timeLimit: null,
+      cooldownUntil,
       winners: [],
       losers: []
     };
     console.log('[WorldState] Game state reset to lobby');
+
+    // Notify listeners of phase transition
+    if (typeof this.onPhaseChange === 'function') {
+      this.onPhaseChange(this.getGameState());
+    }
+  }
+
+  startBuilding() {
+    this.gameState = {
+      phase: 'building',
+      currentGame: null,
+      gameType: null,
+      startTime: Date.now(),
+      timeLimit: null,
+      cooldownUntil: 0,
+      winners: [],
+      losers: []
+    };
+    console.log('[WorldState] Entered building phase');
+    return { ...this.gameState };
   }
 
   getGameState() {
@@ -387,6 +448,10 @@ export class WorldState {
     }
 
     return state;
+  }
+
+  isInCooldown() {
+    return Date.now() < this.gameState.cooldownUntil;
   }
 
   recordWinner(playerId) {
@@ -436,6 +501,12 @@ export class WorldState {
 
   getReadyCount() {
     return Array.from(this.players.values()).filter(p => p.ready).length;
+  }
+
+  getHumanReadyCount() {
+    const humans = Array.from(this.players.values()).filter(p => p.type !== 'ai');
+    const readyHumans = humans.filter(p => p.ready);
+    return { ready: readyHumans.length, total: humans.length };
   }
 
   // ============================================

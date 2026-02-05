@@ -257,6 +257,109 @@
       color: #2ecc71;
       border: 1px solid #2ecc71;
     }
+    /* Game status building phase */
+    #game-status.building {
+      border: 2px solid #9b59b6;
+    }
+    /* Spectator overlay */
+    #spectator-overlay {
+      display: none;
+    }
+    #drama-meter {
+      position: fixed;
+      bottom: 80px;
+      right: 20px;
+      width: 200px;
+      z-index: 200;
+      background: rgba(0,0,0,0.8);
+      padding: 10px;
+      border-radius: 8px;
+      color: white;
+    }
+    #drama-meter h4 {
+      font-size: 12px;
+      margin-bottom: 6px;
+      color: #e74c3c;
+    }
+    .drama-bar {
+      height: 8px;
+      background: #333;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #drama-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #2ecc71, #f1c40f, #e74c3c);
+      width: 0%;
+      transition: width 0.5s ease;
+      border-radius: 4px;
+    }
+    .drama-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      margin-top: 4px;
+    }
+    #agent-status {
+      position: fixed;
+      bottom: 140px;
+      right: 20px;
+      width: 200px;
+      z-index: 200;
+      background: rgba(155, 89, 182, 0.85);
+      padding: 10px;
+      border-radius: 8px;
+      color: white;
+      font-size: 13px;
+    }
+    #kill-feed {
+      position: fixed;
+      top: 20px;
+      right: 200px;
+      width: 250px;
+      z-index: 200;
+      text-align: right;
+    }
+    .kill-entry {
+      background: rgba(0,0,0,0.7);
+      color: #e74c3c;
+      padding: 4px 10px;
+      margin-bottom: 3px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+      animation: killFadeIn 0.3s ease;
+    }
+    @keyframes killFadeIn {
+      from { opacity: 0; transform: translateX(20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    /* Bribe panel */
+    #bribe-panel {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 150;
+    }
+    .bribe-btn {
+      background: linear-gradient(135deg, #f39c12, #e67e22);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    .bribe-btn:hover { transform: scale(1.05); }
+    .bribe-btn:active { transform: scale(0.95); }
+    .bribe-balance {
+      text-align: center;
+      color: #f1c40f;
+      font-size: 11px;
+      margin-top: 4px;
+    }
     /* Crosshair for pointer lock */
     #crosshair {
       position: fixed;
@@ -316,7 +419,22 @@
     <h3>Leaderboard</h3>
     <div id="leaderboard-entries"></div>
   </div>
+  <div id="bribe-panel" style="display:none">
+    <button id="btn-bribe" class="bribe-btn">Bribe the Magician</button>
+    <div id="bribe-balance" class="bribe-balance"></div>
+  </div>
   <div id="ready-indicator">Press R to ready up</div>
+  <div id="spectator-overlay">
+    <div id="agent-status">
+      <div>Phase: <span id="agent-phase">WELCOME</span></div>
+    </div>
+    <div id="drama-meter">
+      <h4>DRAMA METER</h4>
+      <div class="drama-bar"><div id="drama-fill"></div></div>
+      <div class="drama-label"><span>Calm</span><span id="drama-value">0</span><span>CHAOS</span></div>
+    </div>
+    <div id="kill-feed"></div>
+  </div>
   <div id="game"></div>
   <script type="module" src="/src/client/main.js"></script>
 </body>

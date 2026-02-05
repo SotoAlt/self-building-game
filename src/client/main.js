@@ -22,6 +22,10 @@ const API_URL = isLocalhost
   ? 'http://localhost:3000'
   : `${window.location.protocol}//${window.location.host}`;
 
+// Spectator mode detection
+const urlParams = new URLSearchParams(window.location.search);
+const isSpectator = urlParams.get('spectator') === 'true';
+
 // ============================================
 // Game State
 // ============================================
@@ -36,7 +40,8 @@ const state = {
   connected: false,
   isReady: false,
   chatFocused: false,
-  activeEffects: []
+  activeEffects: [],
+  respawnPoint: [0, 2, 0]
 };
 
 // Auth state
@@ -170,7 +175,15 @@ document.addEventListener('wheel', (e) => {
   cameraDistance = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, cameraDistance));
 });
 
+// Spectator follow target
+let spectatorFollowIndex = -1; // -1 = auto, 0+ = specific player
+
 function updateCamera() {
+  if (isSpectator) {
+    updateSpectatorCamera();
+    return;
+  }
+
   if (!playerMesh) return;
 
   const target = playerMesh.position;
@@ -186,6 +199,46 @@ function updateCamera() {
     target.z + offsetZ
   );
   camera.lookAt(target.x, target.y + 1, target.z);
+}
+
+function updateSpectatorCamera() {
+  // Auto-follow: find the most "interesting" player (highest position or closest to goal)
+  const allPlayers = Array.from(remotePlayers.entries());
+
+  if (allPlayers.length === 0) {
+    // No players: orbit the world center
+    cameraYaw += 0.002;
+    camera.position.set(
+      Math.sin(cameraYaw) * 40,
+      25,
+      Math.cos(cameraYaw) * 40
+    );
+    camera.lookAt(0, 5, 0);
+    return;
+  }
+
+  let targetMesh;
+  if (spectatorFollowIndex >= 0 && spectatorFollowIndex < allPlayers.length) {
+    targetMesh = allPlayers[spectatorFollowIndex][1];
+  } else {
+    // Auto: follow highest player (most dramatic in platforming)
+    let highest = allPlayers[0][1];
+    for (const [, mesh] of allPlayers) {
+      if (mesh.position.y > highest.position.y) highest = mesh;
+    }
+    targetMesh = highest;
+  }
+
+  if (targetMesh) {
+    cameraYaw += 0.003;
+    const dist = 25;
+    camera.position.set(
+      targetMesh.position.x + Math.sin(cameraYaw) * dist,
+      targetMesh.position.y + 12,
+      targetMesh.position.z + Math.cos(cameraYaw) * dist
+    );
+    camera.lookAt(targetMesh.position.x, targetMesh.position.y + 1, targetMesh.position.z);
+  }
 }
 
 // Get camera-relative forward and right vectors (Y=0 plane)
@@ -310,6 +363,147 @@ function removeEntity(id) {
 }
 
 // ============================================
+// Particle System
+// ============================================
+const particles = [];
+
+function spawnParticles(position, color, count = 20, speed = 5) {
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(count * 3);
+  const velocities = [];
+
+  // Support both THREE.Vector3 and [x, y, z] array positions
+  const px = position.x ?? position[0] ?? 0;
+  const py = position.y ?? position[1] ?? 0;
+  const pz = position.z ?? position[2] ?? 0;
+
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = px;
+    positions[i * 3 + 1] = py;
+    positions[i * 3 + 2] = pz;
+    velocities.push(new THREE.Vector3(
+      (Math.random() - 0.5) * speed,
+      Math.random() * speed,
+      (Math.random() - 0.5) * speed
+    ));
+  }
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const material = new THREE.PointsMaterial({
+    color: new THREE.Color(color),
+    size: 0.3,
+    transparent: true,
+    opacity: 1
+  });
+
+  const points = new THREE.Points(geometry, material);
+  scene.add(points);
+
+  particles.push({
+    mesh: points,
+    velocities,
+    startTime: Date.now(),
+    lifetime: 1500
+  });
+}
+
+function updateParticles() {
+  const now = Date.now();
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    const elapsed = now - p.startTime;
+
+    if (elapsed >= p.lifetime) {
+      scene.remove(p.mesh);
+      p.mesh.geometry.dispose();
+      p.mesh.material.dispose();
+      particles.splice(i, 1);
+      continue;
+    }
+
+    const positions = p.mesh.geometry.attributes.position.array;
+    const count = positions.length / 3;
+    const dt = 0.016; // ~60fps
+
+    for (let j = 0; j < count; j++) {
+      positions[j * 3] += p.velocities[j].x * dt;
+      positions[j * 3 + 1] += p.velocities[j].y * dt;
+      positions[j * 3 + 2] += p.velocities[j].z * dt;
+      p.velocities[j].y -= 9.8 * dt;
+    }
+
+    p.mesh.geometry.attributes.position.needsUpdate = true;
+    p.mesh.material.opacity = 1 - elapsed / p.lifetime;
+  }
+}
+
+// ============================================
+// Procedural Sound Effects
+// ============================================
+let audioCtx = null;
+
+function getAudioCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return audioCtx;
+}
+
+function playJumpSound() {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(300, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.15);
+  } catch { /* audio not available */ }
+}
+
+function playDeathSound() {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(400, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.5);
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.5);
+  } catch { /* audio not available */ }
+}
+
+function playCollectSound() {
+  try {
+    const ctx = getAudioCtx();
+    const notes = [523, 659, 784]; // C5, E5, G5 arpeggio
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.1, ctx.currentTime + i * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.08 + 0.2);
+      osc.start(ctx.currentTime + i * 0.08);
+      osc.stop(ctx.currentTime + i * 0.08 + 0.2);
+    });
+  } catch { /* audio not available */ }
+}
+
+// ============================================
 // Collision Detection (Wall-Slide)
 // ============================================
 const playerBox = new THREE.Box3();
@@ -409,12 +603,22 @@ function checkCollisions() {
 
 function collectItem(entity) {
   sendToServer('collect', { entityId: entity.id });
+  spawnParticles(entity.position, '#f1c40f', 15, 4);
+  playCollectSound();
   removeEntity(entity.id);
   console.log(`[Collect] Picked up ${entity.id}`);
 }
 
+let lastDeathTime = 0;
+const DEATH_COOLDOWN = 2000; // 2 seconds between deaths
+
 function playerDie() {
   if (!playerMesh || state.localPlayer?.state === 'dead') return;
+
+  // Prevent rapid death loops
+  const now = Date.now();
+  if (now - lastDeathTime < DEATH_COOLDOWN) return;
+  lastDeathTime = now;
 
   console.log('[Player] Died!');
 
@@ -424,19 +628,28 @@ function playerDie() {
 
   sendToServer('died', { position: playerMesh.position.toArray() });
 
+  spawnParticles(playerMesh.position, '#e74c3c', 30, 8);
+  playDeathSound();
+
   playerMesh.material.color.setHex(0xff0000);
   playerMesh.material.emissive.setHex(0xff0000);
 
   setTimeout(respawnPlayer, 1500);
 }
 
+let respawnInvulnUntil = 0;
+
 function respawnPlayer() {
   if (!playerMesh) return;
 
-  playerMesh.position.set(0, 2, 0);
+  const rp = state.respawnPoint || [0, 2, 0];
+  playerMesh.position.set(rp[0], rp[1], rp[2]);
   playerVelocity.set(0, 0, 0);
   playerMesh.material.color.setHex(0x00ff88);
   playerMesh.material.emissive.setHex(0x00ff88);
+
+  // Brief invulnerability after respawn (prevents fall-death loops)
+  respawnInvulnUntil = Date.now() + 2000;
 
   if (state.localPlayer) {
     state.localPlayer.state = 'alive';
@@ -482,6 +695,8 @@ function updatePlayer(delta) {
   let jumpForce = 12;
   let gravityMult = 1;
   const inverted = hasEffect('invert_controls');
+  const isGiant = hasEffect('giant');
+  const isTiny = hasEffect('tiny');
 
   // Apply spell modifiers
   if (hasEffect('speed_boost')) speed = 25;
@@ -489,6 +704,8 @@ function updatePlayer(delta) {
   if (hasEffect('low_gravity')) gravityMult = 0.3;
   if (hasEffect('high_gravity')) gravityMult = 2.5;
   if (hasEffect('bouncy')) jumpForce = 22;
+  if (isGiant) { speed = 10; jumpForce = 16; }
+  if (isTiny) { speed = 20; jumpForce = 8; }
 
   // Camera-relative movement
   const { forward, right } = getCameraDirections();
@@ -513,6 +730,7 @@ function updatePlayer(delta) {
   if (keys.space && isGrounded) {
     playerVelocity.y = jumpForce;
     isGrounded = false;
+    playJumpSound();
   }
 
   // Apply velocity
@@ -520,11 +738,15 @@ function updatePlayer(delta) {
   playerMesh.position.y += playerVelocity.y * delta;
   playerMesh.position.z += playerVelocity.z * delta;
 
-  // Ground collision
-  if (playerMesh.position.y < 1) {
+  // Ground collision — void death during active games
+  const groundActive = state.gameState.phase === 'lobby' || state.gameState.phase === 'building';
+  const invulnerable = Date.now() < respawnInvulnUntil;
+  if ((groundActive || invulnerable) && playerMesh.position.y < 1) {
     playerMesh.position.y = 1;
     playerVelocity.y = 0;
     isGrounded = true;
+  } else if (playerMesh.position.y < -20) {
+    playerDie();
   }
 
   // Camera follow (orbit)
@@ -570,6 +792,11 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
+  // Number keys to follow specific players (spectator mode)
+  if (isSpectator && key >= '0' && key <= '9') {
+    spectatorFollowIndex = key === '0' ? -1 : parseInt(key) - 1;
+  }
+
   // R to toggle ready
   if (key === 'r') {
     state.isReady = !state.isReady;
@@ -588,8 +815,6 @@ document.addEventListener('keyup', (e) => {
 // ============================================
 // Chat System
 // ============================================
-let lastChatMessageId = 0;
-
 function setupChat() {
   const chatInput = document.getElementById('chat-input');
   if (!chatInput) return;
@@ -632,10 +857,6 @@ function displayChatMessage(msg) {
   const container = document.getElementById('chat-messages');
   if (!container) return;
 
-  if (msg.id > lastChatMessageId) {
-    lastChatMessageId = msg.id;
-  }
-
   const div = document.createElement('div');
   div.className = `chat-msg ${msg.senderType}`;
 
@@ -646,11 +867,15 @@ function displayChatMessage(msg) {
   const textSpan = document.createElement('span');
   textSpan.className = 'text';
 
-  // Highlight @agent mentions
-  const textContent = msg.text.replace(/@agent/gi, (match) => {
+  // Escape HTML to prevent XSS, then highlight @agent mentions
+  const escaped = msg.text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const highlighted = escaped.replace(/@agent/gi, (match) => {
     return `<span class="at-agent">${match}</span>`;
   });
-  textSpan.innerHTML = textContent;
+  textSpan.innerHTML = highlighted;
 
   div.appendChild(sender);
   div.appendChild(textSpan);
@@ -685,13 +910,27 @@ function updateLeaderboardUI(leaderboard) {
   }
 
   panel.style.display = 'block';
-  entries.innerHTML = leaderboard.map((entry, i) =>
-    `<div class="lb-entry">
-      <span class="lb-rank">${i + 1}.</span>
-      <span class="lb-name">${entry.name}</span>
-      <span class="lb-wins">${entry.wins}W</span>
-    </div>`
-  ).join('');
+  entries.innerHTML = '';
+  for (let i = 0; i < leaderboard.length; i++) {
+    const entry = leaderboard[i];
+    const row = document.createElement('div');
+    row.className = 'lb-entry';
+
+    const rank = document.createElement('span');
+    rank.className = 'lb-rank';
+    rank.textContent = `${i + 1}.`;
+
+    const name = document.createElement('span');
+    name.className = 'lb-name';
+    name.textContent = entry.name;
+
+    const wins = document.createElement('span');
+    wins.className = 'lb-wins';
+    wins.textContent = `${entry.wins}W`;
+
+    row.append(rank, name, wins);
+    entries.appendChild(row);
+  }
 }
 
 // ============================================
@@ -845,6 +1084,16 @@ function updateGameStateUI() {
     return;
   }
 
+  // Building phase shows "BUILDING..." text
+  if (state.gameState.phase === 'building') {
+    statusEl.style.display = 'block';
+    statusEl.className = 'building';
+    phaseEl.textContent = 'BUILDING...';
+    typeEl.textContent = 'The Magician is crafting...';
+    timerEl.textContent = '';
+    return;
+  }
+
   statusEl.style.display = 'block';
   statusEl.className = state.gameState.phase;
   phaseEl.textContent = state.gameState.phase.toUpperCase();
@@ -867,13 +1116,17 @@ function updateGameStateUI() {
 // ============================================
 function updateUI() {
   document.getElementById('entity-count').textContent = state.entities.size;
-  document.getElementById('player-count').textContent = state.players.size + remotePlayers.size + 1;
+  document.getElementById('player-count').textContent = remotePlayers.size + (isSpectator ? 0 : 1);
   document.getElementById('physics-info').textContent = `g=${state.physics.gravity}`;
 
   const entitiesDiv = document.getElementById('entities');
-  entitiesDiv.innerHTML = Array.from(state.entities.values())
-    .map(e => `<div class="entity-item">${e.type}: ${e.id.slice(-8)}</div>`)
-    .join('');
+  entitiesDiv.innerHTML = '';
+  for (const e of state.entities.values()) {
+    const item = document.createElement('div');
+    item.className = 'entity-item';
+    item.textContent = `${e.type}: ${e.id.slice(-8)}`;
+    entitiesDiv.appendChild(item);
+  }
 
   updateGameStateUI();
 }
@@ -971,6 +1224,12 @@ async function connectToServer() {
       updateRemotePlayer(player);
     });
 
+    room.onMessage('player_died', (data) => {
+      const player = state.players.get(data.id);
+      const name = player?.name || data.id?.slice(0, 8) || 'Player';
+      addKillFeedEntry(`${name} died`);
+    });
+
     room.onMessage('player_ready', ({ name, ready }) => {
       console.log(`[Event] ${name} is ${ready ? 'ready' : 'not ready'}`);
     });
@@ -988,10 +1247,16 @@ async function connectToServer() {
       state.activeEffects.push(spell);
       showSpellEffect(spell);
 
-      // Apply scale effects immediately
+      // Apply scale effects immediately + particle burst
       if (playerMesh) {
-        if (spell.type === 'giant') playerMesh.scale.set(2, 2, 2);
-        if (spell.type === 'tiny') playerMesh.scale.set(0.4, 0.4, 0.4);
+        if (spell.type === 'giant') {
+          playerMesh.scale.set(2, 2, 2);
+          spawnParticles(playerMesh.position, '#9b59b6', 25, 6);
+        }
+        if (spell.type === 'tiny') {
+          playerMesh.scale.set(0.4, 0.4, 0.4);
+          spawnParticles(playerMesh.position, '#9b59b6', 25, 6);
+        }
       }
 
       // Auto-expire
@@ -1001,6 +1266,10 @@ async function connectToServer() {
           if (playerMesh) playerMesh.scale.set(1, 1, 1);
         }
       }, spell.duration);
+    });
+
+    room.onMessage('respawn_point_changed', (data) => {
+      state.respawnPoint = data.position;
     });
 
     room.onMessage('effects_cleared', () => {
@@ -1053,11 +1322,11 @@ function animate() {
 
   const delta = clock.getDelta();
 
-  // Update player
-  updatePlayer(delta);
+  // Update player (skip in spectator mode)
+  if (!isSpectator) updatePlayer(delta);
 
   // Check collisions with entities
-  checkCollisions();
+  if (!isSpectator) checkCollisions();
 
   // Interpolate remote players
   for (const [, mesh] of remotePlayers) {
@@ -1091,6 +1360,12 @@ function animate() {
       mesh.position.y = mesh.userData.entity.position[1] + Math.sin(Date.now() * 0.003) * 0.3;
     }
   }
+
+  // Update particles
+  updateParticles();
+
+  // Spectator camera update (runs even without player)
+  if (isSpectator) updateCamera();
 
   renderer.render(scene, camera);
 }
@@ -1233,17 +1508,128 @@ async function startAuthFlow() {
 }
 
 // ============================================
+// Bribe System
+// ============================================
+function setupBribeUI() {
+  if (isSpectator) return;
+
+  const panel = document.getElementById('bribe-panel');
+  const btn = document.getElementById('btn-bribe');
+  const balanceEl = document.getElementById('bribe-balance');
+  if (!panel || !btn) return;
+
+  panel.style.display = 'block';
+
+  // Fetch initial balance
+  async function updateBalance() {
+    if (!state.room) return;
+    try {
+      const res = await fetch(`${API_URL}/api/balance/${state.room.sessionId}`);
+      const data = await res.json();
+      if (balanceEl) balanceEl.textContent = `${data.balance} tokens`;
+    } catch { /* silent */ }
+  }
+  updateBalance();
+  setInterval(updateBalance, 10000);
+
+  btn.addEventListener('click', () => {
+    if (document.pointerLockElement) document.exitPointerLock();
+    const request = prompt('What do you want the Magician to do?');
+    if (!request || !request.trim()) return;
+    const amount = 50; // fixed bribe cost for MVP
+
+    fetch(`${API_URL}/api/bribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        playerId: state.room.sessionId,
+        amount,
+        request: request.trim()
+      })
+    }).then(r => r.json()).then(data => {
+      if (data.success) {
+        updateBalance();
+      }
+    }).catch(() => {});
+  });
+}
+
+// ============================================
+// Spectator Overlay
+// ============================================
+function setupSpectatorOverlay() {
+  // Hide player-only UI
+  const controls = document.getElementById('controls');
+  if (controls) controls.style.display = 'none';
+  const readyInd = document.getElementById('ready-indicator');
+  if (readyInd) readyInd.style.display = 'none';
+
+  // Show spectator-only overlay elements
+  const overlay = document.getElementById('spectator-overlay');
+  if (overlay) overlay.style.display = 'block';
+
+  // Poll drama score
+  setInterval(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/agent/drama`);
+      const data = await res.json();
+      const meter = document.getElementById('drama-fill');
+      const label = document.getElementById('drama-value');
+      if (meter) meter.style.width = `${data.drama}%`;
+      if (label) label.textContent = `${data.drama}`;
+      const phaseEl = document.getElementById('agent-phase');
+      if (phaseEl) phaseEl.textContent = data.phase?.toUpperCase() || '';
+    } catch { /* silent */ }
+  }, 2000);
+}
+
+// Kill feed for spectator
+const killFeed = [];
+function addKillFeedEntry(text) {
+  killFeed.push({ text, time: Date.now() });
+  if (killFeed.length > 5) killFeed.shift();
+  renderKillFeed();
+}
+
+function renderKillFeed() {
+  const container = document.getElementById('kill-feed');
+  if (!container) return;
+  container.innerHTML = '';
+  for (const k of killFeed) {
+    const div = document.createElement('div');
+    div.className = 'kill-entry';
+    div.textContent = k.text;
+    container.appendChild(div);
+  }
+}
+
+// ============================================
 // Init
 // ============================================
 async function init() {
   console.log('[Game] Initializing...');
 
-  authUser = await startAuthFlow();
+  if (isSpectator) {
+    // Skip login for spectators
+    authUser = { token: null, user: { name: 'Spectator', type: 'spectator' } };
+  } else {
+    authUser = await startAuthFlow();
+  }
   await fetchInitialState();
-  await connectToServer();
-  createPlayer();
+  if (!isSpectator) {
+    await connectToServer();
+    createPlayer();
+  } else {
+    // Spectator still connects to receive events
+    await connectToServer();
+  }
   setupChat();
   fetchLeaderboard();
+  if (isSpectator) {
+    setupSpectatorOverlay();
+  } else {
+    setupBribeUI();
+  }
 
   // Load existing chat history
   try {

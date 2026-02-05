@@ -2,6 +2,88 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.6.0] - 2026-02-05
+
+### Added
+- **Live autonomous Chaos Magician agent** on production
+  - OpenClaw Gateway running as systemd service (port 18789)
+  - `agent-runner.js` standalone process polling game context every 8s
+  - Agent uses Claude 3.5 Haiku for cost efficiency
+  - Agent calls game API via exec+curl (spawn arenas, start games, cast spells, chat)
+  - Drama score drives agent invoke frequency and behavior
+  - Session phases: welcome → warmup → gaming → intermission → escalation → finale
+- **AI bot auto-ready** — bots auto-ready when a human player readies up
+- **Human-only ready count** — ready display shows human players only
+
+### Changed
+- `AgentBridge.js` rewritten: shells out to `openclaw agent` CLI instead of HTTP REST
+- `AGENTS.md` rewritten: explicit exec+curl instructions for all game API calls
+- AI bot chat cooldown increased to 60s in lobby (was 15s, caused spam)
+- Ground collision checked before void death (prevents tunneling through floor)
+- Docker game container now exposes port 3000 on localhost (for agent-runner access)
+
+### Fixed
+- **Death/respawn loop** — ground collision now checked before void death to prevent frame-skip tunneling
+- **AI bot chat spam** — reduced chat frequency 10x and added 60s cooldown in lobby
+- **AI bots never ready** — bots auto-ready when any human readies up
+- **Ready count showing 1/3** — now shows human-only count
+
+## [0.5.0] - 2026-02-05
+
+### Added
+- **Production deployment** to Hetzner (chaos.waweapps.win)
+  - Docker Compose with nginx reverse proxy + Let's Encrypt SSL
+  - WebSocket + SSE proxy support in nginx config
+  - Certbot auto-renewal container
+  - `deploy.sh` one-command deployment script
+- **Spectator mode** (`?spectator=true`)
+  - Free camera with auto-follow leading player
+  - Number keys (1-9) to follow specific players
+  - Drama meter, agent phase indicator, kill feed overlays
+- **Bribe system** with mock blockchain interface
+  - "Bribe the Magician" UI button with token balance
+  - `POST /api/bribe` endpoint, bribes appear in agent context
+  - `ChainInterface` abstraction (mock now, Monad EVM later)
+- **Particle effects** (death burst, collect sparkles, spell vortex)
+- **Procedural sound effects** (Web Audio: jump, death, collect)
+- **Giant/tiny spell physics** (adjusted speed + jump for size effects)
+
+### Fixed
+- **XSS vulnerabilities** in chat, leaderboard, kill feed (innerHTML with user data)
+- **Race condition** in game lifecycle (countdown timer not cancelled by endGame)
+- **Collectible double-pickup** (no server-side validation)
+- **Drama score** timeRemaining always undefined
+- **Player count** double-counting remote players
+- **Particle position** falsy zero coordinates (|| vs ??)
+
+## [0.4.0] - 2026-02-05
+
+### Added
+- **Autonomous agent loop** (`AgentLoop.js`)
+  - 5-second tick with drama score (0-100) driving invoke frequency
+  - Session phase state machine: welcome → warmup → gaming → intermission → escalation → finale
+  - Automatic game lifecycle: lobby → building → countdown → playing → ended → building
+- **OpenClaw agent bridge** (`AgentBridge.js`)
+  - Structured context + phase-specific prompts to Chaos Magician
+  - POST to OpenClaw gateway for agent invocation
+- **AI Players** (`AIPlayer.js`)
+  - 3 personality types: Explorer (cautious), Chaos Bot (risky), Tryhard (efficient)
+  - Goal-seeking movement, platform collision, obstacle death
+  - Event-triggered chat messages per personality
+- **Arena templates** (5 pre-built layouts)
+  - spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell
+- **SSE event feed** (`GET /api/stream/events`) for OBS overlays
+- **Void death** (fall below y=-20 during active games)
+- **Dynamic respawn points** (agent sets per-arena)
+- **Clear world** between games (`POST /api/world/clear`)
+- **Building phase** in game state machine
+- 6 new agent tools: clear_world, load_template, set_respawn, get_drama_score, start_building, check_bribes
+
+### Changed
+- `broadcastToRoom()` now pushes to both WebSocket and SSE stream
+- Game phases expanded: lobby → building → countdown → playing → ended
+- Removed `obstacle` game type (no implementation existed)
+
 ## [0.3.0] - 2026-02-04
 
 ### Added

@@ -18,6 +18,9 @@ import { WorldState } from './WorldState.js';
 import { createGameSync, GAME_TYPES } from './games/index.js';
 import { initDB, getStats, isDBAvailable, upsertUser, findUser } from './db.js';
 import { initAuth, verifyPrivyToken, signToken, requireAuth } from './auth.js';
+import { AgentLoop } from './AgentLoop.js';
+import { AIPlayer } from './AIPlayer.js';
+import { MockChainInterface } from './blockchain/ChainInterface.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,8 +40,16 @@ if (process.env.NODE_ENV === 'production') {
 // World state (shared between HTTP API and game room)
 const worldState = new WorldState();
 
+// Broadcast game state changes from internal transitions (countdown -> playing)
+worldState.onPhaseChange = function onPhaseChange(gameState) {
+  broadcastToRoom('game_state_changed', gameState);
+};
+
 // Current mini-game instance
 let currentMiniGame = null;
+
+// Blockchain interface (mock for now)
+const chain = new MockChainInterface();
 
 // ============================================
 // Auth Endpoints
@@ -107,6 +118,7 @@ app.get('/api/agent/context', (req, res) => {
   const players = worldState.getPlayers().map(p => ({
     id: p.id,
     name: p.name,
+    type: p.type,
     position: p.position,
     state: p.state,
     ready: p.ready
@@ -127,7 +139,8 @@ app.get('/api/agent/context', (req, res) => {
     activeEffects: worldState.getActiveEffects(),
     recentChat: worldState.getMessages(sinceMessage),
     recentEvents: worldState.getEvents(sinceEvent),
-    leaderboard: worldState.getLeaderboard()
+    leaderboard: worldState.getLeaderboard(),
+    cooldownUntil: worldState.gameState.cooldownUntil
   });
 });
 
@@ -147,6 +160,7 @@ app.post('/api/world/spawn', (req, res) => {
   try {
     const entity = worldState.spawnEntity(type, position, size, properties);
     broadcastToRoom('entity_spawned', entity);
+    agentLoop.notifyAgentAction();
     res.json({ success: true, id: entity.id, entity });
   } catch (error) {
     res.status(400).json({ success: false, error: error.message });
@@ -185,6 +199,91 @@ app.post('/api/world/destroy', (req, res) => {
   } catch (error) {
     res.status(404).json({ success: false, error: error.message });
   }
+});
+
+// Clear all entities
+app.post('/api/world/clear', (req, res) => {
+  const phase = worldState.gameState.phase;
+  if (phase === 'countdown' || phase === 'playing') {
+    return res.status(400).json({ error: `Cannot clear world during ${phase} phase` });
+  }
+
+  const ids = worldState.clearEntities();
+  for (const id of ids) {
+    broadcastToRoom('entity_destroyed', { id });
+  }
+  broadcastToRoom('physics_changed', worldState.physics);
+  res.json({ success: true, cleared: ids.length });
+});
+
+// Set respawn point
+app.post('/api/world/respawn', (req, res) => {
+  const { position } = req.body;
+  if (!position || !Array.isArray(position) || position.length !== 3) {
+    return res.status(400).json({ error: 'Missing required: position [x,y,z]' });
+  }
+  const rp = worldState.setRespawnPoint(position);
+  broadcastToRoom('respawn_point_changed', { position: rp });
+  res.json({ success: true, respawnPoint: rp });
+});
+
+// Load arena template
+app.post('/api/world/template', (req, res) => {
+  const phase = worldState.gameState.phase;
+  if (phase === 'countdown' || phase === 'playing') {
+    return res.status(400).json({ error: `Cannot load template during ${phase} phase` });
+  }
+
+  const { name } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: 'Missing required: name' });
+  }
+
+  // Dynamic import to avoid circular deps
+  import('./ArenaTemplates.js').then(({ TEMPLATES }) => {
+    const template = TEMPLATES[name];
+    if (!template) {
+      return res.status(404).json({
+        error: `Template not found: ${name}. Available: ${Object.keys(TEMPLATES).join(', ')}`
+      });
+    }
+
+    // Clear existing entities first
+    const cleared = worldState.clearEntities();
+    for (const id of cleared) {
+      broadcastToRoom('entity_destroyed', { id });
+    }
+
+    // Spawn template entities
+    const spawned = [];
+    for (const entityDef of template.entities) {
+      const entity = worldState.spawnEntity(
+        entityDef.type,
+        entityDef.position,
+        entityDef.size,
+        entityDef.properties || {}
+      );
+      broadcastToRoom('entity_spawned', entity);
+      spawned.push(entity.id);
+    }
+
+    // Set respawn point if defined
+    if (template.respawnPoint) {
+      worldState.setRespawnPoint(template.respawnPoint);
+      broadcastToRoom('respawn_point_changed', { position: template.respawnPoint });
+    }
+
+    res.json({
+      success: true,
+      template: name,
+      name: template.name,
+      gameType: template.gameType,
+      entitiesSpawned: spawned.length,
+      goalPosition: template.goalPosition || null
+    });
+  }).catch(err => {
+    res.status(500).json({ error: err.message });
+  });
 });
 
 // Set physics
@@ -270,6 +369,16 @@ app.post('/api/game/start', (req, res) => {
     return res.status(400).json({ error: 'A game is already in progress' });
   }
 
+  const phase = worldState.gameState.phase;
+  if (phase !== 'lobby' && phase !== 'building') {
+    return res.status(400).json({ error: `Cannot start game during ${phase} phase` });
+  }
+
+  if (worldState.isInCooldown()) {
+    const remaining = Math.ceil((worldState.gameState.cooldownUntil - Date.now()) / 1000);
+    return res.status(400).json({ error: `Cooldown active — wait ${remaining}s` });
+  }
+
   try {
     // Create mini-game instance
     currentMiniGame = createGameSync(type, worldState, broadcastToRoom, {
@@ -285,8 +394,18 @@ app.post('/api/game/start', (req, res) => {
       gameRoom.currentMiniGame = currentMiniGame;
     }
 
+    // Wire up end callback before starting
+    currentMiniGame.onEnd = () => {
+      agentLoop.onGameEnded();
+      currentMiniGame = null;
+      if (gameRoom) gameRoom.currentMiniGame = null;
+    };
+
     // Start the game
     currentMiniGame.start();
+
+    // Broadcast game state change to clients
+    broadcastToRoom('game_state_changed', worldState.getGameState());
 
     // System message + event
     const startMsg = worldState.addMessage('System', 'system', `Game started: ${type}`);
@@ -305,13 +424,20 @@ app.post('/api/game/start', (req, res) => {
 
 // End current game
 app.post('/api/game/end', (req, res) => {
-  const { result, winnerId } = req.body;
+  const phase = worldState.gameState.phase;
+  if (phase !== 'countdown' && phase !== 'playing') {
+    return res.status(400).json({ error: `No active game to end (phase: ${phase})` });
+  }
 
-  if (currentMiniGame?.isActive) {
+  const { result, winnerId } = req.body;
+  const hadMiniGame = currentMiniGame?.isActive;
+
+  if (hadMiniGame) {
     currentMiniGame.end(result || 'cancelled', winnerId);
-    currentMiniGame = null;
+    // onEnd callback handles agentLoop.onGameEnded() + setting currentMiniGame = null
   } else {
     worldState.endGame(result || 'cancelled', winnerId);
+    agentLoop.onGameEnded();
   }
 
   // System message + event
@@ -382,6 +508,7 @@ app.post('/api/chat/send', (req, res) => {
 
   const message = worldState.addMessage('Chaos Magician', 'agent', String(text).trim());
   broadcastToRoom('chat_message', message);
+  agentLoop.notifyAgentAction();
   res.json({ success: true, message });
 });
 
@@ -426,6 +553,7 @@ app.post('/api/spell/cast', (req, res) => {
     const spellMsg = worldState.addMessage('System', 'system', `Spell active: ${spell.name}`);
     broadcastToRoom('chat_message', spellMsg);
     worldState.addEvent('spell_cast', { type, name: spell.name });
+    agentLoop.notifyAgentAction();
 
     res.json({ success: true, spell });
   } catch (error) {
@@ -442,6 +570,136 @@ app.post('/api/spell/clear', (req, res) => {
 app.get('/api/spell/active', (req, res) => {
   res.json({ effects: worldState.getActiveEffects() });
 });
+
+// ============================================
+// Bribe System
+// ============================================
+
+app.post('/api/bribe', async (req, res) => {
+  const { playerId, amount, request } = req.body;
+  if (!playerId || !amount || !request) {
+    return res.status(400).json({ error: 'Missing required: playerId, amount, request' });
+  }
+
+  const balance = await chain.getBalance(playerId);
+  if (balance < amount) {
+    return res.status(400).json({ error: 'Insufficient balance', balance });
+  }
+
+  const bribe = await chain.submitBribe(playerId, amount, request);
+
+  // Announce the bribe
+  const player = worldState.players.get(playerId);
+  const name = player?.name || playerId.slice(0, 8);
+  const announcement = worldState.announce(
+    `${name} bribed the Magician with ${amount} tokens: "${request}"`,
+    'player', 8000
+  );
+  broadcastToRoom('announcement', announcement);
+
+  // Add to chat
+  const msg = worldState.addMessage('System', 'system', `Bribe received: ${amount} tokens from ${name}`);
+  broadcastToRoom('chat_message', msg);
+
+  // Add event for agent context
+  worldState.addEvent('bribe', { playerId, name, amount, request, bribeId: bribe.id });
+
+  res.json({ success: true, bribe, balance: await chain.getBalance(playerId) });
+});
+
+app.get('/api/bribe/pending', async (req, res) => {
+  const pending = await chain.checkPendingBribes();
+  res.json({ bribes: pending });
+});
+
+app.get('/api/balance/:playerId', async (req, res) => {
+  const balance = await chain.getBalance(req.params.playerId);
+  res.json({ playerId: req.params.playerId, balance });
+});
+
+// ============================================
+// Agent Loop
+// ============================================
+
+const agentLoop = new AgentLoop(worldState, broadcastToRoom);
+
+// Agent loop status
+app.get('/api/agent/status', (req, res) => {
+  res.json(agentLoop.getStatus());
+});
+
+// Pause agent (kill switch)
+app.post('/api/agent/pause', (req, res) => {
+  agentLoop.pause();
+  res.json({ success: true, status: 'paused' });
+});
+
+// Resume agent
+app.post('/api/agent/resume', (req, res) => {
+  agentLoop.resume();
+  res.json({ success: true, status: 'running' });
+});
+
+// Agent heartbeat (external agent-runner calls this to keep drama score accurate)
+app.post('/api/agent/heartbeat', (req, res) => {
+  agentLoop.notifyAgentAction();
+  res.json({ success: true, drama: agentLoop.calculateDrama(), phase: agentLoop.phase });
+});
+
+// Get drama score
+app.get('/api/agent/drama', (req, res) => {
+  res.json({ drama: agentLoop.calculateDrama(), phase: agentLoop.phase });
+});
+
+// Building phase
+app.post('/api/game/building', (req, res) => {
+  const phase = worldState.gameState.phase;
+  if (phase !== 'lobby') {
+    return res.status(400).json({ error: `Cannot enter building phase during ${phase} phase` });
+  }
+
+  const state = worldState.startBuilding();
+  broadcastToRoom('game_state_changed', state);
+  res.json({ success: true, gameState: state });
+});
+
+// ============================================
+// SSE Event Feed (for OBS overlays)
+// ============================================
+
+const sseClients = new Set();
+
+app.get('/api/stream/events', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive'
+  });
+
+  const client = { res, id: Date.now() };
+  sseClients.add(client);
+
+  // Send initial state
+  const initData = {
+    type: 'init',
+    drama: agentLoop.calculateDrama(),
+    phase: agentLoop.phase,
+    players: worldState.players.size,
+    gameState: worldState.getGameState()
+  };
+  res.write(`data: ${JSON.stringify(initData)}\n\n`);
+
+  req.on('close', () => {
+    sseClients.delete(client);
+  });
+});
+
+function broadcastSSE(eventType, data) {
+  const payload = JSON.stringify({ type: eventType, ...data, timestamp: Date.now() });
+  for (const client of sseClients) {
+    client.res.write(`data: ${payload}\n\n`);
+  }
+}
 
 // ============================================
 // Colyseus Game Server
@@ -463,10 +721,15 @@ gameServer.define('game', GameRoom).on('create', (room) => {
   gameRoom = room;
 });
 
-// Broadcast function for HTTP API -> WebSocket clients
+// Broadcast function for HTTP API -> WebSocket clients + SSE
 function broadcastToRoom(event, data) {
   if (gameRoom) {
     gameRoom.broadcast(event, data);
+  }
+  // Also push key events to SSE stream
+  if (['announcement', 'player_died', 'spell_cast', 'game_state_changed',
+       'player_joined', 'player_left', 'chat_message'].includes(event)) {
+    broadcastSSE(event, data);
   }
 }
 
@@ -492,6 +755,18 @@ initDB().then(async (connected) => {
     await worldState.loadLeaderboardFromDB();
   }
 });
+
+// Start agent loop
+agentLoop.start();
+
+// Spawn AI players
+const aiPlayers = [];
+if (process.env.AI_PLAYERS !== 'false') {
+  const explorer = new AIPlayer(worldState, broadcastToRoom, 'explorer');
+  const chaotic = new AIPlayer(worldState, broadcastToRoom, 'chaotic');
+  aiPlayers.push(explorer, chaotic);
+  console.log('[AI] Spawned 2 AI players: Explorer Bot, Chaos Bot');
+}
 
 httpServer.listen(PORT, () => {
   console.log(`
@@ -565,6 +840,11 @@ setInterval(() => {
 
   if (currentMiniGame?.isActive) {
     currentMiniGame.update(delta);
+  }
+
+  // Update AI players
+  for (const ai of aiPlayers) {
+    ai.update(delta);
   }
 }, 100);
 

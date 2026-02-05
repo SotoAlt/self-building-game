@@ -16,25 +16,32 @@ An AI agent builds a 3D multiplayer game in real-time while players play and aud
 ## Architecture
 
 ```
-Browser (Three.js)
+Browser (Three.js + Colyseus WebSocket)
     |
-    | WebSocket (Colyseus)
+    | nginx reverse proxy (SSL + WebSocket + SSE)
     |
 Game Server (Express + Colyseus, port 3000)
-    |           |
-    | HTTP API  | PostgreSQL
-    |           |
-OpenClaw Agent (Chaos Magician)
+    |           |            |
+    | HTTP API  | PostgreSQL | SSE Event Stream
+    |           |            |
+Agent Runner (agent-runner.js, host process)
     |
-    | Telegram / API
+    | openclaw agent CLI
     |
-Human Operator
+OpenClaw Gateway (port 18789)
+    |
+    | Claude 3.5 Haiku
+    |
+Anthropic API
 ```
 
 **Game Server** hosts the world state, player sync, mini-game engine, and HTTP API.
 **Browser Client** renders the 3D world with Three.js and connects via WebSocket.
-**AI Agent** polls for context and controls the world through 19 tool functions.
+**Agent Runner** polls game context every 8s, calculates drama score, and invokes the AI agent.
+**OpenClaw Gateway** manages agent sessions and routes messages to Claude 3.5 Haiku.
+**AI Agent** (Chaos Magician) controls the game via HTTP API calls — spawning arenas, starting games, casting spells, and chatting with players.
 **PostgreSQL** persists leaderboards, game history, and user data across restarts.
+**AI Players** (Explorer Bot, Chaos Bot) provide activity when human players are scarce.
 
 ## Tech Stack
 
@@ -43,7 +50,7 @@ Human Operator
 | 3D Rendering | Three.js |
 | Multiplayer | Colyseus (WebSocket) |
 | Server | Express + Node.js |
-| AI Agent | OpenClaw framework |
+| AI Agent | OpenClaw + Claude 3.5 Haiku |
 | Database | PostgreSQL |
 | Build Tool | Vite |
 | Deployment | Docker + docker-compose |
@@ -60,15 +67,34 @@ npm run dev
 Opens game client at `localhost:5173`, game server at `localhost:3000`.
 No PostgreSQL required for local dev (runs in-memory).
 
-## Deploy with Docker
+## Production Deployment
+
+Live at **https://chaos.waweapps.win**
+
+Deployed on Hetzner (178.156.239.120) with Docker + nginx + Let's Encrypt SSL.
+
+```bash
+# Deploy (installs Docker if needed, syncs files, gets SSL cert, starts services)
+bash deploy.sh
+
+# Check logs
+ssh root@178.156.239.120 'cd /opt/self-building-game && docker compose logs -f game'
+
+# Restart game server
+ssh root@178.156.239.120 'cd /opt/self-building-game && docker compose restart game'
+
+# Full rebuild
+ssh root@178.156.239.120 'cd /opt/self-building-game && docker compose up -d --build'
+```
+
+Spectator mode: **https://chaos.waweapps.win/?spectator=true**
+
+### Local Docker
 
 ```bash
 cp .env.example .env
-# Edit .env with your DB_PASSWORD
 docker-compose up --build
 ```
-
-Game available at `http://your-server:3000`.
 
 ## Agent Capabilities (19 Tools)
 
@@ -93,6 +119,12 @@ Game available at `http://your-server:3000`.
 | `clear_spells` | Remove all active spell effects |
 | `add_trick` | Inject tricks mid-game (time/score/death triggers) |
 | `get_context` | Unified polling: players, chat, events, game state |
+| `clear_world` | Remove all entities from the world |
+| `load_template` | Spawn a pre-built arena layout |
+| `set_respawn` | Set player respawn position |
+| `get_drama_score` | Check current drama level (0-100) |
+| `start_building` | Enter building phase between games |
+| `check_bribes` | View pending player bribes |
 
 ## API Endpoints
 
@@ -125,6 +157,12 @@ GET  /api/agent/context    - Unified agent context
 | `src/server/WorldState.js` | Source of truth: entities, players, physics, chat, leaderboard |
 | `src/server/GameRoom.js` | Colyseus room: player sync, chat, ready system |
 | `src/server/MiniGame.js` | Mini-game base class with trick system |
+| `agent-runner.js` | Standalone agent loop (runs on host, invokes OpenClaw) |
+| `src/server/AgentLoop.js` | In-container drama score + phase tracking |
+| `src/server/AgentBridge.js` | OpenClaw CLI bridge (disabled in Docker) |
+| `src/server/AIPlayer.js` | Virtual AI players with personality types |
+| `src/server/ArenaTemplates.js` | 5 pre-built arena layouts |
+| `src/server/blockchain/ChainInterface.js` | Blockchain abstraction + bribe system |
 | `src/server/games/` | ReachGoal, CollectGame, Survival implementations |
 | `src/server/db.js` | PostgreSQL persistence with graceful fallback |
 | `src/client/main.js` | Three.js client: rendering, input, camera, chat |

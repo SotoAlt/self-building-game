@@ -4,6 +4,13 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+
+# Vite needs these at build time for client bundle
+ARG VITE_PRIVY_APP_ID
+ARG VITE_PRIVY_CLIENT_ID
+ENV VITE_PRIVY_APP_ID=$VITE_PRIVY_APP_ID
+ENV VITE_PRIVY_CLIENT_ID=$VITE_PRIVY_CLIENT_ID
+
 RUN npm run build
 
 FROM node:20-alpine

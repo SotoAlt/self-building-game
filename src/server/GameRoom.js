@@ -59,9 +59,15 @@ export class GameRoom extends Room {
       }
     });
 
-    // Player death
+    // Player death (rate-limited: 1 per 2 seconds per player)
+    this._deathTimestamps = new Map();
     this.onMessage('died', (client, data) => {
       if (this.worldState) {
+        const now = Date.now();
+        const lastDeath = this._deathTimestamps.get(client.sessionId) || 0;
+        if (now - lastDeath < 2000) return; // rate limit
+        this._deathTimestamps.set(client.sessionId, now);
+
         const player = this.worldState.players.get(client.sessionId);
         const name = player?.name || client.sessionId.slice(0, 8);
         this.worldState.updatePlayer(client.sessionId, { state: 'dead' });
@@ -88,9 +94,10 @@ export class GameRoom extends Room {
       if (this.worldState) {
         const player = this.worldState.players.get(client.sessionId);
         const name = player?.name || client.sessionId.slice(0, 8);
+        const rp = this.worldState.respawnPoint || [0, 2, 0];
         this.worldState.updatePlayer(client.sessionId, {
           state: 'alive',
-          position: [0, 2, 0]
+          position: [...rp]
         });
 
         this.broadcast('player_respawned', { id: client.sessionId });
@@ -117,6 +124,20 @@ export class GameRoom extends Room {
 
     // Collectible pickup
     this.onMessage('collect', (client, data) => {
+      if (!this.worldState) return;
+
+      // Only allow collecting entities that still exist
+      const entity = this.worldState.entities.get(data.entityId);
+      if (!entity || entity.type !== 'collectible') return;
+
+      // Remove from server state
+      try {
+        this.worldState.destroyEntity(data.entityId);
+      } catch {
+        return; // Already destroyed by another player
+      }
+
+      this.broadcast('entity_destroyed', { id: data.entityId });
       this.broadcast('collectible_picked', {
         entityId: data.entityId,
         playerId: client.sessionId
@@ -173,15 +194,24 @@ export class GameRoom extends Room {
       const ready = !!data.ready;
       const player = this.worldState.setPlayerReady(client.sessionId, ready);
       if (player) {
+        // Auto-ready all AI bots when a human readies up
+        if (ready) {
+          for (const [id, p] of this.worldState.players) {
+            if (p.type === 'ai' && !p.ready) {
+              this.worldState.setPlayerReady(id, true);
+              this.broadcast('player_ready', { id, name: p.name, ready: true });
+            }
+          }
+        }
+
         this.broadcast('player_ready', {
           id: client.sessionId,
           name: player.name,
           ready
         });
         if (ready) {
-          const readyCount = this.worldState.getReadyCount();
-          const total = this.worldState.players.size;
-          this._systemMessage(`${player.name} is ready (${readyCount}/${total})`);
+          const { ready: readyHumans, total: totalHumans } = this.worldState.getHumanReadyCount();
+          this._systemMessage(`${player.name} is ready (${readyHumans}/${totalHumans} players)`);
         }
       }
     });
