@@ -62,6 +62,9 @@ export class WorldState {
 
     this.environment = { ...WorldState.DEFAULT_ENVIRONMENT };
 
+    // Lobby pacing — minimum time before games/templates allowed
+    this.lobbyEnteredAt = Date.now();
+
     // Game state machine
     this.gameState = {
       phase: 'lobby', // lobby, building, countdown, playing, ended
@@ -262,6 +265,14 @@ export class WorldState {
       joinedAt: Date.now()
     };
 
+    // Reset lobby timer when first human joins an empty lobby
+    if (type === 'human' && this.gameState.phase === 'lobby') {
+      const existingHumans = Array.from(this.players.values()).filter(p => p.type === 'human').length;
+      if (existingHumans === 0) {
+        this.lobbyEnteredAt = Date.now();
+      }
+    }
+
     this.players.set(id, player);
     console.log(`[WorldState] Player joined: ${name} (${type}, ${initialState})`);
     return player;
@@ -432,7 +443,7 @@ export class WorldState {
 
         this._notifyPhaseChange();
       }
-    }, config.countdownTime || 3000);
+    }, config.countdownTime || 5000);
 
     console.log(`[WorldState] Game countdown: ${gameType} (${timeLimit}ms)`);
     return { ...this.gameState };
@@ -488,6 +499,7 @@ export class WorldState {
       winners: [],
       losers: []
     };
+    this.lobbyEnteredAt = Date.now();
     console.log('[WorldState] Game state reset to lobby');
 
     this._notifyPhaseChange();

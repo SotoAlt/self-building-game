@@ -6,7 +6,7 @@
  * Polls the game server for context, decides when to invoke the agent,
  * and uses `openclaw agent` CLI to send messages.
  *
- * v0.16.0 — Audience mode: separate player vs audience messages, smart invoke timing
+ * v0.17.0 — Lobby pacing: proper lobby phase, lobby timer, rewritten phase prompts
  */
 
 import { execFile } from 'child_process';
@@ -95,19 +95,20 @@ function detectPhase(context) {
   const gs = context.gameState;
 
   if (elapsed < 30 && gamesPlayed === 0) return 'welcome';
+  if (gs.phase === 'countdown') return 'gaming';
   if (gs.phase === 'playing') {
     if (gamesPlayed >= 6) return 'finale';
     if (gamesPlayed >= 3) return 'escalation';
     return 'gaming';
   }
   if (gs.phase === 'ended') return 'intermission';
-  if (gamesPlayed === 0) return 'warmup';
-  return 'intermission';
+  // lobby or building phase
+  return 'lobby';
 }
 
 const PHASE_INTERVALS = {
   welcome: 25000,
-  warmup: 35000,
+  lobby: 20000,
   gaming: 30000,
   intermission: 25000,
   escalation: 25000,
@@ -158,12 +159,12 @@ function buildPrompt(phase, context, drama) {
   const parts = [];
 
   const phasePrompts = {
-    welcome: `**Phase: WELCOME** — Players are joining! Greet them dramatically. Introduce yourself as the Chaos Magician. Tease what's coming. Use send_chat_message and announce tools. If you have enough players, start building an arena (clear_world, then spawn entities or load_template).`,
-    warmup: `**Phase: WARMUP** — Time to build an arena! Use clear_world first, then either load_template or spawn entities manually. Set the respawn point with set_respawn. When ready, start a game with start_game. Keep chatting to build hype.`,
-    gaming: `**Phase: GAMING** — A game is active! Commentate, cast spells, add tricks, modify physics. Do NOT use clear_world or load_template (server will reject these).`,
-    intermission: `**Phase: INTERMISSION** — Game just ended. Cooldown is active for a few seconds. Chat about the results, congratulate winners. After cooldown, build a new arena and start the next game.`,
-    escalation: `**Phase: ESCALATION** — ${gamesPlayed} games deep! Ramp up difficulty. Harder templates (parkour_hell, gauntlet). More spells, more tricks, shorter time limits.`,
-    finale: `**Phase: FINALE** — Grand finale! Maximum chaos. Multiple spells active. Hardest arenas. Epic commentary. Make it memorable!`
+    welcome: `**Phase: WELCOME** — A player just joined! Greet them as the Chaos Magician. Be dramatic and introduce yourself. Tease the chaos to come. DO NOT load templates, spawn entities, or start games. ONLY chat.`,
+    lobby: `**Phase: LOBBY** — Players are hanging out. Chat casually, tell jokes, react to chat. When the lobby timer expires (shown below), announce the next game and load a template. Do NOT start a game in the same turn as loading a template.`,
+    gaming: `**Phase: GAMING** — A game is active! Commentate, cast spells, add tricks. Do NOT use clear_world or load_template (server will reject these).`,
+    intermission: `**Phase: INTERMISSION** — Game just ended! Announce results, congratulate winners, roast losers. Chat about what happened. Do NOT build or start anything yet — cooldown and lobby timer must expire first.`,
+    escalation: `**Phase: ESCALATION** — ${gamesPlayed} games deep! Ramp up difficulty. Harder templates, more spells, shorter time limits.`,
+    finale: `**Phase: FINALE** — Grand finale! Maximum chaos. Epic commentary. Make it memorable!`
   };
 
   // Chat-only mode: audience is chatting but no one is in-game
@@ -203,7 +204,9 @@ function buildPrompt(phase, context, drama) {
 
   // Active cooldowns
   const now = Date.now();
+  const lobbyTimerActive = context.lobbyReadyAt > now;
   const cooldowns = [
+    [context.lobbyReadyAt, 'Lobby timer', 'cannot load templates or start games yet'],
     [context.cooldownUntil, 'Cooldown', 'cannot start new game yet'],
     [context.spellCooldownUntil, 'Spell cooldown', 'cast blocked'],
     [context.buildGapUntil, 'Build gap', "can't start game yet — hype the arena!"],
@@ -213,6 +216,9 @@ function buildPrompt(phase, context, drama) {
       const remaining = Math.ceil((until - now) / 1000);
       parts.push(`- ⏳ ${label}: ${remaining}s (${hint})`);
     }
+  }
+  if (!lobbyTimerActive && context.gameState.phase === 'lobby') {
+    parts.push(`- ✅ Lobby timer expired — you can now load a template!`);
   }
 
   // Active effects
@@ -384,7 +390,7 @@ async function tick() {
 // Start
 console.log(`
 ╔═══════════════════════════════════════╗
-║   Chaos Magician Agent Runner v0.16  ║
+║   Chaos Magician Agent Runner v0.17  ║
 ║                                       ║
 ║  Game: ${GAME_URL.padEnd(30)}║
 ║  Session: ${SESSION_ID.slice(0, 27).padEnd(27)}║

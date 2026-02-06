@@ -28,6 +28,7 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3000;
 const BUILD_GAP_MS = 10000; // Minimum delay between loading a template and starting a game
+const MIN_LOBBY_MS = 15000; // Minimum time in lobby before games/templates/spawns allowed
 const app = express();
 
 app.use(cors());
@@ -47,6 +48,18 @@ function rejectIfActiveGame(res) {
   const phase = worldState.gameState.phase;
   if (phase === 'countdown' || phase === 'playing') {
     res.status(400).json({ error: `Cannot perform this action during ${phase} phase` });
+    return true;
+  }
+  return false;
+}
+
+// Lobby pacing guard: reject world-changing actions during minimum lobby time
+function rejectIfLobbyTimer(res) {
+  if (worldState.gameState.phase !== 'lobby') return false;
+  const timeSinceLobby = Date.now() - worldState.lobbyEnteredAt;
+  if (timeSinceLobby < MIN_LOBBY_MS) {
+    const remaining = Math.ceil((MIN_LOBBY_MS - timeSinceLobby) / 1000);
+    res.status(400).json({ error: `Lobby phase: ${remaining}s until games can start` });
     return true;
   }
   return false;
@@ -173,6 +186,7 @@ app.get('/api/agent/context', (req, res) => {
     recentEvents: worldState.getEvents(sinceEvent),
     leaderboard: worldState.getLeaderboard(),
     cooldownUntil: worldState.gameState.cooldownUntil,
+    lobbyReadyAt: worldState.lobbyEnteredAt + MIN_LOBBY_MS,
     spellCooldownUntil: worldState.lastSpellCastTime + WorldState.SPELL_COOLDOWN,
     buildGapUntil: worldState.lastTemplateLoadTime ? worldState.lastTemplateLoadTime + BUILD_GAP_MS : 0,
     environment: { ...worldState.environment },
@@ -190,6 +204,8 @@ app.get('/api/world/state', (req, res) => {
 
 // Spawn entity
 app.post('/api/world/spawn', (req, res) => {
+  if (rejectIfLobbyTimer(res)) return;
+
   const { type, position, size, properties } = req.body;
 
   if (!type || !position) {
@@ -243,6 +259,7 @@ app.post('/api/world/destroy', (req, res) => {
 // Clear all entities
 app.post('/api/world/clear', (req, res) => {
   if (rejectIfActiveGame(res)) return;
+  if (rejectIfLobbyTimer(res)) return;
 
   const ids = worldState.clearEntities();
   for (const id of ids) {
@@ -298,6 +315,7 @@ app.post('/api/world/respawn', (req, res) => {
 // Load arena template
 app.post('/api/world/template', (req, res) => {
   if (rejectIfActiveGame(res)) return;
+  if (rejectIfLobbyTimer(res)) return;
 
   const { name } = req.body;
   if (!name) {
@@ -453,6 +471,8 @@ app.post('/api/game/start', (req, res) => {
   if (phase !== 'lobby' && phase !== 'building') {
     return res.status(400).json({ error: `Cannot start game during ${phase} phase` });
   }
+
+  if (rejectIfLobbyTimer(res)) return;
 
   if (worldState.isInCooldown()) {
     const remaining = Math.ceil((worldState.gameState.cooldownUntil - Date.now()) / 1000);

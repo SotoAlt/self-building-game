@@ -103,7 +103,7 @@ export class MiniGame {
     // Start game in world state
     this.worldState.startGame(this.type, {
       timeLimit: this.timeLimit,
-      countdownTime: this.config.countdownTime || 3000
+      countdownTime: this.config.countdownTime || 5000
     });
 
     // Setup default tricks (overridden by subclasses)
