@@ -15,6 +15,7 @@ services:
       args:
         VITE_PRIVY_APP_ID: ${VITE_PRIVY_APP_ID}
         VITE_PRIVY_CLIENT_ID: ${VITE_PRIVY_CLIENT_ID}
+        VITE_TREASURY_ADDRESS: ${VITE_TREASURY_ADDRESS}
     restart: unless-stopped
     ports:
       - "127.0.0.1:3000:3000"
@@ -26,6 +27,8 @@ services:
       - PRIVY_APP_ID=${PRIVY_APP_ID}
       - PRIVY_APP_SECRET=${PRIVY_APP_SECRET}
       - AI_PLAYERS=${AI_PLAYERS:-true}
+      - TREASURY_ADDRESS=${TREASURY_ADDRESS}
+      - MONAD_RPC_URL=${MONAD_RPC_URL:-https://rpc.monad.xyz}
     depends_on:
       - db
 
