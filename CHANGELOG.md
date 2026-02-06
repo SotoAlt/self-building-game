@@ -2,6 +2,25 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.12.0] - 2026-02-06
+
+### Fixed
+- **Agent not running in production**: OpenClaw CLI was not installed inside Docker container and `OPENCLAW_SESSION_ID` env var was unset, silently preventing all agent invocations
+- **Bribes had no visible feedback**: Submitting a bribe showed no client-side confirmation — only a Colyseus announcement that could be missed. Errors were silently swallowed.
+- **"Nothing happens" on complex bribes**: `move_goal` and `extra_time` bribes returned `false` from `executeAutoBribe()` and queued for the agent, which wasn't running
+- **Stale entity broadcast in move_goal**: Goal entity was broadcast to clients before position update was applied
+
+### Added
+- **Bribe toast notifications**: Green toast on auto-executed bribes, yellow on agent-queued, red on errors
+- **Auto-execute move_goal bribe**: Repositions the goal randomly during active ReachGoal games (5/6 bribe types now work without agent)
+- **Auto-execute extra_time bribe**: Extends current game timer by 15 seconds with announcement
+- **Agent-runner systemd service**: `agent-runner.js` runs on VPS host (not in Docker) as `chaos-agent.service` with auto-restart
+- **Deploy step 7**: `deploy.sh` now installs Node.js + OpenClaw CLI on VPS, configures OpenClaw with Anthropic API key, and starts agent-runner service
+
+### Changed
+- **Deploy script**: 6 steps -> 7 steps, preserves OpenClaw config across deploys
+- **Announcement ordering**: "GET READY!" and game type announcements now fire before phase change so clients receive them first
+
 ## [0.11.0] - 2026-02-05
 
 ### Fixed
