@@ -1132,7 +1132,6 @@ function hasEffect(effectType) {
 
 function updatePlayer(delta) {
   if (!playerMesh) return;
-  isGrounded = false;
 
   let speed = keys.shift ? 32 : 20;
   let jumpForce = 16;
@@ -1183,26 +1182,25 @@ function updatePlayer(delta) {
   playerMesh.position.y += playerVelocity.y * delta;
   playerMesh.position.z += playerVelocity.z * delta;
 
+  // Reset grounded before this frame's collision detection
+  isGrounded = false;
+
   // Ground collision: per-type branching
   const phase = state.gameState.phase;
   const inSafePhase = phase === 'lobby' || phase === 'building';
   const invulnerable = Date.now() < respawnInvulnUntil;
+  const hasFloor = currentFloorType === 'solid' || (currentFloorType === 'none' && inSafePhase);
 
-  if (currentFloorType === 'solid') {
+  if (hasFloor) {
+    // Solid floor, or invisible floor during safe phases
     if (playerMesh.position.y < GROUND_Y) {
       playerMesh.position.y = GROUND_Y;
       playerVelocity.y = 0;
       isGrounded = true;
     }
   } else if (currentFloorType === 'none') {
-    if (inSafePhase) {
-      // Safe phase: invisible floor keeps players safe
-      if (playerMesh.position.y < GROUND_Y) {
-        playerMesh.position.y = GROUND_Y;
-        playerVelocity.y = 0;
-        isGrounded = true;
-      }
-    } else if (playerMesh.position.y < ABYSS_DEATH_Y && !invulnerable) {
+    // Abyss: no floor during gameplay
+    if (playerMesh.position.y < ABYSS_DEATH_Y && !invulnerable) {
       playerDie();
     }
   } else if (currentFloorType === 'lava') {
@@ -1319,7 +1317,9 @@ function setupChat() {
 }
 
 function sendChatMessage(text) {
-  sendToServer('chat', { text });
+  if (!sendToServer('chat', { text })) {
+    showToast('Message not sent — disconnected', 'error');
+  }
 }
 
 let agentThinkingEl = null;
@@ -1544,6 +1544,21 @@ function showToast(message, type = 'success') {
   }, 3000);
 }
 
+function showConnectionWarning(disconnected) {
+  let banner = document.getElementById('connection-warning');
+  if (disconnected) {
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'connection-warning';
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#d32f2f;color:#fff;text-align:center;padding:6px;font-size:14px;font-weight:bold;';
+      banner.textContent = 'Disconnected — reconnecting...';
+      document.body.appendChild(banner);
+    }
+  } else if (banner) {
+    banner.remove();
+  }
+}
+
 function showAnnouncement(announcement) {
   const container = document.getElementById('announcements');
 
@@ -1713,12 +1728,14 @@ async function connectToServer() {
 
     state.room = room;
     state.connected = true;
+    showConnectionWarning(false);
     console.log('[Network] Connected to room:', room.roomId);
 
     room.onLeave((code) => {
       console.warn('[Network] Disconnected from room, code:', code);
       state.room = null;
       state.connected = false;
+      showConnectionWarning(true);
       if (code !== 1000) {
         setTimeout(attemptReconnect, 1000);
       }
@@ -2212,6 +2229,11 @@ function setupBribeUI() {
   }
 
   async function submitBribe(bribeType) {
+    if (!state.room?.sessionId) {
+      showToast('Not connected to server', 'error');
+      return;
+    }
+
     let request = null;
     if (bribeType === 'custom') {
       request = prompt('What do you want the Magician to do?');

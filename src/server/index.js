@@ -1297,6 +1297,7 @@ gameServer.onShutdown(() => {
 
 // Game loop for mini-game updates (10 ticks per second)
 let lastUpdateTime = Date.now();
+let lastStateBroadcast = 0;
 setInterval(() => {
   const now = Date.now();
   const delta = (now - lastUpdateTime) / 1000;
@@ -1310,6 +1311,11 @@ setInterval(() => {
 
   if (currentMiniGame?.isActive) {
     currentMiniGame.update(delta);
+    // Broadcast game state every second for timer updates
+    if (now - lastStateBroadcast >= 1000) {
+      lastStateBroadcast = now;
+      broadcastToRoom('game_state_changed', worldState.getGameState());
+    }
   }
 
   // Update AI players
