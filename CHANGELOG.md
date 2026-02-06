@@ -2,6 +2,65 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.10.0] - 2026-02-05
+
+### Added
+- **Bribe Honor System**
+  - `POST /api/bribe/:id/honor` endpoint for agent to acknowledge bribes
+  - `honor_bribe` tool in game-world-skill.js (27 total tools now)
+  - `GET /api/bribe/honored` endpoint for recently honored bribe history
+  - `getHonoredBribes()` method on ChainInterface
+- **Agent Context Enrichment**
+  - Pending bribes included in agent prompt with "ACT ON THESE" labeling
+  - Recently honored bribes shown for reference (last 5)
+  - Chat window increased from 5 to 10 messages
+  - AgentLoop passes `chain` reference for bribe data
+- **Webhook System**
+  - `POST /api/webhooks/register` — register URL with optional event filtering
+  - `DELETE /api/webhooks/:id` — unregister webhook
+  - `GET /api/webhooks` — list registered webhooks
+  - Fire-and-forget POST to registered URLs on SSE events (5s timeout)
+- **Public Game API** (read-only, no auth required)
+  - `GET /api/public/state` — sanitized game state (no internal IDs)
+  - `GET /api/public/leaderboard` — top players
+  - `GET /api/public/events?since=<timestamp>` — recent events (polling alternative to SSE)
+  - `GET /api/public/stats` — session statistics (games, deaths, bribes, spells, invocations)
+- **Agent-as-Player API** — external AI agents can play the game
+  - `POST /api/agent-player/join` — register as player
+  - `POST /api/agent-player/move` — submit movement
+  - `POST /api/agent-player/chat` — send chat message
+  - `POST /api/agent-player/ready` — toggle ready state
+  - `POST /api/agent-player/leave` — disconnect
+  - `GET /api/agent-player/:id/state` — player-scoped state view
+- **Player Agent Skill** (`config/openclaw/game-player-skill.js`)
+  - 8 tools: join_game, move_to, send_chat, submit_bribe, get_game_state, get_my_position, get_leaderboard, ready_up
+  - Session-scoped player ID management
+- **Mobile Touch Controls**
+  - Mobile detection via `ontouchstart` / screen width
+  - Virtual joystick (left thumb area) with visual feedback ring
+  - Touch-drag camera rotation (right side of screen)
+  - Action buttons: Jump, Sprint (toggle), Ready
+  - Pointer lock skipped on mobile
+- **Responsive UI**
+  - CSS media queries for screens < 768px
+  - Scaled chat panel, leaderboard, game status, announcements
+  - Desktop controls hint hidden on mobile
+  - Viewport meta updated (no zoom on mobile)
+- **Documentation**
+  - `docs/MANIFESTO.md` — hackathon pitch / philosophy document
+  - `docs/CONCEPT.md` — full rewrite reflecting actual stack
+  - `docs/AGENT-PLAYER-API.md` — how to connect external agents
+  - `docs/ROADMAP.md` — phases 9-13 added
+
+### Changed
+- SSE event types expanded: `floor_changed`, `entity_spawned`, `entity_destroyed`
+- `PHASES` constant renamed to `PHASE` with screaming-case keys
+- `getDramaEmoji` renamed to `getDramaLabel`
+- `requireAgentPlayer` helper extracts guard pattern for agent-player endpoints
+- Public stats use single-pass event counting instead of 4 separate `.filter()` calls
+- `requireJoined` guard extracts repeated null-check in player skill
+- Sprint toggle on mobile directly uses `keys.shift` (no redundant variable)
+
 ## [0.9.2] - 2026-02-05
 
 ### Fixed
