@@ -31,11 +31,17 @@ export async function verifyPrivyToken(accessToken) {
     const user = await privyClient.getUser(claims.userId);
     const twitter = user.linkedAccounts.find(a => a.type === 'twitter_oauth');
 
+    // Extract embedded EVM wallet address
+    const evmWallet = user.linkedAccounts.find(
+      a => a.type === 'wallet' && a.walletClientType === 'privy' && a.chainType === 'ethereum'
+    );
+
     return {
       privyUserId: claims.userId,
       twitterUsername: twitter?.username || null,
       twitterAvatar: twitter?.profilePictureUrl || null,
-      displayName: twitter?.name || twitter?.username || null
+      displayName: twitter?.name || twitter?.username || null,
+      walletAddress: evmWallet?.address || null
     };
   } catch (err) {
     console.error('[Auth] Privy verification failed:', err.message);

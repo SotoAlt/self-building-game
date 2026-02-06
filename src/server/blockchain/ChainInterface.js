@@ -1,7 +1,7 @@
 /**
  * ChainInterface - Abstract blockchain interface + mock implementation
  *
- * Later: swap MockChainInterface for MonadChainInterface (EVM).
+ * See MonadChainInterface for real ERC-20 implementation on Monad.
  */
 
 export class ChainInterface {

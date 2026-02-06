@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { Client } from 'colyseus.js';
 import {
   initPrivy, handleOAuthCallback, exchangeForBackendToken,
-  loginAsGuest, loginWithTwitter, getPrivyUser, getToken, debugAuth
+  loginAsGuest, loginWithTwitter, getPrivyUser, getToken, debugAuth, logout
 } from './auth.js';
 
 // ============================================
@@ -2174,6 +2174,7 @@ async function pollForUpdates() {
 // ============================================
 async function startAuthFlow() {
   const statusEl = document.getElementById('login-status');
+  const continueBtn = document.getElementById('btn-continue');
 
   function setStatus(text) {
     if (statusEl) statusEl.textContent = text;
@@ -2185,16 +2186,15 @@ async function startAuthFlow() {
   const privyEnabled = !!(appId && clientId);
 
   if (privyEnabled) {
-    initPrivy(appId, clientId);
+    await initPrivy(appId, clientId);
   } else {
     const twitterBtn = document.getElementById('btn-twitter-login');
     if (twitterBtn) twitterBtn.style.display = 'none';
   }
 
-  // Check for OAuth callback (returning from Twitter redirect)
+  // Check for OAuth callback (returning from Twitter redirect) — auto-login ONLY in this case
   if (privyEnabled) {
     try {
-      setStatus('Checking login...');
       const callbackUser = await handleOAuthCallback();
       if (callbackUser) {
         setStatus('Authenticating...');
@@ -2207,43 +2207,59 @@ async function startAuthFlow() {
     }
   }
 
-  // Check for existing backend session (page reload)
+  // Probe for existing session — but DON'T auto-connect, just remember it
+  let cachedSession = null;
   const existingToken = getToken();
   if (existingToken) {
     try {
-      setStatus('Restoring session...');
       const res = await fetch(`${API_URL}/api/me`, {
         headers: { Authorization: `Bearer ${existingToken}` }
       });
       if (res.ok) {
         const user = await res.json();
-        return { token: existingToken, user };
+        cachedSession = { token: existingToken, user };
+      } else {
+        localStorage.removeItem('game:token');
       }
-      localStorage.removeItem('game:token');
     } catch {
       localStorage.removeItem('game:token');
     }
   }
 
-  // Check for existing Privy session
-  if (privyEnabled) {
+  // If no cached backend session, try Privy session
+  if (!cachedSession && privyEnabled) {
     try {
       const privyUser = await getPrivyUser();
       if (privyUser) {
-        setStatus('Authenticating...');
         const result = await exchangeForBackendToken();
-        if (result) return result;
+        if (result) cachedSession = result;
       }
     } catch (e) {
       console.warn('[Auth] Privy session check failed:', e);
     }
   }
 
-  // No session found -- show login screen and wait for user action
-  setStatus('');
-  return new Promise((resolve) => {
-    document.getElementById('login-screen').style.display = 'flex';
+  // Show "Continue" button if we have a cached session
+  if (cachedSession && continueBtn) {
+    const userName = cachedSession.user?.name || cachedSession.user?.twitterUsername || 'Player';
+    continueBtn.textContent = `Continue as ${userName}`;
+    continueBtn.style.display = 'block';
+  }
 
+  // ALWAYS show login screen and wait for user action
+  setStatus('');
+  document.getElementById('login-screen').style.display = 'flex';
+
+  return new Promise((resolve) => {
+    // Continue with cached session
+    continueBtn?.addEventListener('click', () => {
+      if (cachedSession) {
+        document.getElementById('login-screen').style.display = 'none';
+        resolve(cachedSession);
+      }
+    });
+
+    // Twitter login
     document.getElementById('btn-twitter-login')?.addEventListener('click', async () => {
       setStatus('Redirecting to Twitter...');
       try {
@@ -2254,6 +2270,7 @@ async function startAuthFlow() {
       }
     });
 
+    // Guest login
     document.getElementById('btn-guest').addEventListener('click', async () => {
       setStatus('Creating guest session...');
       const result = await loginAsGuest();
@@ -2458,6 +2475,48 @@ function setupDebugPanel() {
 }
 
 // ============================================
+// Wallet & Token Display
+// ============================================
+function setupWalletDisplay() {
+  if (isSpectator) return;
+  const walletInfo = document.getElementById('wallet-info');
+  const walletAddr = document.getElementById('wallet-address');
+  const tokenBalance = document.getElementById('token-balance');
+  if (!walletInfo) return;
+
+  const userId = authUser?.user?.id;
+  if (!userId) return;
+
+  async function refreshWallet() {
+    try {
+      const res = await fetch(`${API_URL}/api/wallet/${userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.hasWallet && data.walletAddress) {
+          const addr = data.walletAddress;
+          walletAddr.textContent = addr.slice(0, 6) + '...' + addr.slice(-4);
+          walletInfo.style.display = 'block';
+        }
+      }
+    } catch { /* silent */ }
+  }
+
+  async function refreshBalance() {
+    try {
+      const res = await fetch(`${API_URL}/api/balance/${state.room?.sessionId || userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        tokenBalance.textContent = data.balance;
+      }
+    } catch { /* silent */ }
+  }
+
+  refreshWallet();
+  refreshBalance();
+  setInterval(refreshBalance, 30000);
+}
+
+// ============================================
 // Init
 // ============================================
 async function init() {
@@ -2496,6 +2555,21 @@ async function init() {
   document.getElementById('ui').style.display = 'block';
   document.getElementById('controls').style.display = 'block';
   document.getElementById('chat-panel').style.display = 'flex';
+
+  // Logout button
+  if (!isSpectator) {
+    const logoutBtn = document.getElementById('btn-logout');
+    if (logoutBtn) {
+      logoutBtn.style.display = 'block';
+      logoutBtn.addEventListener('click', async () => {
+        await logout();
+        window.location.reload();
+      });
+    }
+  }
+
+  // Wallet & token balance display
+  setupWalletDisplay();
 
   animate();
 

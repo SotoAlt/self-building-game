@@ -89,6 +89,10 @@
       border: 1px solid rgba(255,255,255,0.15);
     }
     .login-btn.guest:hover { background: rgba(255,255,255,0.15); }
+    .login-btn.continue {
+      background: linear-gradient(135deg, #2ecc71, #27ae60);
+      color: white;
+    }
     .login-btn:disabled {
       opacity: 0.5;
       cursor: not-allowed;
@@ -510,6 +514,7 @@
       <h1>Self-Building Game</h1>
       <p class="login-subtitle">The Chaos Magician awaits...</p>
       <div class="login-buttons">
+        <button id="btn-continue" class="login-btn continue" style="display:none">Continue</button>
         <button id="btn-twitter-login" class="login-btn twitter">
           Login with X (Twitter)
         </button>
@@ -527,7 +532,12 @@
       <div>Players: <span id="player-count">0</span></div>
       <div>Physics: <span id="physics-info">-</span></div>
     </div>
+    <div id="wallet-info" style="display:none; margin-top:8px; font-size:11px; color:#f1c40f;">
+      <span id="wallet-address"></span>
+      <div>Tokens: <span id="token-balance">—</span></div>
+    </div>
     <div id="entities"></div>
+    <button id="btn-logout" style="display:none; margin-top:8px; background:#c0392b; color:white; border:none; padding:4px 10px; border-radius:4px; font-size:11px; cursor:pointer;">Logout</button>
   </div>
   <div id="crosshair"></div>
   <div id="chat-panel" style="display:none">

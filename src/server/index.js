@@ -21,6 +21,7 @@ import { initAuth, verifyPrivyToken, signToken, requireAuth } from './auth.js';
 import { AgentLoop } from './AgentLoop.js';
 import { AIPlayer } from './AIPlayer.js';
 import { MockChainInterface } from './blockchain/ChainInterface.js';
+import { MonadChainInterface } from './blockchain/MonadChainInterface.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,8 +68,14 @@ worldState.onPhaseChange = function onPhaseChange(gameState) {
 // Current mini-game instance
 let currentMiniGame = null;
 
-// Blockchain interface (mock for now)
-const chain = new MockChainInterface();
+// Blockchain interface — real ERC-20 on Monad when env vars set, otherwise mock
+const chain = process.env.MONAD_TOKEN_ADDRESS && process.env.TREASURY_PRIVATE_KEY
+  ? new MonadChainInterface({
+      rpcUrl: process.env.MONAD_RPC_URL || 'https://testnet-rpc.monad.xyz',
+      tokenAddress: process.env.MONAD_TOKEN_ADDRESS,
+      treasuryPrivateKey: process.env.TREASURY_PRIVATE_KEY
+    })
+  : new MockChainInterface();
 
 // ============================================
 // Auth Endpoints
@@ -82,16 +89,16 @@ app.post('/api/auth/privy', async (req, res) => {
   const privyResult = await verifyPrivyToken(accessToken);
   if (!privyResult) return res.status(401).json({ error: 'Invalid Privy token' });
 
-  const { privyUserId, twitterUsername, twitterAvatar, displayName } = privyResult;
+  const { privyUserId, twitterUsername, twitterAvatar, displayName, walletAddress } = privyResult;
   const name = twitterUsername || displayName || `User-${privyUserId.slice(-6)}`;
 
   // Fire-and-forget DB persistence
-  upsertUser(privyUserId, name, 'authenticated', { privyUserId, twitterUsername, twitterAvatar });
+  upsertUser(privyUserId, name, 'authenticated', { privyUserId, twitterUsername, twitterAvatar, walletAddress });
 
   const token = signToken(privyUserId);
   res.json({
     token,
-    user: { id: privyUserId, name, type: 'authenticated', twitterUsername, twitterAvatar }
+    user: { id: privyUserId, name, type: 'authenticated', twitterUsername, twitterAvatar, walletAddress }
   });
 });
 
@@ -840,8 +847,37 @@ app.get('/api/bribe/honored', async (req, res) => {
 });
 
 app.get('/api/balance/:playerId', async (req, res) => {
-  const balance = await chain.getBalance(req.params.playerId);
-  res.json({ playerId: req.params.playerId, balance });
+  const playerId = req.params.playerId;
+  // If real chain is active, try to resolve wallet address for on-chain balance
+  const user = await findUser(playerId);
+  const walletAddress = user?.wallet_address;
+  const balance = await chain.getBalance(walletAddress || playerId);
+  res.json({ playerId, balance, walletAddress: walletAddress || null });
+});
+
+app.get('/api/wallet/:playerId', async (req, res) => {
+  const { playerId } = req.params;
+  const user = await findUser(playerId);
+  const walletAddress = user?.wallet_address || null;
+  res.json({ playerId, walletAddress, hasWallet: !!walletAddress });
+});
+
+// Token faucet (sends tokens from treasury to player wallet)
+app.post('/api/tokens/faucet', requireAuth, async (req, res) => {
+  if (!chain.transferTokens) {
+    return res.status(400).json({ error: 'Token transfers not available (mock mode)' });
+  }
+  const user = await findUser(req.user.id);
+  if (!user?.wallet_address) {
+    return res.status(400).json({ error: 'No wallet address found. Login with Twitter first.' });
+  }
+  const amount = req.body.amount || 100;
+  const result = await chain.transferTokens(user.wallet_address, amount);
+  if (result.success) {
+    res.json({ success: true, amount, txHash: result.hash });
+  } else {
+    res.status(500).json({ error: result.error || 'Transfer failed' });
+  }
 });
 
 // ============================================

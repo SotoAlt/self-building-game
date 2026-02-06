@@ -16,8 +16,14 @@ const API_URL = isLocalhost
 
 let privy = null;
 
-export function initPrivy(appId, clientId) {
+export async function initPrivy(appId, clientId) {
   privy = new Privy({ appId, clientId, storage: new LocalStorage() });
+  try {
+    await privy.initialize();
+    console.log('[Auth] Privy initialized');
+  } catch (e) {
+    console.error('[Auth] Privy initialization failed:', e);
+  }
 }
 
 export async function getPrivyUser() {
@@ -32,9 +38,13 @@ export async function getPrivyUser() {
 
 export async function loginWithTwitter() {
   if (!privy) throw new Error('Privy not initialized — check VITE_PRIVY_APP_ID and VITE_PRIVY_CLIENT_ID');
-  const redirectURI = window.location.origin;
-  const { url } = await privy.auth.oauth.generateURL('twitter', redirectURI);
-  window.location.href = url;
+  try {
+    const { url } = await privy.auth.oauth.generateURL('twitter', window.location.origin);
+    window.location.href = url;
+  } catch (e) {
+    console.error('[Auth] Twitter OAuth failed:', e);
+    throw new Error('Failed to start Twitter login. Check Privy dashboard settings.');
+  }
 }
 
 export async function handleOAuthCallback() {
@@ -70,7 +80,7 @@ export async function exchangeForBackendToken() {
     body: JSON.stringify({ accessToken: privyToken })
   });
   if (!res.ok) {
-    console.error('[Auth] Backend token exchange failed:', res.status, await res.text().catch(() => ''));
+    console.error('[Auth] Backend token exchange failed:', res.status);
     return null;
   }
 

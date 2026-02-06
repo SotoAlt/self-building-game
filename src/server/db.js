@@ -61,6 +61,7 @@ export async function initDB() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS privy_user_id TEXT UNIQUE;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_username TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS twitter_avatar TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_address TEXT;
     `);
     dbAvailable = true;
     console.log('[DB] PostgreSQL connected, tables ready');
@@ -83,15 +84,16 @@ export async function upsertUser(id, name, type = 'human', meta = {}) {
   if (!dbAvailable) return;
   try {
     await pool.query(
-      `INSERT INTO users (id, name, type, privy_user_id, twitter_username, twitter_avatar, last_seen)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      `INSERT INTO users (id, name, type, privy_user_id, twitter_username, twitter_avatar, wallet_address, last_seen)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
        ON CONFLICT (id) DO UPDATE SET
          name = $2, type = $3,
          privy_user_id = COALESCE($4, users.privy_user_id),
          twitter_username = COALESCE($5, users.twitter_username),
          twitter_avatar = COALESCE($6, users.twitter_avatar),
+         wallet_address = COALESCE($7, users.wallet_address),
          last_seen = NOW()`,
-      [id, name, type, meta.privyUserId || null, meta.twitterUsername || null, meta.twitterAvatar || null]
+      [id, name, type, meta.privyUserId || null, meta.twitterUsername || null, meta.twitterAvatar || null, meta.walletAddress || null]
     );
   } catch (err) {
     console.error('[DB] upsertUser error:', err.message);
@@ -102,7 +104,7 @@ export async function findUser(id) {
   if (!dbAvailable) return null;
   try {
     const result = await pool.query(
-      'SELECT id, name, type, twitter_username, twitter_avatar, created_at FROM users WHERE id = $1',
+      'SELECT id, name, type, twitter_username, twitter_avatar, wallet_address, created_at FROM users WHERE id = $1',
       [id]
     );
     return result.rows[0] || null;
