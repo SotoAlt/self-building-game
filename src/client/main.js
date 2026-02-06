@@ -2475,45 +2475,152 @@ function setupDebugPanel() {
 }
 
 // ============================================
-// Wallet & Token Display
+// Profile Button & Wallet Panel
 // ============================================
-function setupWalletDisplay() {
+const DEFAULT_AVATAR = 'data:image/svg+xml,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
+  '<rect width="32" height="32" fill="#555"/>' +
+  '<text x="16" y="21" text-anchor="middle" fill="#aaa" font-size="16" font-family="sans-serif">?</text>' +
+  '</svg>'
+);
+
+function getTwitterFields(user) {
+  return {
+    avatar: user.twitterAvatar || user.twitter_avatar,
+    username: user.twitterUsername || user.twitter_username
+  };
+}
+
+function setAvatarSrc(imgEl, src) {
+  imgEl.src = src || DEFAULT_AVATAR;
+  imgEl.onerror = () => { imgEl.src = DEFAULT_AVATAR; };
+}
+
+function setupProfileButton() {
   if (isSpectator) return;
-  const walletInfo = document.getElementById('wallet-info');
-  const walletAddr = document.getElementById('wallet-address');
-  const tokenBalance = document.getElementById('token-balance');
-  if (!walletInfo) return;
 
-  const userId = authUser?.user?.id;
-  if (!userId) return;
+  const profileBtn = document.getElementById('profile-btn');
+  const walletPanel = document.getElementById('wallet-panel');
+  if (!profileBtn || !walletPanel) return;
 
-  async function refreshWallet() {
-    try {
-      const res = await fetch(`${API_URL}/api/wallet/${userId}`);
-      if (res.ok) {
+  const user = authUser?.user;
+  if (!user) return;
+
+  const isAuthenticated = user.type === 'authenticated';
+  const twitter = getTwitterFields(user);
+
+  setAvatarSrc(
+    document.getElementById('profile-pfp'),
+    isAuthenticated ? twitter.avatar : null
+  );
+
+  document.getElementById('profile-name').textContent =
+    isAuthenticated && twitter.username ? `@${twitter.username}` : (user.name || 'Player');
+
+  profileBtn.style.display = 'flex';
+
+  profileBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    walletPanel.style.display = walletPanel.style.display === 'none' ? 'block' : 'none';
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!walletPanel.contains(e.target) && !profileBtn.contains(e.target)) {
+      walletPanel.style.display = 'none';
+    }
+  });
+
+  populateWalletPanel(user);
+}
+
+function populateWalletPanel(user) {
+  const isAuthenticated = user.type === 'authenticated';
+  const twitter = getTwitterFields(user);
+
+  // Header
+  setAvatarSrc(document.getElementById('wp-pfp'), isAuthenticated ? twitter.avatar : null);
+  document.getElementById('wp-display-name').textContent = user.name || twitter.username || 'Player';
+  document.getElementById('wp-username').textContent =
+    isAuthenticated && twitter.username ? `@${twitter.username}` : (user.type === 'guest' ? 'Guest' : '');
+
+  // Wallet section vs guest message
+  const walletSection = document.getElementById('wp-wallet-section');
+  const guestMsg = document.getElementById('wp-guest-msg');
+  const faucetBtn = document.getElementById('wp-faucet');
+  const addressEl = document.getElementById('wp-address');
+  const balanceEl = document.getElementById('wp-balance');
+
+  if (isAuthenticated) {
+    guestMsg.style.display = 'none';
+    const userId = user.id;
+
+    async function refreshWallet() {
+      try {
+        const res = await fetch(`${API_URL}/api/wallet/${userId}`);
+        if (!res.ok) return;
         const data = await res.json();
         if (data.hasWallet && data.walletAddress) {
           const addr = data.walletAddress;
-          walletAddr.textContent = addr.slice(0, 6) + '...' + addr.slice(-4);
-          walletInfo.style.display = 'block';
+          addressEl.textContent = addr.slice(0, 6) + '...' + addr.slice(-4);
+          addressEl.dataset.full = addr;
+          walletSection.style.display = 'block';
+          faucetBtn.style.display = 'block';
         }
-      }
-    } catch { /* silent */ }
-  }
+      } catch { /* silent */ }
+    }
 
-  async function refreshBalance() {
-    try {
-      const res = await fetch(`${API_URL}/api/balance/${state.room?.sessionId || userId}`);
-      if (res.ok) {
+    async function refreshBalance() {
+      try {
+        const res = await fetch(`${API_URL}/api/balance/${state.room?.sessionId || userId}`);
+        if (!res.ok) return;
         const data = await res.json();
-        tokenBalance.textContent = data.balance;
+        balanceEl.textContent = data.balance;
+      } catch { /* silent */ }
+    }
+
+    refreshWallet();
+    refreshBalance();
+    setInterval(refreshBalance, 30000);
+
+    document.getElementById('wp-copy').addEventListener('click', () => {
+      const full = addressEl.dataset.full;
+      if (full) {
+        navigator.clipboard.writeText(full).then(() => showToast('Address copied!'));
       }
-    } catch { /* silent */ }
+    });
+
+    faucetBtn.addEventListener('click', async () => {
+      faucetBtn.disabled = true;
+      faucetBtn.textContent = 'Requesting...';
+      try {
+        const token = getToken();
+        const res = await fetch(`${API_URL}/api/tokens/faucet`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast('Tokens received!');
+          refreshBalance();
+        } else {
+          showToast(data.error || 'Faucet failed', 'error');
+        }
+      } catch {
+        showToast('Faucet request failed', 'error');
+      }
+      faucetBtn.disabled = false;
+      faucetBtn.textContent = 'Get Test Tokens';
+    });
+  } else {
+    walletSection.style.display = 'none';
+    faucetBtn.style.display = 'none';
+    guestMsg.style.display = 'block';
   }
 
-  refreshWallet();
-  refreshBalance();
-  setInterval(refreshBalance, 30000);
+  document.getElementById('wp-logout').addEventListener('click', async () => {
+    await logout();
+    window.location.reload();
+  });
 }
 
 // ============================================
@@ -2556,20 +2663,8 @@ async function init() {
   document.getElementById('controls').style.display = 'block';
   document.getElementById('chat-panel').style.display = 'flex';
 
-  // Logout button
-  if (!isSpectator) {
-    const logoutBtn = document.getElementById('btn-logout');
-    if (logoutBtn) {
-      logoutBtn.style.display = 'block';
-      logoutBtn.addEventListener('click', async () => {
-        await logout();
-        window.location.reload();
-      });
-    }
-  }
-
-  // Wallet & token balance display
-  setupWalletDisplay();
+  // Profile button & wallet panel
+  setupProfileButton();
 
   animate();
 

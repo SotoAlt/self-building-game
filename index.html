@@ -506,6 +506,170 @@
       pointer-events: none;
       display: none;
     }
+    /* Shared avatar style */
+    #profile-pfp,
+    .wp-header img {
+      border-radius: 50%;
+      object-fit: cover;
+      background: #333;
+      flex-shrink: 0;
+    }
+    /* Shared text truncation */
+    #profile-name,
+    .wp-display-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* Profile Button */
+    #profile-btn {
+      position: fixed;
+      top: 20px;
+      right: 200px;
+      z-index: 210;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0,0,0,0.8);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 24px;
+      padding: 5px 14px 5px 5px;
+      cursor: pointer;
+      color: white;
+      font-size: 13px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    #profile-btn:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.25);
+    }
+    #profile-pfp { width: 28px; height: 28px; }
+    #profile-name { max-width: 120px; }
+    /* Wallet Panel */
+    #wallet-panel {
+      position: fixed;
+      top: 58px;
+      right: 200px;
+      z-index: 210;
+      display: none;
+      width: 280px;
+      background: rgba(10,10,20,0.95);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      backdrop-filter: blur(16px);
+      color: white;
+      overflow: hidden;
+    }
+    .wp-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .wp-header img { width: 44px; height: 44px; }
+    .wp-header-info { min-width: 0; }
+    .wp-display-name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .wp-username {
+      font-size: 12px;
+      color: rgba(255,255,255,0.45);
+    }
+    .wp-section {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .wp-section-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: rgba(255,255,255,0.35);
+      margin-bottom: 6px;
+    }
+    .wp-wallet-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .wp-address {
+      font-family: monospace;
+      font-size: 13px;
+      color: #f1c40f;
+      flex: 1;
+    }
+    .wp-copy-btn {
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.4);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .wp-copy-btn:hover {
+      color: white;
+      background: rgba(255,255,255,0.1);
+    }
+    .wp-balance-row {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .wp-balance-value {
+      font-size: 22px;
+      font-weight: 700;
+      color: #f1c40f;
+    }
+    .wp-balance-label {
+      font-size: 12px;
+      color: rgba(255,255,255,0.4);
+    }
+    .wp-actions {
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .wp-btn {
+      width: 100%;
+      padding: 8px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.15s;
+    }
+    .wp-btn:hover { opacity: 0.9; }
+    .wp-btn:active { transform: scale(0.98); }
+    .wp-btn.faucet {
+      background: linear-gradient(135deg, #9b59b6, #8e44ad);
+      color: white;
+    }
+    .wp-btn.logout {
+      background: rgba(231,76,60,0.15);
+      color: #e74c3c;
+      border: 1px solid rgba(231,76,60,0.25);
+    }
+    .wp-guest-msg {
+      padding: 12px 16px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.5);
+      text-align: center;
+      line-height: 1.5;
+    }
+    .wp-network {
+      padding: 8px 16px;
+      text-align: center;
+      font-size: 10px;
+      color: rgba(155,89,182,0.7);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
   </style>
 </head>
 <body>
@@ -532,12 +696,7 @@
       <div>Players: <span id="player-count">0</span></div>
       <div>Physics: <span id="physics-info">-</span></div>
     </div>
-    <div id="wallet-info" style="display:none; margin-top:8px; font-size:11px; color:#f1c40f;">
-      <span id="wallet-address"></span>
-      <div>Tokens: <span id="token-balance">—</span></div>
-    </div>
     <div id="entities"></div>
-    <button id="btn-logout" style="display:none; margin-top:8px; background:#c0392b; color:white; border:none; padding:4px 10px; border-radius:4px; font-size:11px; cursor:pointer;">Logout</button>
   </div>
   <div id="crosshair"></div>
   <div id="chat-panel" style="display:none">
@@ -553,6 +712,38 @@
     <div id="game-phase">LOBBY</div>
     <div id="game-type"></div>
     <div id="game-timer"></div>
+  </div>
+  <div id="profile-btn">
+    <img id="profile-pfp" src="" alt="">
+    <span id="profile-name"></span>
+  </div>
+  <div id="wallet-panel">
+    <div class="wp-header">
+      <img id="wp-pfp" src="" alt="">
+      <div class="wp-header-info">
+        <div id="wp-display-name" class="wp-display-name"></div>
+        <div id="wp-username" class="wp-username"></div>
+      </div>
+    </div>
+    <div id="wp-wallet-section" class="wp-section" style="display:none">
+      <div class="wp-section-label">Wallet</div>
+      <div class="wp-wallet-row">
+        <span id="wp-address" class="wp-address">—</span>
+        <button id="wp-copy" class="wp-copy-btn" title="Copy address">&#x2398;</button>
+      </div>
+      <div class="wp-balance-row">
+        <span id="wp-balance" class="wp-balance-value">—</span>
+        <span class="wp-balance-label">tokens</span>
+      </div>
+    </div>
+    <div id="wp-guest-msg" class="wp-guest-msg" style="display:none">
+      Login with Twitter to unlock your wallet
+    </div>
+    <div class="wp-actions">
+      <button id="wp-faucet" class="wp-btn faucet" style="display:none">Get Test Tokens</button>
+      <button id="wp-logout" class="wp-btn logout">Logout</button>
+    </div>
+    <div class="wp-network">Monad Testnet</div>
   </div>
   <div id="leaderboard-panel">
     <h3>Leaderboard</h3>
