@@ -5,12 +5,15 @@
  * Runs on the host (not in Docker) alongside the OpenClaw gateway.
  * Polls the game server for context, decides when to invoke the agent,
  * and uses `openclaw agent` CLI to send messages.
+ *
+ * v0.13.0 — Enriched context, faster @mention response, state tracking
  */
 
 import { execSync } from 'child_process';
+import { writeFileSync, unlinkSync } from 'fs';
 
 const GAME_URL = process.env.GAME_SERVER_URL || 'http://localhost:3000';
-const TICK_INTERVAL = parseInt(process.env.TICK_INTERVAL || '8000');
+const TICK_INTERVAL = parseInt(process.env.TICK_INTERVAL || '5000'); // 5s ticks (was 8s)
 const SESSION_ID = process.env.OPENCLAW_SESSION_ID || `chaos-game-${Date.now().toString(36)}`;
 
 // State
@@ -19,11 +22,29 @@ let gamesPlayed = 0;
 let phase = 'welcome';
 let sessionStartTime = Date.now();
 let invoking = false;
+let lastSuccessfulInvoke = 0; // suppress fetch errors right after invoke
+
+// Tracking — avoid re-processing old data
+let lastProcessedChatId = 0;
+let welcomedPlayers = new Set();
+let lastGameEndedPhase = false; // prevent double-counting gamesPlayed
 
 async function gameAPI(endpoint) {
   const res = await fetch(`${GAME_URL}${endpoint}`);
   if (!res.ok) throw new Error(`${endpoint}: ${res.status}`);
   return res.json();
+}
+
+async function gameAPIWithRetry(endpoint, retries = 1) {
+  try {
+    return await gameAPI(endpoint);
+  } catch (err) {
+    if (retries > 0 && err.message?.includes('fetch failed')) {
+      await new Promise(r => setTimeout(r, 2000));
+      return gameAPIWithRetry(endpoint, retries - 1);
+    }
+    throw err;
+  }
 }
 
 function calculateDrama(context) {
@@ -33,7 +54,7 @@ function calculateDrama(context) {
   if (gs.phase === 'playing') drama += 30;
   drama += Math.min(context.playerCount * 5, 20);
 
-  const recentDeaths = context.events?.filter(e =>
+  const recentDeaths = context.recentEvents?.filter(e =>
     e.type === 'player_death' && Date.now() - e.timestamp < 10000
   ).length || 0;
   drama += recentDeaths * 10;
@@ -43,15 +64,19 @@ function calculateDrama(context) {
   ).length || 0;
   drama += Math.min(recentChats * 5, 15);
 
-  const agentMentions = context.recentChat?.filter(m =>
-    m.text?.includes('@agent') && Date.now() - m.timestamp < 30000
-  ).length || 0;
-  drama += agentMentions * 15;
+  const newMentions = getNewMentions(context);
+  drama += newMentions.length * 15;
 
   const timeSinceInvoke = (Date.now() - lastInvokeTime) / 1000;
   drama -= Math.floor(timeSinceInvoke / 10) * 2;
 
   return Math.max(0, Math.min(100, drama));
+}
+
+function getNewMentions(context) {
+  return (context.recentChat || []).filter(m =>
+    m.text?.includes('@agent') && m.id > lastProcessedChatId
+  );
 }
 
 function detectPhase(context) {
@@ -69,31 +94,42 @@ function detectPhase(context) {
   return 'intermission';
 }
 
+const PHASE_INTERVALS = {
+  welcome: 25000,
+  warmup: 35000,
+  gaming: 30000,
+  intermission: 25000,
+  escalation: 25000,
+  finale: 20000,
+};
+
 function shouldInvoke(phase, drama, context) {
   const humanCount = (context.players || []).filter(p => p.type !== 'ai').length;
   if (humanCount === 0) return false;
 
   const elapsed = Date.now() - lastInvokeTime;
-  if (elapsed < 15000) return false; // minimum 15s between invocations
 
-  // Always invoke on @agent mentions
-  const hasAgentMention = context.recentChat?.some(m =>
-    m.text?.includes('@agent') && m.timestamp > lastInvokeTime
-  );
-  if (hasAgentMention) return true;
+  // Fast-track: @agent mentions or pending welcomes (5s minimum)
+  if (elapsed >= 5000) {
+    if (getNewMentions(context).length > 0) return true;
+    if (getNewWelcomes(context).length > 0) return true;
+  }
 
-  // Invoke based on phase (conservative intervals)
-  if (phase === 'welcome' && elapsed > 25000) return true;
-  if (phase === 'warmup' && elapsed > 35000) return true;
-  if (phase === 'gaming' && elapsed > 30000) return true;
-  if (phase === 'intermission' && elapsed > 25000) return true;
-  if (phase === 'escalation' && elapsed > 25000) return true;
-  if (phase === 'finale' && elapsed > 20000) return true;
+  // Standard minimum interval for non-urgent invocations
+  if (elapsed < 15000) return false;
+
+  // Phase-based interval
+  const phaseInterval = PHASE_INTERVALS[phase] || 45000;
+  if (elapsed > phaseInterval) return true;
 
   // Drama-driven
   if (drama > 70 && elapsed > 20000) return true;
 
-  return elapsed > 45000; // default: every 45s
+  return elapsed > 45000;
+}
+
+function getNewWelcomes(context) {
+  return (context.pendingWelcomes || []).filter(w => !welcomedPlayers.has(w.playerId || w.name));
 }
 
 function buildPrompt(phase, context, drama) {
@@ -110,6 +146,7 @@ function buildPrompt(phase, context, drama) {
 
   parts.push(phasePrompts[phase] || `**Phase: ${phase}** — Keep the game entertaining.`);
 
+  // Drama level
   let dramaLabel;
   if (drama >= 80) dramaLabel = '(EXPLOSIVE!)';
   else if (drama >= 60) dramaLabel = '(intense)';
@@ -118,6 +155,7 @@ function buildPrompt(phase, context, drama) {
   else dramaLabel = '(quiet - liven things up!)';
   parts.push(`\n**Drama Level**: ${drama}/100 ${dramaLabel}`);
 
+  // World state
   parts.push(`\n**World State**:`);
   parts.push(`- Players: ${context.playerCount} online`);
   if (context.players?.length > 0) {
@@ -125,37 +163,81 @@ function buildPrompt(phase, context, drama) {
   }
   parts.push(`- Entities: ${context.entityCount} in world`);
   parts.push(`- Game phase: ${context.gameState.phase}`);
-  if (context.gameState.gameType) parts.push(`- Game type: ${context.gameState.gameType}`);
+  if (context.gameState.gameType) parts.push(`- Current game: ${context.gameState.gameType}`);
   parts.push(`- Games played: ${gamesPlayed}`);
+
+  // Cooldown
   if (context.cooldownUntil > Date.now()) {
     const remaining = Math.ceil((context.cooldownUntil - Date.now()) / 1000);
-    parts.push(`- Cooldown: ${remaining}s remaining (cannot start new game yet)`);
+    parts.push(`- ⏳ Cooldown: ${remaining}s remaining (cannot start new game yet)`);
   }
 
-  if (context.recentChat?.length > 0) {
+  // Active effects
+  if (context.activeEffects?.length > 0) {
+    parts.push(`- Active spells: ${context.activeEffects.map(e => e.type).join(', ')}`);
+  }
+
+  // Leaderboard
+  if (context.leaderboard?.length > 0) {
+    const top3 = context.leaderboard.slice(0, 3);
+    parts.push(`\n**Leaderboard (Top 3)**:`);
+    top3.forEach((entry, i) => {
+      parts.push(`  ${i + 1}. ${entry.name} — ${entry.wins}W/${entry.losses}L`);
+    });
+  }
+
+  // Game variety hint
+  if (context.lastGameType) {
+    const suggested = (context.suggestedGameTypes || []).join(', ');
+    parts.push(`\n**Variety**: Last game was "${context.lastGameType}". Try: ${suggested}`);
+  }
+
+  // Pending welcomes — new players to greet
+  const newWelcomes = getNewWelcomes(context);
+  if (newWelcomes.length > 0) {
+    parts.push(`\n**NEW PLAYERS — GREET THESE** (use send_chat_message):`);
+    for (const w of newWelcomes) {
+      parts.push(`  - ${w.name} just joined!`);
+    }
+  }
+
+  // Recent chat (last 10 messages, only ones we haven't processed)
+  const newMessages = (context.recentChat || []).filter(m => m.id > lastProcessedChatId);
+  if (newMessages.length > 0) {
+    parts.push(`\n**Recent Chat** (new since last check):`);
+    for (const msg of newMessages.slice(-10)) {
+      parts.push(`  [${msg.senderType}] ${msg.sender}: ${msg.text}`);
+    }
+  } else if (context.recentChat?.length > 0) {
+    // Show last few for context even if already processed
     parts.push(`\n**Recent Chat**:`);
     for (const msg of context.recentChat.slice(-5)) {
       parts.push(`  [${msg.senderType}] ${msg.sender}: ${msg.text}`);
     }
   }
 
-  const requests = context.recentChat?.filter(m =>
-    m.text?.includes('@agent') && m.timestamp > lastInvokeTime
-  ) || [];
-  if (requests.length > 0) {
-    parts.push(`\n**Player Requests (RESPOND TO THESE)**:`);
-    for (const req of requests) {
+  // @agent mentions — urgent requests
+  const mentions = getNewMentions(context);
+  if (mentions.length > 0) {
+    parts.push(`\n**🚨 Player Requests (RESPOND TO THESE FIRST)**:`);
+    for (const req of mentions) {
       parts.push(`  - ${req.sender}: "${req.text}"`);
     }
+  }
+
+  // Recent deaths
+  const recentDeaths = (context.recentEvents || []).filter(e =>
+    e.type === 'player_death' && Date.now() - e.timestamp < 15000
+  );
+  if (recentDeaths.length > 0) {
+    parts.push(`\n**Recent Deaths** (last 15s): ${recentDeaths.length} player(s) died`);
   }
 
   return parts.join('\n');
 }
 
-async function invokeAgent(message) {
-  // Write message to temp file to avoid shell escaping issues
+function invokeAgent(message) {
   const tmpFile = `/tmp/agent-msg-${Date.now()}.txt`;
-  const { writeFileSync, unlinkSync } = await import('fs');
   writeFileSync(tmpFile, message);
 
   try {
@@ -173,11 +255,32 @@ async function invokeAgent(message) {
   }
 }
 
+function updateTracking(context) {
+  // Track highest chat message ID we've seen
+  if (context.recentChat?.length > 0) {
+    const maxId = Math.max(...context.recentChat.map(m => m.id));
+    if (maxId > lastProcessedChatId) lastProcessedChatId = maxId;
+  }
+
+  // Track welcomed players
+  for (const w of getNewWelcomes(context)) {
+    welcomedPlayers.add(w.playerId || w.name);
+  }
+
+  // Track game count (prevent double-counting)
+  const gameEnded = context.gameState.phase === 'ended';
+  if (gameEnded && !lastGameEndedPhase) {
+    gamesPlayed++;
+    console.log(`[Game] Game #${gamesPlayed} ended`);
+  }
+  lastGameEndedPhase = gameEnded;
+}
+
 async function tick() {
   if (invoking) return;
 
   try {
-    const context = await gameAPI('/api/agent/context');
+    const context = await gameAPIWithRetry('/api/agent/context');
     const drama = calculateDrama(context);
     const newPhase = detectPhase(context);
 
@@ -186,27 +289,32 @@ async function tick() {
       phase = newPhase;
     }
 
-    if (context.gameState.phase === 'ended' && phase === 'intermission') {
-      gamesPlayed++;
-    }
+    // Update tracking before invoke decision
+    updateTracking(context);
 
     if (!shouldInvoke(phase, drama, context)) return;
 
     const message = buildPrompt(phase, context, drama);
-    console.log(`[Tick] Invoking agent (phase=${phase}, drama=${drama}, players=${context.playerCount})`);
+    const mentions = getNewMentions(context);
+    const welcomes = getNewWelcomes(context);
+    console.log(`[Tick] Invoking agent (phase=${phase}, drama=${drama}, players=${context.playerCount}, mentions=${mentions.length}, welcomes=${welcomes.length})`);
 
     invoking = true;
     lastInvokeTime = Date.now();
 
     try {
       await invokeAgent(message);
+      lastSuccessfulInvoke = Date.now();
     } finally {
       invoking = false;
     }
   } catch (err) {
     invoking = false;
     if (err.message?.includes('ECONNREFUSED')) {
-      // Game server not ready yet
+      // Game server not ready yet — silent
+    } else if (err.message?.includes('fetch failed') && Date.now() - lastSuccessfulInvoke < 5000) {
+      // Suppress fetch errors immediately after successful invoke (server busy)
+      console.log(`[Tick] Context fetch failed (post-invoke, suppressed)`);
     } else {
       console.error(`[Tick] Error: ${err.message?.slice(0, 200)}`);
     }
@@ -216,7 +324,7 @@ async function tick() {
 // Start
 console.log(`
 ╔═══════════════════════════════════════╗
-║     Chaos Magician Agent Runner       ║
+║   Chaos Magician Agent Runner v0.13  ║
 ║                                       ║
 ║  Game: ${GAME_URL.padEnd(30)}║
 ║  Session: ${SESSION_ID.slice(0, 27).padEnd(27)}║

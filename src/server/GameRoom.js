@@ -172,7 +172,10 @@ export class GameRoom extends Room {
       // Rate limit: 1 message per second per player
       const now = Date.now();
       const lastSent = this._chatRateLimit.get(client.sessionId) || 0;
-      if (now - lastSent < 1000) return;
+      if (now - lastSent < 1000) {
+        client.send('chat_error', { error: 'Too fast! Wait a moment.' });
+        return;
+      }
       this._chatRateLimit.set(client.sessionId, now);
 
       const player = this.worldState.players.get(client.sessionId);

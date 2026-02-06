@@ -1317,8 +1317,12 @@ function setupChat() {
 }
 
 function sendChatMessage(text) {
-  if (!sendToServer('chat', { text })) {
+  if (!state.connected || !state.room) {
     showToast('Message not sent — disconnected', 'error');
+    return;
+  }
+  if (!sendToServer('chat', { text })) {
+    showToast('Message not sent — connection error', 'error');
   }
 }
 
@@ -1797,6 +1801,9 @@ async function connectToServer() {
 
     // Chat
     room.onMessage('chat_message', displayChatMessage);
+    room.onMessage('chat_error', ({ error }) => {
+      showToast(error || 'Message not sent', 'error');
+    });
 
     // Triggers
     room.onMessage('trigger_activated', (data) => {
