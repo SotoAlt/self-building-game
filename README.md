@@ -15,7 +15,8 @@ An AI agent builds a 3D multiplayer game in real-time while players play and aud
 - 6 entity types (platform, ramp, collectible, obstacle, trigger, decoration) with shape property (sphere, cylinder, cone, pyramid, torus, dodecahedron, ring)
 - Fall Guys-style countdown: players teleport to start, move freely during 3-2-1
 - Mid-game joiners become spectators until the next round
-- Agent greets new players by name within 5-15s
+- Agent greets new players by name within 3-15s
+- Chat bridge connects Twitch, Discord, and Telegram — audiences interact with the agent across platforms
 
 ## Architecture
 
@@ -37,7 +38,8 @@ Claude (Anthropic) via OpenClaw Gateway
 
 **Game Server** hosts the world state, player sync, mini-game engine, and 50+ HTTP API endpoints.
 **Browser Client** renders the 3D world with Three.js and connects via WebSocket. Mobile touch controls supported.
-**agent-runner.js** runs on the host (not in Docker), calculates drama score, detects session phases, and invokes the AI agent every 5s ticks with 15-45s invoke intervals.
+**agent-runner.js** runs on the host (not in Docker), calculates drama score, detects session phases, and invokes the AI agent every 2s ticks (async, non-blocking) with 15-45s invoke intervals.
+**chat-bridge.js** connects Twitch, Discord, and Telegram chats — external messages appear in-game, agent responses relay back.
 **OpenClaw Gateway** manages agent sessions and routes messages to Claude (Anthropic).
 **AI Agent** (Chaos Magician) controls the game via HTTP API calls — spawning arenas, starting games, casting spells, welcoming players, and chatting.
 **PostgreSQL** persists leaderboards, game history, and user data across restarts.

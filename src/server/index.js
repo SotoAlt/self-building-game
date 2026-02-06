@@ -574,6 +574,25 @@ app.post('/api/chat/send', (req, res) => {
   res.json({ success: true, message });
 });
 
+// Bridge chat (external platforms: Twitch, Discord, Telegram)
+app.post('/api/chat/bridge', (req, res) => {
+  const { sender, platform, text } = req.body;
+  if (!sender || !platform || !text) {
+    return res.status(400).json({ error: 'Missing required: sender, platform, text' });
+  }
+
+  const validPlatforms = ['twitch', 'discord', 'telegram'];
+  if (!validPlatforms.includes(platform)) {
+    return res.status(400).json({ error: `Invalid platform. Must be one of: ${validPlatforms.join(', ')}` });
+  }
+
+  const displayName = `[${platform}] ${sender}`;
+  const message = worldState.addMessage(displayName, 'player', String(text).trim().slice(0, 200));
+  broadcastToRoom('chat_message', message);
+
+  res.json({ success: true, message });
+});
+
 // ============================================
 // Leaderboard API
 // ============================================

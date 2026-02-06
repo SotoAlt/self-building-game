@@ -6,7 +6,7 @@ An AI agent ("Chaos Magician") builds a 3D multiplayer game in real-time while p
 
 ## Current Phase
 
-**Production v0.14.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
+**Production v0.15.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
 
 ## Architecture
 
@@ -56,6 +56,7 @@ Claude (Anthropic) via OpenClaw Gateway
 ├── docs/                     # PRD, CONCEPT, ROADMAP, STACK-EVALUATION
 ├── index.html                # Game UI (login, chat, leaderboard, spectator)
 ├── agent-runner.js           # Standalone agent loop (sole agent system, runs on host)
+├── chat-bridge.js            # Twitch/Discord/Telegram chat bridge
 ├── deploy.sh                 # Production deployment script
 ├── docker-compose.yml        # Game server + PostgreSQL + nginx + certbot
 ├── Dockerfile                # Multi-stage build
@@ -85,13 +86,14 @@ npm run build        # Build client for production
 | `POST /api/ai-players/toggle` | Enable/disable AI bots |
 | `POST /api/world/environment` | Change sky, fog, lighting |
 | `GET /api/stream/events` | SSE feed for OBS overlays |
+| `POST /api/chat/bridge` | External platform chat (Twitch/Discord/Telegram) |
 
 ## Agent System
 
 - **agent-runner.js** is the sole agent system — runs on VPS host (not in Docker), has OpenClaw CLI access
 - **AgentLoop.js** runs inside Docker but is naturally inactive (no OpenClaw installed)
-- **5s tick interval** with drama score (0-100) driving invoke frequency
-- **@mention fast-track**: 5s minimum for `@agent` mentions (vs 15s standard minimum)
+- **2s tick interval** with drama score (0-100) driving invoke frequency (async, non-blocking)
+- **@mention fast-track**: 3s minimum for `@agent` mentions (vs 15s standard minimum)
 - **Session phases**: welcome → warmup → gaming → intermission → escalation → finale
 - **Agent auto-pauses** when 0 human players connected
 - **Player welcome system**: detects joins, queues `pendingWelcomes`, greets by name

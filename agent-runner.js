@@ -9,11 +9,11 @@
  * v0.13.0 — Enriched context, faster @mention response, state tracking
  */
 
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
 import { writeFileSync, unlinkSync } from 'fs';
 
 const GAME_URL = process.env.GAME_SERVER_URL || 'http://localhost:3000';
-const TICK_INTERVAL = parseInt(process.env.TICK_INTERVAL || '5000'); // 5s ticks (was 8s)
+const TICK_INTERVAL = parseInt(process.env.TICK_INTERVAL || '2000'); // 2s ticks (was 5s)
 const SESSION_ID = process.env.OPENCLAW_SESSION_ID || `chaos-game-${Date.now().toString(36)}`;
 
 // State
@@ -109,8 +109,8 @@ function shouldInvoke(phase, drama, context) {
 
   const elapsed = Date.now() - lastInvokeTime;
 
-  // Fast-track: @agent mentions or pending welcomes (5s minimum)
-  if (elapsed >= 5000) {
+  // Fast-track: @agent mentions or pending welcomes (3s minimum)
+  if (elapsed >= 3000) {
     if (getNewMentions(context).length > 0) return true;
     if (getNewWelcomes(context).length > 0) return true;
   }
@@ -240,22 +240,25 @@ function buildPrompt(phase, context, drama) {
 }
 
 function invokeAgent(message) {
-  const tmpFile = `/tmp/agent-msg-${Date.now()}.txt`;
-  writeFileSync(tmpFile, message);
+  return new Promise((resolve, reject) => {
+    const tmpFile = `/tmp/agent-msg-${Date.now()}.txt`;
+    writeFileSync(tmpFile, message);
 
-  try {
-    const result = execSync(
-      `openclaw agent --session-id "${SESSION_ID}" --message "$(cat ${tmpFile})" --timeout 30 2>&1`,
-      { timeout: 35000, encoding: 'utf-8' }
-    );
-    console.log(`[Agent] Response received (${result.length} chars)`);
-    return result;
-  } catch (err) {
-    console.error(`[Agent] Invoke failed: ${err.message?.slice(0, 200)}`);
-    throw err;
-  } finally {
-    try { unlinkSync(tmpFile); } catch {}
-  }
+    execFile('sh', ['-c', `openclaw agent --session-id "${SESSION_ID}" --message "$(cat ${tmpFile})" --timeout 30 2>&1`], {
+      timeout: 35000,
+      encoding: 'utf-8',
+      maxBuffer: 1024 * 1024
+    }, (err, stdout) => {
+      try { unlinkSync(tmpFile); } catch {}
+      if (err) {
+        console.error(`[Agent] Invoke failed: ${err.message?.slice(0, 200)}`);
+        reject(err);
+      } else {
+        console.log(`[Agent] Response received (${stdout.length} chars)`);
+        resolve(stdout);
+      }
+    });
+  });
 }
 
 function updateTracking(context) {
@@ -327,7 +330,7 @@ async function tick() {
 // Start
 console.log(`
 ╔═══════════════════════════════════════╗
-║   Chaos Magician Agent Runner v0.14  ║
+║   Chaos Magician Agent Runner v0.15  ║
 ║                                       ║
 ║  Game: ${GAME_URL.padEnd(30)}║
 ║  Session: ${SESSION_ID.slice(0, 27).padEnd(27)}║

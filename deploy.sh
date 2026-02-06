@@ -184,7 +184,7 @@ Type=simple
 WorkingDirectory=/opt/self-building-game
 ExecStart=/usr/bin/node /opt/self-building-game/agent-runner.js
 Environment=GAME_SERVER_URL=http://localhost:3000
-Environment=TICK_INTERVAL=5000
+Environment=TICK_INTERVAL=2000
 Environment=NODE_ENV=production
 Restart=always
 RestartSec=10

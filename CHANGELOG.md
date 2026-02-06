@@ -2,6 +2,24 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.15.0] - 2026-02-06
+
+### Added
+- **Chat bridge** (`chat-bridge.js`): Connects Twitch, Discord, and Telegram chats to the game
+  - External messages appear in game chat as `[twitch] username`, `[discord] username`, etc.
+  - Agent responses relayed back to all connected platforms via SSE stream
+  - Config-driven: enable platforms via env vars, run multiple simultaneously
+  - `POST /api/chat/bridge` endpoint for external platform messages
+- **Async agent invocation**: `agent-runner.js` uses `execFile` instead of `execSync`
+  - Tick loop keeps running while OpenClaw processes (no more blocking)
+  - Faster @mention detection: polls every 2s, invokes within 3s of mention
+- **Chat bridge systemd service**: `chat-bridge.service` for production deployment
+
+### Changed
+- **Tick interval**: 5s → 2s (just HTTP polling, very lightweight)
+- **@mention minimum**: 5s → 3s for faster response to player requests
+- **Agent-runner banner**: v0.14 → v0.15
+
 ## [0.14.0] - 2026-02-06
 
 ### Added
