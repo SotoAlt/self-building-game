@@ -489,6 +489,8 @@ export class WorldState {
 
   resetGameState() {
     const { cooldownUntil } = this.gameState;
+    // Clean world for lobby — clear all entities, reset physics/floor/environment
+    this.clearEntities();
     this.gameState = {
       phase: 'lobby',
       currentGame: null,
@@ -500,7 +502,7 @@ export class WorldState {
       losers: []
     };
     this.lobbyEnteredAt = Date.now();
-    console.log('[WorldState] Game state reset to lobby');
+    console.log('[WorldState] Game state reset to lobby (world cleared)');
 
     this._notifyPhaseChange();
   }

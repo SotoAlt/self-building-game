@@ -69,12 +69,18 @@ function rejectIfLobbyTimer(res) {
 worldState.onPhaseChange = function onPhaseChange(gameState) {
   broadcastToRoom('game_state_changed', gameState);
 
-  // When returning to lobby, activate spectating players
-  if (gameState.phase === 'lobby') {
-    const activated = worldState.activateSpectators();
-    if (activated > 0) {
-      broadcastToRoom('player_activated', {});
-    }
+  if (gameState.phase !== 'lobby') return;
+
+  // Returning to lobby — sync clean world state and activate spectators
+  broadcastToRoom('world_cleared', {});
+  broadcastToRoom('physics_changed', worldState.physics);
+  broadcastToRoom('environment_changed', worldState.environment);
+  broadcastToRoom('floor_changed', { type: worldState.floorType });
+  broadcastToRoom('effects_cleared', {});
+
+  const activated = worldState.activateSpectators();
+  if (activated > 0) {
+    broadcastToRoom('player_activated', {});
   }
 };
 

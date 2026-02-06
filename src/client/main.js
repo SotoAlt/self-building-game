@@ -1712,7 +1712,11 @@ function updateGameStateUI() {
   const timerEl = document.getElementById('game-timer');
 
   if (state.gameState.phase === 'lobby') {
-    statusEl.style.display = 'none';
+    statusEl.style.display = 'block';
+    statusEl.className = 'lobby';
+    phaseEl.textContent = 'LOBBY';
+    typeEl.textContent = 'Waiting for game...';
+    timerEl.textContent = '';
     return;
   }
 
@@ -1740,7 +1744,7 @@ function updateGameStateUI() {
     // Countdown display is driven by the interval in game_state_changed handler.
     // Only set the initial text if the interval has not started yet.
     if (countdownIntervalId === null) {
-      timerEl.textContent = '3...';
+      timerEl.textContent = '5...';
       timerEl.style.color = '#f39c12';
     }
   } else {
@@ -1949,6 +1953,21 @@ async function connectToServer() {
     room.onMessage('effects_cleared', () => {
       state.activeEffects = [];
       if (playerMesh) playerMesh.scale.set(1, 1, 1);
+    });
+
+    // Clean world on lobby transition — remove all entity meshes
+    room.onMessage('world_cleared', () => {
+      console.log('[Event] World cleared — removing all entities');
+      for (const mesh of entityMeshes.values()) {
+        scene.remove(mesh);
+        mesh.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) child.material.dispose();
+        });
+      }
+      entityMeshes.clear();
+      state.entities.clear();
+      updateUI();
     });
 
     // Teleport all players to start position (Fall Guys countdown)
@@ -2512,8 +2531,10 @@ function setupProfileButton() {
     isAuthenticated ? twitter.avatar : null
   );
 
-  document.getElementById('profile-name').textContent =
-    isAuthenticated && twitter.username ? `@${twitter.username}` : (user.name || 'Player');
+  const profileName = isAuthenticated && twitter.username
+    ? `@${twitter.username}`
+    : (user.name || 'Player');
+  document.getElementById('profile-name').textContent = profileName;
 
   profileBtn.style.display = 'flex';
 
@@ -2538,113 +2559,119 @@ function populateWalletPanel(user) {
   // Header
   setAvatarSrc(document.getElementById('wp-pfp'), isAuthenticated ? twitter.avatar : null);
   document.getElementById('wp-display-name').textContent = user.name || twitter.username || 'Player';
-  document.getElementById('wp-username').textContent =
-    isAuthenticated && twitter.username ? `@${twitter.username}` : (user.type === 'guest' ? 'Guest' : '');
+  let usernameLabel = '';
+  if (isAuthenticated && twitter.username) usernameLabel = `@${twitter.username}`;
+  else if (user.type === 'guest') usernameLabel = 'Guest';
+  document.getElementById('wp-username').textContent = usernameLabel;
 
-  // Wallet section vs guest message
   const walletSection = document.getElementById('wp-wallet-section');
   const guestMsg = document.getElementById('wp-guest-msg');
   const faucetBtn = document.getElementById('wp-faucet');
-  const addressEl = document.getElementById('wp-address');
-  const balanceEl = document.getElementById('wp-balance');
 
-  if (isAuthenticated) {
-    guestMsg.style.display = 'none';
-    walletSection.style.display = 'block';
-    faucetBtn.style.display = 'block';
-    const userId = user.id;
-    const copyBtn = document.getElementById('wp-copy');
-    const explorerBtn = document.getElementById('wp-explorer');
-    const explorerBase = 'https://testnet.monadexplorer.com/address';
-
-    function displayAddress(addr) {
-      addressEl.textContent = addr.slice(0, 6) + '...' + addr.slice(-4);
-      addressEl.dataset.full = addr;
-    }
-
-    const existingAddr = user.walletAddress || user.wallet_address;
-    if (existingAddr) {
-      displayAddress(existingAddr);
-    }
-
-    async function refreshWallet() {
-      try {
-        const res = await fetch(`${API_URL}/api/wallet/${userId}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.hasWallet && data.walletAddress) {
-          displayAddress(data.walletAddress);
-        } else {
-          addressEl.textContent = 'No wallet yet';
-        }
-      } catch {
-        if (!addressEl.dataset.full) addressEl.textContent = 'Unavailable';
-      }
-    }
-
-    async function refreshBalance() {
-      try {
-        const res = await fetch(`${API_URL}/api/balance/${state.room?.sessionId || userId}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        balanceEl.textContent = data.balance;
-      } catch { /* silent */ }
-    }
-
-    refreshWallet();
-    refreshBalance();
-    setInterval(refreshBalance, 30000);
-
-    copyBtn.addEventListener('click', () => {
-      const full = addressEl.dataset.full;
-      if (!full) return;
-      navigator.clipboard.writeText(full).then(() => {
-        copyBtn.innerHTML = '&#x2713;';
-        copyBtn.style.color = '#2ecc71';
-        showToast('Address copied!');
-        setTimeout(() => {
-          copyBtn.innerHTML = '&#x2398;';
-          copyBtn.style.color = '';
-        }, 2000);
-      });
-    });
-
-    explorerBtn.addEventListener('click', () => {
-      const full = addressEl.dataset.full;
-      if (full) window.open(`${explorerBase}/${full}`, '_blank');
-    });
-
-    faucetBtn.addEventListener('click', async () => {
-      faucetBtn.disabled = true;
-      faucetBtn.textContent = 'Requesting...';
-      try {
-        const token = getToken();
-        const res = await fetch(`${API_URL}/api/tokens/faucet`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast('Tokens received!');
-          refreshBalance();
-        } else {
-          showToast(data.error || 'Faucet failed', 'error');
-        }
-      } catch {
-        showToast('Faucet request failed', 'error');
-      }
-      faucetBtn.disabled = false;
-      faucetBtn.textContent = 'Get Test Tokens';
-    });
-  } else {
-    walletSection.style.display = 'none';
-    faucetBtn.style.display = 'none';
-    guestMsg.style.display = 'block';
-  }
-
+  // Logout is available for all user types
   document.getElementById('wp-logout').addEventListener('click', async () => {
     await logout();
     window.location.reload();
+  });
+
+  // Guest users see a login prompt instead of wallet details
+  if (!isAuthenticated) {
+    walletSection.style.display = 'none';
+    faucetBtn.style.display = 'none';
+    guestMsg.style.display = 'block';
+    return;
+  }
+
+  // Authenticated user — show wallet section
+  guestMsg.style.display = 'none';
+  walletSection.style.display = 'block';
+  faucetBtn.style.display = 'block';
+
+  const userId = user.id;
+  const addressEl = document.getElementById('wp-address');
+  const balanceEl = document.getElementById('wp-balance');
+  const copyBtn = document.getElementById('wp-copy');
+  const explorerBtn = document.getElementById('wp-explorer');
+  const explorerBase = 'https://testnet.monadexplorer.com/address';
+
+  function displayAddress(addr) {
+    addressEl.textContent = addr.slice(0, 6) + '...' + addr.slice(-4);
+    addressEl.dataset.full = addr;
+  }
+
+  const existingAddr = user.walletAddress || user.wallet_address;
+  if (existingAddr) {
+    displayAddress(existingAddr);
+  }
+
+  async function refreshWallet() {
+    try {
+      const res = await fetch(`${API_URL}/api/wallet/${userId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.hasWallet && data.walletAddress) {
+        displayAddress(data.walletAddress);
+      } else {
+        addressEl.textContent = 'No wallet yet';
+      }
+    } catch {
+      if (!addressEl.dataset.full) addressEl.textContent = 'Unavailable';
+    }
+  }
+
+  async function refreshBalance() {
+    try {
+      const res = await fetch(`${API_URL}/api/balance/${state.room?.sessionId || userId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      balanceEl.textContent = data.balance;
+    } catch { /* silent */ }
+  }
+
+  refreshWallet();
+  refreshBalance();
+  setInterval(refreshBalance, 30000);
+
+  copyBtn.addEventListener('click', () => {
+    const full = addressEl.dataset.full;
+    if (!full) return;
+    navigator.clipboard.writeText(full).then(() => {
+      copyBtn.innerHTML = '&#x2713;';
+      copyBtn.style.color = '#2ecc71';
+      showToast('Address copied!');
+      setTimeout(() => {
+        copyBtn.innerHTML = '&#x2398;';
+        copyBtn.style.color = '';
+      }, 2000);
+    });
+  });
+
+  explorerBtn.addEventListener('click', () => {
+    const full = addressEl.dataset.full;
+    if (full) window.open(`${explorerBase}/${full}`, '_blank');
+  });
+
+  faucetBtn.addEventListener('click', async () => {
+    faucetBtn.disabled = true;
+    faucetBtn.textContent = 'Requesting...';
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_URL}/api/tokens/faucet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Tokens received!');
+        refreshBalance();
+      } else {
+        showToast(data.error || 'Faucet failed', 'error');
+      }
+    } catch {
+      showToast('Faucet request failed', 'error');
+    }
+    faucetBtn.disabled = false;
+    faucetBtn.textContent = 'Get Test Tokens';
   });
 }
 

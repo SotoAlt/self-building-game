@@ -222,11 +222,10 @@ function buildPrompt(phase, context, drama) {
     }
   }
   if (!lobbyTimerActive && context.gameState.phase === 'lobby') {
-    if (context.entityCount > 0) {
-      parts.push(`- ✅ Arena loaded (${context.entityCount} entities) — use start_game to begin!`);
-    } else {
-      parts.push(`- ✅ Lobby timer expired — use load_template to set up an arena!`);
-    }
+    const hint = context.entityCount > 0
+      ? `Arena loaded (${context.entityCount} entities) — use start_game to begin!`
+      : 'Lobby timer expired — use load_template to set up an arena!';
+    parts.push(`- ✅ ${hint}`);
   }
 
   // Active effects
@@ -237,7 +236,7 @@ function buildPrompt(phase, context, drama) {
   // Leaderboard
   if (context.leaderboard?.length > 0) {
     const top3 = context.leaderboard.slice(0, 3);
-    parts.push(`\n**Leaderboard (Top 3)**:`);
+    parts.push(`\n**All-Time Leaderboard (historical — NOT this session)**:`);
     top3.forEach((entry, i) => {
       parts.push(`  ${i + 1}. ${entry.name} — ${entry.wins} wins (${entry.totalScore} pts)`);
     });

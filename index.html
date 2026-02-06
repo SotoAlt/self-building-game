@@ -261,10 +261,10 @@
       color: #2ecc71;
       border: 1px solid #2ecc71;
     }
-    /* Game status building phase */
-    #game-status.building {
-      border: 2px solid #9b59b6;
-    }
+    /* Game status phase variants */
+    #game-status.building { border: 2px solid #9b59b6; }
+    #game-status.lobby { border: 2px solid #95a5a6; opacity: 0.7; }
+    #game-status.ended { border: 2px solid #e74c3c; }
     /* Spectator overlay */
     #spectator-overlay {
       display: none;
@@ -708,7 +708,7 @@
   </div>
   <div id="toast-container"></div>
   <div id="announcements"></div>
-  <div id="game-status" style="display:none">
+  <div id="game-status" class="lobby">
     <div id="game-phase">LOBBY</div>
     <div id="game-type"></div>
     <div id="game-timer"></div>
