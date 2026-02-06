@@ -75,7 +75,13 @@ function calculateDrama(context) {
 
 function getNewMentions(context) {
   return (context.recentChat || []).filter(m =>
-    m.text?.includes('@agent') && m.id > lastProcessedChatId
+    m.id > lastProcessedChatId && (
+      m.text?.includes('@agent') ||
+      // All bridge messages are treated as mentions (they're talking to the agent)
+      m.sender?.startsWith('[twitch]') ||
+      m.sender?.startsWith('[discord]') ||
+      m.sender?.startsWith('[telegram]')
+    )
   );
 }
 
@@ -105,7 +111,9 @@ const PHASE_INTERVALS = {
 
 function shouldInvoke(phase, drama, context) {
   const humanCount = (context.players || []).filter(p => p.type !== 'ai').length;
-  if (humanCount === 0) return false;
+  const hasBridgeChat = getNewMentions(context).length > 0;
+  // Allow invocation if humans are in-game OR bridge platforms are chatting
+  if (humanCount === 0 && !hasBridgeChat) return false;
 
   const elapsed = Date.now() - lastInvokeTime;
 
@@ -144,10 +152,18 @@ function buildPrompt(phase, context, drama) {
     finale: `**Phase: FINALE** — Grand finale! Maximum chaos. Multiple spells active. Hardest arenas. Epic commentary. Make it memorable!`
   };
 
-  parts.push(phasePrompts[phase] || `**Phase: ${phase}** — Keep the game entertaining.`);
+  // Chat-only mode: bridge platforms are chatting but no one is in-game
+  const humanCount = (context.players || []).filter(p => p.type !== 'ai').length;
+  const bridgeOnly = humanCount === 0 && getNewMentions(context).length > 0;
 
-  // Creative palette reminder
-  parts.push(`\n**Your palette**: Types: platform, ramp, obstacle, collectible, trigger, decoration. Shapes (properties.shape): box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring. Decorations have no collision — use them for visual flair.`);
+  if (bridgeOnly) {
+    parts.push(`**CHAT-ONLY MODE** — People are chatting from Twitch/Discord/Telegram but nobody is playing the game yet. ONLY use send_chat_message to chat with them. Do NOT spawn entities, start games, or cast spells — there's no one in the world to see them. Be friendly, tease the game, invite them to join at https://chaos.waweapps.win`);
+  } else {
+    parts.push(phasePrompts[phase] || `**Phase: ${phase}** — Keep the game entertaining.`);
+
+    // Creative palette reminder
+    parts.push(`\n**Your palette**: Types: platform, ramp, obstacle, collectible, trigger, decoration. Shapes (properties.shape): box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring. Decorations have no collision — use them for visual flair.`);
+  }
 
   // Drama level
   let dramaLabel;
@@ -295,15 +311,19 @@ async function tick() {
       phase = newPhase;
     }
 
-    // Update tracking before invoke decision
-    updateTracking(context);
-
-    if (!shouldInvoke(phase, drama, context)) return;
+    // Check for invocation BEFORE updating tracking (so new messages are visible)
+    if (!shouldInvoke(phase, drama, context)) {
+      updateTracking(context);
+      return;
+    }
 
     const message = buildPrompt(phase, context, drama);
     const mentions = getNewMentions(context);
     const welcomes = getNewWelcomes(context);
     console.log(`[Tick] Invoking agent (phase=${phase}, drama=${drama}, players=${context.playerCount}, mentions=${mentions.length}, welcomes=${welcomes.length})`);
+
+    // Update tracking AFTER building prompt (so prompt includes the new messages)
+    updateTracking(context);
 
     invoking = true;
     lastInvokeTime = Date.now();
