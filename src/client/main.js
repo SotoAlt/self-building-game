@@ -401,8 +401,10 @@ function removeEntity(id) {
   const mesh = entityMeshes.get(id);
   if (mesh) {
     scene.remove(mesh);
-    mesh.geometry.dispose();
-    mesh.material.dispose();
+    mesh.traverse((child) => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
     entityMeshes.delete(id);
   }
   state.entities.delete(id);
@@ -663,7 +665,10 @@ let standingOnEntity = null; // Track what entity we're standing on
 function checkCollisions() {
   if (!playerMesh) return;
 
-  playerBox.setFromObject(playerMesh);
+  // Manual AABB — ignores decoration children (eyes, glow ring)
+  const pp = playerMesh.position;
+  playerBox.min.set(pp.x - 0.5, pp.y - 1.0, pp.z - 0.5);
+  playerBox.max.set(pp.x + 0.5, pp.y + 1.0, pp.z + 0.5);
 
   let standingOnPlatform = false;
   let platformY = 0;
@@ -674,7 +679,13 @@ function checkCollisions() {
     const entity = mesh.userData.entity;
     if (!entity) continue;
 
-    entityBox.setFromObject(mesh);
+    // Manual AABB — ignores glow/decoration children
+    const ep = mesh.position;
+    const halfSize = entity.type === 'collectible'
+      ? [0.5, 0.5, 0.5]
+      : entity.size.map(s => s / 2);
+    entityBox.min.set(ep.x - halfSize[0], ep.y - halfSize[1], ep.z - halfSize[2]);
+    entityBox.max.set(ep.x + halfSize[0], ep.y + halfSize[1], ep.z + halfSize[2]);
 
     if (!playerBox.intersectsBox(entityBox)) continue;
 
@@ -694,19 +705,16 @@ function checkCollisions() {
 
     // Solid collision (platform/ramp) - wall-slide resolution
     if (entity.type === 'platform' || entity.type === 'ramp') {
-      const halfSize = entity.size.map(s => s / 2);
-      const entityPos = mesh.position;
-
       // Calculate overlaps on each axis
-      const overlapX = (0.5 + halfSize[0]) - Math.abs(playerMesh.position.x - entityPos.x);
-      const overlapY = (1 + halfSize[1]) - Math.abs(playerMesh.position.y - entityPos.y);
-      const overlapZ = (0.5 + halfSize[2]) - Math.abs(playerMesh.position.z - entityPos.z);
+      const overlapX = (0.5 + halfSize[0]) - Math.abs(playerMesh.position.x - ep.x);
+      const overlapY = (1 + halfSize[1]) - Math.abs(playerMesh.position.y - ep.y);
+      const overlapZ = (0.5 + halfSize[2]) - Math.abs(playerMesh.position.z - ep.z);
 
       if (overlapX <= 0 || overlapY <= 0 || overlapZ <= 0) continue;
 
       // Check if standing on top
       const playerBottom = playerMesh.position.y - 1;
-      const platformTop = entityPos.y + halfSize[1];
+      const platformTop = ep.y + halfSize[1];
 
       if (playerBottom >= platformTop - 0.5 && playerVelocity.y <= 0) {
         standingOnPlatform = true;
@@ -724,11 +732,11 @@ function checkCollisions() {
       } else {
         // Wall slide - push out on minimum penetration axis (X or Z only)
         if (overlapX < overlapZ) {
-          const pushDir = playerMesh.position.x > entityPos.x ? 1 : -1;
+          const pushDir = playerMesh.position.x > ep.x ? 1 : -1;
           playerMesh.position.x += overlapX * pushDir;
           playerVelocity.x = 0;
         } else {
-          const pushDir = playerMesh.position.z > entityPos.z ? 1 : -1;
+          const pushDir = playerMesh.position.z > ep.z ? 1 : -1;
           playerMesh.position.z += overlapZ * pushDir;
           playerVelocity.z = 0;
         }
@@ -813,7 +821,14 @@ function respawnPlayer() {
   console.log('[Player] Respawned');
 }
 
+const activatedTriggers = new Map(); // entityId -> timestamp
+
 function triggerEvent(entity) {
+  const now = Date.now();
+  const lastActivation = activatedTriggers.get(entity.id) || 0;
+  if (now - lastActivation < 2000) return; // 2s debounce
+
+  activatedTriggers.set(entity.id, now);
   console.log(`[Trigger] Activated: ${entity.id}`);
   sendToServer('trigger_activated', { entityId: entity.id });
 }
@@ -1034,14 +1049,10 @@ function setupChat() {
 
 function sendChatMessage(text) {
   sendToServer('chat', { text });
-
-  // Show thinking indicator when @agent is mentioned
-  if (/@agent/i.test(text)) {
-    showAgentThinking();
-  }
 }
 
 let agentThinkingEl = null;
+let agentThinkingTimeout = null;
 
 function showAgentThinking() {
   removeAgentThinking();
@@ -1052,9 +1063,15 @@ function showAgentThinking() {
   agentThinkingEl.innerHTML = '<span class="text" style="opacity:0.6;font-style:italic">Magician is thinking...</span>';
   container.appendChild(agentThinkingEl);
   container.scrollTop = container.scrollHeight;
+  // Auto-remove after 30s if agent doesn't respond
+  agentThinkingTimeout = setTimeout(removeAgentThinking, 30000);
 }
 
 function removeAgentThinking() {
+  if (agentThinkingTimeout) {
+    clearTimeout(agentThinkingTimeout);
+    agentThinkingTimeout = null;
+  }
   if (agentThinkingEl) {
     agentThinkingEl.remove();
     agentThinkingEl = null;
@@ -1091,6 +1108,11 @@ function displayChatMessage(msg) {
   div.appendChild(sender);
   div.appendChild(textSpan);
   container.appendChild(div);
+
+  // Show thinking indicator AFTER the player's @agent message is displayed
+  if (msg.senderType === 'player' && /@agent/i.test(msg.text)) {
+    showAgentThinking();
+  }
 
   // Auto-scroll
   container.scrollTop = container.scrollHeight;
@@ -1474,6 +1496,14 @@ async function connectToServer() {
 
     // Chat
     room.onMessage('chat_message', displayChatMessage);
+
+    // Triggers
+    room.onMessage('trigger_activated', (data) => {
+      const entity = state.entities.get(data.entityId);
+      if (entity) {
+        spawnParticles(entity.position, '#9b59b6', 15, 3);
+      }
+    });
 
     // Announcements
     room.onMessage('announcement', showAnnouncement);

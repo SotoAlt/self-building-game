@@ -2,6 +2,17 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.9.2] - 2026-02-05
+
+### Fixed
+- **Collision hitboxes** — player and entity bounding boxes now use manual AABBs instead of `setFromObject()`, preventing decoration children (eyes, glow ring) from inflating hitboxes by 36-40%
+- **Chat thinking indicator** — moved from `sendChatMessage` to `displayChatMessage` so it appears AFTER the player's message; added 30s auto-timeout
+- **Trigger spam** — added 2s debounce to `triggerEvent()`, preventing ~60 server messages/sec when standing on a trigger
+- **Entity memory leak** — `removeEntity()` now traverses and disposes all child geometries/materials, not just root
+
+### Added
+- Client handler for `trigger_activated` broadcast (purple particle feedback, eliminates Colyseus warning)
+
 ## [0.9.1] - 2026-02-05
 
 ### Fixed
