@@ -66,8 +66,27 @@ export async function handleOAuthCallback() {
   }
 }
 
+export async function ensureEmbeddedWallet() {
+  if (!privy) return;
+  try {
+    const { user } = await privy.user.get();
+    const hasEvmWallet = user?.linked_accounts?.some(
+      a => a.type === 'wallet' && a.walletClientType === 'privy' && a.chainType === 'ethereum'
+    );
+    if (!hasEvmWallet) {
+      console.log('[Auth] Creating EVM embedded wallet...');
+      await privy.embeddedWallet.create({});
+      console.log('[Auth] EVM wallet created');
+    }
+  } catch (e) {
+    console.warn('[Auth] Embedded wallet creation skipped:', e.message);
+  }
+}
+
 export async function exchangeForBackendToken() {
   if (!privy) return null;
+  await ensureEmbeddedWallet();
+
   const privyToken = await privy.getAccessToken();
   if (!privyToken) {
     console.warn('[Auth] No Privy access token available');

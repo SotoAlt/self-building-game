@@ -2552,7 +2552,22 @@ function populateWalletPanel(user) {
 
   if (isAuthenticated) {
     guestMsg.style.display = 'none';
+    walletSection.style.display = 'block';
+    faucetBtn.style.display = 'block';
     const userId = user.id;
+    const copyBtn = document.getElementById('wp-copy');
+    const explorerBtn = document.getElementById('wp-explorer');
+    const explorerBase = 'https://testnet.monadexplorer.com/address';
+
+    function displayAddress(addr) {
+      addressEl.textContent = addr.slice(0, 6) + '...' + addr.slice(-4);
+      addressEl.dataset.full = addr;
+    }
+
+    const existingAddr = user.walletAddress || user.wallet_address;
+    if (existingAddr) {
+      displayAddress(existingAddr);
+    }
 
     async function refreshWallet() {
       try {
@@ -2560,13 +2575,13 @@ function populateWalletPanel(user) {
         if (!res.ok) return;
         const data = await res.json();
         if (data.hasWallet && data.walletAddress) {
-          const addr = data.walletAddress;
-          addressEl.textContent = addr.slice(0, 6) + '...' + addr.slice(-4);
-          addressEl.dataset.full = addr;
-          walletSection.style.display = 'block';
-          faucetBtn.style.display = 'block';
+          displayAddress(data.walletAddress);
+        } else {
+          addressEl.textContent = 'No wallet yet';
         }
-      } catch { /* silent */ }
+      } catch {
+        if (!addressEl.dataset.full) addressEl.textContent = 'Unavailable';
+      }
     }
 
     async function refreshBalance() {
@@ -2582,11 +2597,23 @@ function populateWalletPanel(user) {
     refreshBalance();
     setInterval(refreshBalance, 30000);
 
-    document.getElementById('wp-copy').addEventListener('click', () => {
+    copyBtn.addEventListener('click', () => {
       const full = addressEl.dataset.full;
-      if (full) {
-        navigator.clipboard.writeText(full).then(() => showToast('Address copied!'));
-      }
+      if (!full) return;
+      navigator.clipboard.writeText(full).then(() => {
+        copyBtn.innerHTML = '&#x2713;';
+        copyBtn.style.color = '#2ecc71';
+        showToast('Address copied!');
+        setTimeout(() => {
+          copyBtn.innerHTML = '&#x2398;';
+          copyBtn.style.color = '';
+        }, 2000);
+      });
+    });
+
+    explorerBtn.addEventListener('click', () => {
+      const full = addressEl.dataset.full;
+      if (full) window.open(`${explorerBase}/${full}`, '_blank');
     });
 
     faucetBtn.addEventListener('click', async () => {
