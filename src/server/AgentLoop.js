@@ -7,20 +7,21 @@
 
 import { AgentBridge } from './AgentBridge.js';
 
-// Session phase state machine
-const PHASES = {
-  welcome: 'welcome',
-  warmup: 'warmup',
-  gaming: 'gaming',
-  intermission: 'intermission',
-  escalation: 'escalation',
-  finale: 'finale'
+// Session phase names
+const PHASE = {
+  WELCOME: 'welcome',
+  WARMUP: 'warmup',
+  GAMING: 'gaming',
+  INTERMISSION: 'intermission',
+  ESCALATION: 'escalation',
+  FINALE: 'finale'
 };
 
 export class AgentLoop {
   constructor(worldState, broadcastFn, config = {}) {
     this.worldState = worldState;
     this.broadcast = broadcastFn;
+    this.chain = config.chain || null;
 
     // Agent bridge for OpenClaw communication
     this.bridge = new AgentBridge(
@@ -33,7 +34,7 @@ export class AgentLoop {
     this._timer = null;
 
     // State
-    this.phase = PHASES.welcome;
+    this.phase = PHASE.WELCOME;
     this.paused = false;
     this.sessionStartTime = Date.now();
     this.lastInvokeTime = 0;
@@ -165,21 +166,21 @@ export class AgentLoop {
     const prev = this.phase;
 
     if (elapsed < 30000 && this.gamesPlayed === 0) {
-      this.phase = PHASES.welcome;
+      this.phase = PHASE.WELCOME;
     } else if (gamePhase === 'building') {
-      this.phase = PHASES.warmup;
+      this.phase = PHASE.WARMUP;
     } else if (gamePhase === 'playing' || gamePhase === 'countdown') {
-      this.phase = PHASES.gaming;
+      this.phase = PHASE.GAMING;
     } else if (gamePhase === 'ended') {
-      this.phase = PHASES.intermission;
+      this.phase = PHASE.INTERMISSION;
     } else if (gamePhase === 'lobby' && this.gamesPlayed === 0) {
-      this.phase = PHASES.warmup;
+      this.phase = PHASE.WARMUP;
     } else if (this.gamesPlayed >= 6) {
-      this.phase = PHASES.finale;
+      this.phase = PHASE.FINALE;
     } else if (this.gamesPlayed >= 3) {
-      this.phase = PHASES.escalation;
+      this.phase = PHASE.ESCALATION;
     } else {
-      this.phase = PHASES.intermission;
+      this.phase = PHASE.INTERMISSION;
     }
 
     if (prev !== this.phase) {
@@ -242,11 +243,11 @@ export class AgentLoop {
     if (this.worldState.gameState.phase === 'ended' && sinceLast > 20000) return true;
 
     // Conditionally invoke based on phase and timing (conservative intervals)
-    if (this.phase === PHASES.gaming) {
+    if (this.phase === PHASE.GAMING) {
       return sinceLast > 30000; // every 30s during games
     }
 
-    if (this.phase === PHASES.welcome) {
+    if (this.phase === PHASE.WELCOME) {
       return sinceLast > 20000; // greet within 20s
     }
 
@@ -261,7 +262,7 @@ export class AgentLoop {
     this.lastInvokeTime = Date.now();
     this.invokeCount++;
 
-    const context = this.buildContext();
+    const context = await this.buildContext();
 
     try {
       await this.bridge.invoke(context, this.phase, drama, this.pendingMentions);
@@ -274,7 +275,7 @@ export class AgentLoop {
     }
   }
 
-  buildContext() {
+  async buildContext() {
     const players = this.worldState.getPlayers().map(p => ({
       id: p.id,
       name: p.name,
@@ -289,7 +290,7 @@ export class AgentLoop {
       position: e.position
     }));
 
-    return {
+    const ctx = {
       playerCount: this.playerCount,
       players,
       entityCount: entities.length,
@@ -300,8 +301,22 @@ export class AgentLoop {
       leaderboard: this.worldState.getLeaderboard(),
       gamesPlayed: this.gamesPlayed,
       sessionUptime: Math.floor((Date.now() - this.sessionStartTime) / 1000),
-      recentDeathCount: this.recentDeaths.length
+      recentDeathCount: this.recentDeaths.length,
+      pendingBribes: [],
+      recentHonoredBribes: []
     };
+
+    // Fetch bribe data if chain is available
+    if (this.chain) {
+      try {
+        ctx.pendingBribes = await this.chain.checkPendingBribes();
+        ctx.recentHonoredBribes = await this.chain.getHonoredBribes(5);
+      } catch (e) {
+        // Non-critical — agent can still function without bribe data
+      }
+    }
+
+    return ctx;
   }
 
   // Called by server when a game ends

@@ -722,6 +722,39 @@ app.get('/api/bribe/pending', async (req, res) => {
   res.json({ bribes: pending });
 });
 
+// Honor a pending bribe (agent action)
+app.post('/api/bribe/:id/honor', async (req, res) => {
+  const { id } = req.params;
+  const { response } = req.body;
+
+  const bribe = await chain.acknowledgeBribe(id, true);
+  if (!bribe) {
+    return res.status(404).json({ error: `Bribe not found: ${id}` });
+  }
+
+  const player = worldState.players.get(bribe.playerId);
+  const name = player?.name || bribe.playerId.slice(0, 8);
+
+  const announcement = worldState.announce(
+    `The Magician honors ${name}'s bribe!${response ? ` "${response}"` : ''}`,
+    'agent', 8000
+  );
+  broadcastToRoom('announcement', announcement);
+
+  worldState.addEvent('bribe_honored', {
+    bribeId: id, playerId: bribe.playerId, name, response
+  });
+
+  res.json({ success: true, bribe });
+});
+
+// Get recently honored bribes
+app.get('/api/bribe/honored', async (req, res) => {
+  const limit = parseInt(req.query.limit) || 5;
+  const honored = await chain.getHonoredBribes(limit);
+  res.json({ bribes: honored });
+});
+
 app.get('/api/balance/:playerId', async (req, res) => {
   const balance = await chain.getBalance(req.params.playerId);
   res.json({ playerId: req.params.playerId, balance });
@@ -731,7 +764,7 @@ app.get('/api/balance/:playerId', async (req, res) => {
 // Agent Loop
 // ============================================
 
-const agentLoop = new AgentLoop(worldState, broadcastToRoom);
+const agentLoop = new AgentLoop(worldState, broadcastToRoom, { chain });
 
 // Agent loop status
 app.get('/api/agent/status', (req, res) => {
@@ -802,7 +835,8 @@ app.post('/api/ai/disable', (req, res) => {
 const sseClients = new Set();
 const SSE_EVENTS = new Set([
   'announcement', 'player_died', 'spell_cast', 'game_state_changed',
-  'player_joined', 'player_left', 'chat_message'
+  'player_joined', 'player_left', 'chat_message', 'floor_changed',
+  'entity_spawned', 'entity_destroyed'
 ]);
 
 app.get('/api/stream/events', (req, res) => {
@@ -835,7 +869,254 @@ function broadcastSSE(eventType, data) {
   for (const client of sseClients) {
     client.res.write(`data: ${payload}\n\n`);
   }
+  // Also fire webhooks
+  fireWebhooks(eventType, data);
 }
+
+// ============================================
+// Webhook System
+// ============================================
+
+const webhooks = new Map();
+let webhookIdCounter = 0;
+
+app.post('/api/webhooks/register', (req, res) => {
+  const { url, events } = req.body;
+  if (!url) {
+    return res.status(400).json({ error: 'Missing required: url' });
+  }
+
+  const id = `webhook-${++webhookIdCounter}`;
+  const webhook = {
+    id,
+    url,
+    events: events || null, // null = all events
+    createdAt: Date.now()
+  };
+  webhooks.set(id, webhook);
+
+  console.log(`[Webhooks] Registered ${id} → ${url}${events ? ` (${events.join(', ')})` : ' (all events)'}`);
+  res.json({ success: true, webhook });
+});
+
+app.delete('/api/webhooks/:id', (req, res) => {
+  const { id } = req.params;
+  if (!webhooks.has(id)) {
+    return res.status(404).json({ error: `Webhook not found: ${id}` });
+  }
+  webhooks.delete(id);
+  res.json({ success: true });
+});
+
+app.get('/api/webhooks', (req, res) => {
+  res.json({ webhooks: Array.from(webhooks.values()) });
+});
+
+function fireWebhooks(eventType, data) {
+  const payload = JSON.stringify({
+    type: eventType,
+    data,
+    timestamp: Date.now()
+  });
+
+  for (const webhook of webhooks.values()) {
+    // Filter by event type if specified
+    if (webhook.events && !webhook.events.includes(eventType)) continue;
+
+    fetch(webhook.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+      signal: AbortSignal.timeout(5000)
+    }).catch(() => {
+      // Fire-and-forget — silent failure
+    });
+  }
+}
+
+// ============================================
+// Public Game API
+// ============================================
+
+app.get('/api/public/state', (req, res) => {
+  const players = worldState.getPlayers().map(p => ({
+    name: p.name,
+    type: p.type,
+    state: p.state,
+    ready: p.ready
+  }));
+
+  res.json({
+    players,
+    playerCount: players.length,
+    gameState: {
+      phase: worldState.gameState.phase,
+      gameType: worldState.gameState.gameType,
+      timeRemaining: worldState.getGameState().timeRemaining || null
+    },
+    entityCount: worldState.entities.size,
+    activeEffects: worldState.getActiveEffects().map(e => e.name),
+    floorType: worldState.floorType,
+    environment: { skyColor: worldState.environment.skyColor }
+  });
+});
+
+app.get('/api/public/leaderboard', (req, res) => {
+  res.json({ leaderboard: worldState.getLeaderboard() });
+});
+
+app.get('/api/public/events', (req, res) => {
+  const since = parseInt(req.query.since) || 0;
+  const limit = parseInt(req.query.limit) || 20;
+  const filtered = since > 0
+    ? worldState.events.filter(e => e.timestamp > since)
+    : worldState.events;
+  res.json({ events: filtered.slice(-limit) });
+});
+
+app.get('/api/public/stats', (req, res) => {
+  // Single pass over events instead of four separate .filter() calls
+  const counts = { player_death: 0, bribe: 0, bribe_honored: 0, spell_cast: 0 };
+  for (const event of worldState.events) {
+    if (event.type in counts) counts[event.type]++;
+  }
+
+  res.json({
+    uptime: Math.floor(process.uptime()),
+    playerCount: worldState.players.size,
+    entityCount: worldState.entities.size,
+    gamesPlayed: agentLoop.gamesPlayed,
+    totalDeaths: counts.player_death,
+    bribesSubmitted: counts.bribe,
+    bribesHonored: counts.bribe_honored,
+    spellsCast: counts.spell_cast,
+    agentInvocations: agentLoop.invokeCount
+  });
+});
+
+// ============================================
+// Agent-Player API (External AI agents playing the game)
+// ============================================
+
+const agentPlayers = new Map();
+
+// Validate that an agent player exists; returns 404 response if not found
+function requireAgentPlayer(playerId, res) {
+  if (!agentPlayers.has(playerId)) {
+    res.status(404).json({ error: 'Agent player not found. Join first.' });
+    return null;
+  }
+  return agentPlayers.get(playerId);
+}
+
+app.post('/api/agent-player/join', (req, res) => {
+  const { name } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: 'Missing required: name' });
+  }
+
+  const id = `agent-player-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const player = worldState.addPlayer(id, name, 'agent');
+  agentPlayers.set(id, { joinedAt: Date.now(), lastAction: Date.now() });
+
+  broadcastToRoom('player_joined', { id, name, type: 'agent' });
+  worldState.addEvent('player_joined', { id, name, type: 'agent' });
+
+  res.json({ success: true, playerId: id, player });
+});
+
+app.post('/api/agent-player/move', (req, res) => {
+  const { playerId, position } = req.body;
+  if (!playerId || !position) {
+    return res.status(400).json({ error: 'Missing required: playerId, position' });
+  }
+
+  const agentEntry = requireAgentPlayer(playerId, res);
+  if (!agentEntry) return;
+
+  const player = worldState.updatePlayer(playerId, { position });
+  if (!player) {
+    return res.status(404).json({ error: 'Player not found in world state' });
+  }
+
+  agentEntry.lastAction = Date.now();
+  broadcastToRoom('player_moved', { id: playerId, position });
+  res.json({ success: true, position: player.position });
+});
+
+app.get('/api/agent-player/:id/state', (req, res) => {
+  const { id } = req.params;
+  const player = worldState.players.get(id);
+  if (!player) {
+    return res.status(404).json({ error: 'Player not found' });
+  }
+
+  const otherPlayers = worldState.getPlayers()
+    .filter(p => p.id !== id)
+    .map(p => ({ name: p.name, type: p.type, state: p.state, position: p.position }));
+
+  res.json({
+    me: player,
+    otherPlayers,
+    gameState: worldState.getGameState(),
+    entities: Array.from(worldState.entities.values()).map(e => ({
+      id: e.id, type: e.type, position: e.position, size: e.size
+    })),
+    activeEffects: worldState.getActiveEffects(),
+    recentChat: worldState.getMessages(0, 10),
+    leaderboard: worldState.getLeaderboard()
+  });
+});
+
+app.post('/api/agent-player/chat', (req, res) => {
+  const { playerId, text } = req.body;
+  if (!playerId || !text) {
+    return res.status(400).json({ error: 'Missing required: playerId, text' });
+  }
+
+  if (!requireAgentPlayer(playerId, res)) return;
+
+  const player = worldState.players.get(playerId);
+  const name = player?.name || playerId;
+  const message = worldState.addMessage(name, 'player', String(text).trim());
+  broadcastToRoom('chat_message', message);
+
+  res.json({ success: true, message });
+});
+
+app.post('/api/agent-player/ready', (req, res) => {
+  const { playerId } = req.body;
+  if (!playerId) {
+    return res.status(400).json({ error: 'Missing required: playerId' });
+  }
+
+  if (!requireAgentPlayer(playerId, res)) return;
+
+  const player = worldState.players.get(playerId);
+  if (!player) {
+    return res.status(404).json({ error: 'Player not found' });
+  }
+
+  player.ready = !player.ready;
+  broadcastToRoom('player_ready', { id: playerId, ready: player.ready });
+  res.json({ success: true, ready: player.ready });
+});
+
+app.post('/api/agent-player/leave', (req, res) => {
+  const { playerId } = req.body;
+  if (!playerId) {
+    return res.status(400).json({ error: 'Missing required: playerId' });
+  }
+
+  if (!requireAgentPlayer(playerId, res)) return;
+
+  worldState.removePlayer(playerId);
+  agentPlayers.delete(playerId);
+  broadcastToRoom('player_left', { id: playerId });
+  worldState.addEvent('player_left', { id: playerId, type: 'agent' });
+
+  res.json({ success: true });
+});
 
 // ============================================
 // Colyseus Game Server

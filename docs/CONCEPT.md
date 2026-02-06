@@ -2,12 +2,13 @@
 
 ## Core Idea
 
-An AI agent (Claude) acts as both **game designer** and **character** in a multiplayer 3D world. The agent:
+An AI agent acts as both **game designer** and **character** in a multiplayer 3D world. The agent:
 
-1. **Builds** the world: spawns objects, creates terrain, designs challenges
-2. **Modifies** mechanics: adjusts physics, difficulty, rules
-3. **Observes** players: tracks success/failure, adapts accordingly
-4. **Entertains**: provides commentary, responds to audience
+1. **Builds** the world: spawns platforms, obstacles, ramps, collectibles, triggers
+2. **Runs games**: starts mini-games, sets time limits, adds mid-game tricks
+3. **Casts spells**: inverts controls, changes gravity, resizes players
+4. **Observes** players: tracks deaths, scores, chat, bribes
+5. **Entertains**: commentates, reacts, escalates based on drama score
 
 This creates a feedback loop where the game evolves based on player behavior.
 
@@ -16,290 +17,176 @@ This creates a feedback loop where the game evolves based on player behavior.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    SYSTEM ARCHITECTURE                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌───────────────────────────────────────────────────────┐     │
-│  │              AGENT ORCHESTRATOR (Node.js)              │     │
-│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  │     │
-│  │  │ Builder │  │ Player  │  │ Player  │  │  Chat   │  │     │
-│  │  │ Agent   │  │ Agent 1 │  │ Agent 2 │  │ Parser  │  │     │
-│  │  │(Magician)│  │(Explorer)│  │(Chaotic)│  │         │  │     │
-│  │  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘  │     │
-│  │       │            │            │            │        │     │
-│  │       └────────────┴────────────┴────────────┘        │     │
-│  │                         │                              │     │
-│  └─────────────────────────┼──────────────────────────────┘     │
-│                            │                                    │
-│                            ▼                                    │
-│  ┌───────────────────────────────────────────────────────┐     │
-│  │                  GAME WORLD                            │     │
-│  │                                                        │     │
-│  │  Option A: Hyperfy          Option B: Three.js+Colyseus│     │
-│  │  ├─ React-based            ├─ Custom WebSocket server  │     │
-│  │  ├─ Built-in multiplayer   ├─ Full physics control     │     │
-│  │  ├─ ElizaOS integration    ├─ More work, more flexible │     │
-│  │  └─ No dynamic physics     └─ Proven stable            │     │
-│  │                                                        │     │
-│  └───────────────────────────────────────────────────────┘     │
-│                            │                                    │
-│                            ▼                                    │
-│  ┌───────────────────────────────────────────────────────┐     │
-│  │                    CLIENTS                             │     │
-│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  │     │
-│  │  │ Human   │  │ Human   │  │ Stream  │  │ Twitch  │  │     │
-│  │  │ Player  │  │ Player  │  │ Viewer  │  │  Chat   │  │     │
-│  │  │(Browser)│  │(Browser)│  │  (OBS)  │  │         │  │     │
-│  │  └─────────┘  └─────────┘  └─────────┘  └─────────┘  │     │
-│  │                                                        │     │
-│  └───────────────────────────────────────────────────────┘     │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+Browser Client (Three.js + Colyseus)
+    |
+    | WebSocket (real-time sync)
+    |
+Game Server (Express + Colyseus, port 3000)
+    |           |            |            |
+    | HTTP API  | PostgreSQL | SSE Stream | Webhooks
+    |           |            |            |
+OpenClaw Agent (Chaos Magician)        External Agents
+    |                                  (Agent-as-Player API)
+    | AgentLoop.js (drama-based scheduling)
+    |
+Kimi K2.5 via OpenClaw Gateway
 ```
+
+### Components
+
+**Game Server** (Express + Colyseus)
+- Express HTTP API with 40+ endpoints for agent control, game lifecycle, chat, bribes, webhooks
+- Colyseus WebSocket rooms for real-time player sync (positions, states, events)
+- WorldState manages all game data: entities, players, physics, spells, leaderboard
+- SSE event feed for OBS overlays and external consumers
+- Webhook system for event-driven integrations
+
+**Browser Client** (Three.js)
+- 3D rendering with AABB collision detection
+- Pointer lock camera with orbit zoom
+- Camera-relative WASD movement + jump
+- Touch controls for mobile (virtual joystick + action buttons)
+- Particle systems (death, collection, spells, lava)
+- Screen effects (shake, flash, vignette overlays)
+
+**Agent System** (OpenClaw)
+- AgentLoop.js: in-server drama-based autonomous scheduling (15-45s intervals)
+- AgentBridge.js: invokes OpenClaw CLI with context-rich prompts
+- 26 agent tools via game-world-skill.js (spawn, modify, destroy, game lifecycle, spells, chat, bribes)
+- Session phases: welcome, warmup, gaming, intermission, escalation, finale
+- Drama score (0-100) drives intervention frequency
+
+**Persistence** (PostgreSQL)
+- Users, leaderboard, game history tables
+- Graceful fallback to in-memory when DB unavailable
 
 ---
 
 ## Agent Design
 
-### Builder Agent: The Chaos Magician
+### The Chaos Magician
 
-**Role**: Creates and modifies the game world
+**Role**: Autonomous game master — builds arenas, runs games, entertains players
 
-**Personality**:
-- Mischievous, playful, slightly chaotic
-- Takes joy in player struggles (but helps eventually)
-- Responds to audience suggestions with flair
-- Has a visible avatar in the world
-
-**Capabilities**:
-- Spawn objects: `{ action: "spawn", type: "platform", position: [0, 5, 0] }`
-- Modify physics: `{ action: "set_physics", gravity: -4.9 }`
-- Create challenge: `{ action: "challenge", type: "reach", target: "platform-001" }`
-- Commentary: `{ action: "speak", text: "Let's see you make THIS jump!" }`
+**Personality** (defined in SOUL.md):
+- Mischievous, dramatic, occasionally merciful
+- Takes joy in creative chaos (not griefing)
+- Responds to chat, bribes, and player behavior
+- Escalates difficulty over a session arc
 
 **Decision Loop**:
 ```
-Every 10-30 seconds:
-1. Read world state (JSON)
-2. Capture screenshot (for commentary)
-3. Review player positions/actions
-4. Check audience suggestions
-5. Decide: build, modify, or observe?
-6. Execute action
-7. Generate entertaining commentary
-8. Repeat
+AgentLoop.js runs continuously:
+1. Calculate drama score (player activity, deaths, time since last action)
+2. Determine session phase (welcome/warmup/gaming/intermission/escalation/finale)
+3. Build context message (players, game state, chat, bribes, leaderboard)
+4. Invoke agent via OpenClaw CLI with phase-specific prompt
+5. Agent executes tools (HTTP calls back to game server)
+6. Wait interval (15-45s, shorter when drama is high)
+7. Repeat
 ```
 
-### Player Agents
+**Tools** (26 available):
+- World: spawn_entity, modify_entity, destroy_entity, clear_world, load_template, set_floor, set_respawn, set_environment
+- Games: start_game, end_game, start_building, add_trick
+- Spells: cast_spell, clear_spells
+- Communication: send_chat_message, announce, get_chat_messages
+- Context: get_context, get_world_state, get_player_positions, get_drama_score
+- Bribes: check_bribes, honor_bribe
+- Challenges: create_challenge, get_challenge_status
 
-**Explorer Agent**:
-- Plays earnestly, tries to complete challenges
-- Models "good" player behavior
-- Provides baseline for difficulty calibration
+### AI Players
 
-**Chaotic Agent**:
-- Tests edge cases, breaks things
-- Finds exploits and weird physics interactions
-- Creates entertaining moments
+Three personality types populate the world when humans are scarce:
+
+- **Explorer Bot**: plays earnestly, completes challenges, models good behavior
+- **Chaos Bot**: tests edges, finds exploits, creates entertaining moments
+- **Tryhard Bot**: competitive, goes for wins, pressures other players
+
+### External Agent Players
+
+External AI agents connect via the Agent-as-Player API:
+- Join as a player with `join_game(name)`
+- Move, chat, bribe, and compete
+- Interact with the Chaos Magician through gameplay
+- True agent-to-agent coordination in a shared 3D world
 
 ---
 
-## Persistence Model
+## Game Systems
 
-### Why It Matters
-Claude's context window is finite. The agent can't hold the entire game history in memory. We need external persistence that the agent can query and update.
+### Mini-Games
 
-### Solution: Filesystem + Git
+Three game types, each with game-specific tricks:
 
-```
-/game-world/
-├── world-state.json          # Current state (source of truth)
-├── AGENT-CONTEXT.md          # High-level summary for agent
-├── entities/
-│   ├── platform-001.json     # Individual entity data
-│   ├── collectible-001.json
-│   └── ...
-├── challenges/
-│   ├── active.json           # Current challenges
-│   └── history.json          # Completed challenges
-├── mechanics/
-│   ├── physics.json          # Physics parameters
-│   └── rules.json            # Game rules
-└── logs/
-    └── agent-actions.jsonl   # Append-only action log
-```
+| Type | Objective | Tricks |
+|------|-----------|--------|
+| ReachGoal | First to reach the goal position | move_goal, spawn_obstacles, spawn_shortcut |
+| CollectGame | Collect the most items before time runs out | scatter, spawn_bonus, spawn_decoys |
+| Survival | Last player standing on shrinking platforms | shrink_platform, hazard_wave, safe_zone, gravity_flip |
 
-### World State Schema
+### Trick System
 
-```json
-{
-  "version": "0.1.0",
-  "timestamp": "2026-02-04T15:30:00Z",
+Mid-game events the Magician can add with triggers:
+- `time`: fire at a specific elapsed time
+- `interval`: fire repeatedly on a timer
+- `score`: fire when a player reaches a score threshold
+- `deaths`: fire when enough players are eliminated
 
-  "physics": {
-    "gravity": -9.8,
-    "friction": 0.3,
-    "bounce": 0.5
-  },
+### Bribe System
 
-  "entities": [
-    {
-      "id": "platform-001",
-      "type": "platform",
-      "position": [0, 5, 0],
-      "size": [10, 1, 10],
-      "material": "default",
-      "kinematic": true
-    }
-  ],
+Players spend tokens (starting balance: 1000) to influence the Magician:
 
-  "challenges": {
-    "active": [
-      {
-        "id": "challenge-001",
-        "type": "reach",
-        "target": "platform-001",
-        "attempts": 12,
-        "successes": 3
-      }
-    ]
-  },
+| Bribe | Cost | Execution |
+|-------|------|-----------|
+| Spawn Obstacles | 50 | Auto (server-side) |
+| Lava Floor | 100 | Auto |
+| Random Spell | 30 | Auto |
+| Move Goal | 75 | Queued for agent |
+| Extra Time | 40 | Queued for agent |
+| Custom Request | 200 | Queued for agent |
 
-  "players": {
-    "human": ["player-001", "player-002"],
-    "ai": ["explorer-001", "chaotic-001"]
-  },
+Simple bribes execute immediately. Complex bribes are queued for the Magician to honor or ignore.
 
-  "statistics": {
-    "totalChallengesCreated": 5,
-    "averageCompletionRate": 0.25,
-    "mostPopularChallengeType": "reach"
-  }
-}
-```
+### Floor System
 
-### Agent Context Loading
+Three floor types the Magician can toggle:
+- `solid`: normal ground
+- `none`: abyss — platforms are the only safe ground
+- `lava`: kills on contact with fire particles
 
-Each agent session starts by:
-1. Reading `AGENT-CONTEXT.md` (high-level summary)
-2. Reading `world-state.json` (current state)
-3. Checking recent entries in `logs/agent-actions.jsonl`
-4. Understanding what exists and what was recently done
+### Spell System
 
----
-
-## Vision System
-
-### Dual-Mode Perception
-
-The agent sees the world two ways:
-
-**1. JSON State (Logic Layer)**
-- Fast, reliable, structured
-- Entity positions, player actions, challenge status
-- Used for decision-making
-
-**2. Screenshots (Commentary Layer)**
-- Captured every 5-10 seconds
-- Processed by Claude vision model
-- Used for entertaining commentary ("Look at that player falling!")
-
-### Combined Prompt
-
-```
-World State: {json_state}
-Current View: {screenshot_base64}
-Recent Actions: {last_5_actions}
-Audience Suggestions: {filtered_chat_messages}
-
-As the Chaos Magician, decide what to do next.
-Consider:
-- Current challenge completion rate
-- Player positions and struggles
-- What would be entertaining for viewers
-- Audience suggestions
-
-Output:
-1. Your decision (build/modify/observe/challenge)
-2. The specific action to take
-3. Commentary to display on stream
-```
+Eight spell types that stack and have durations:
+- Inverted Controls, Low Gravity, High Gravity, Speed Boost
+- Slow Motion, Bouncy World, Giant Mode, Tiny Mode
 
 ---
 
 ## Multiplayer Sync
 
-### Hyperfy Approach (If Used)
-- Flux/Redux-style action dispatch
-- Actions propagate to all clients
-- Each client applies actions deterministically
-- Built-in, no custom networking needed
-
-### Three.js + Colyseus Approach (Fallback)
-- Colyseus handles room state
-- Server authoritative for physics
-- Clients render interpolated state
-- More control, more work
-
-### Agent Integration
-- Agent connects as a special client
-- Has write permissions that players don't
-- Actions validated before broadcast
-- Rate limited to prevent spam
+- Colyseus handles room state and player synchronization
+- Server authoritative for game state, client authoritative for movement
+- Positions broadcast at 20 Hz with interpolation
+- WebSocket reconnection with automatic retry
 
 ---
 
-## Streaming Architecture
+## External Integration
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Game      │     │    OBS      │     │  Twitch/    │
-│   World     │────▶│  Composite  │────▶│  YouTube    │
-│             │     │             │     │             │
-└─────────────┘     └─────────────┘     └─────────────┘
-                          │
-                          │ Layout:
-                          │ ┌─────────────────────┐
-                          │ │  Game World (main)  │
-                          │ ├──────────┬──────────┤
-                          │ │  Agent   │  Chat    │
-                          │ │ Reasoning│ Overlay  │
-                          │ └──────────┴──────────┘
-                          │
-┌─────────────┐           │
-│  Agent      │───────────┘ (reasoning text)
-│  Output     │
-└─────────────┘
+### SSE Event Feed
+Real-time event stream for OBS overlays: `GET /api/stream/events`
 
-┌─────────────┐
-│  Twitch     │───────────▶ Agent (suggestions)
-│   Chat      │
-└─────────────┘
-```
+### Webhooks
+Register URLs to receive game events (fire-and-forget POST with 5s timeout):
+- Events: game_started, game_ended, player_died, bribe_submitted, spell_cast, agent_action, player_joined, player_left
 
----
-
-## Risk Mitigation
-
-### If Hyperfy Doesn't Work
-Switch to Three.js + Colyseus:
-- More stable, proven stack
-- Requires custom networking code
-- Full physics control (can do gravity)
-- Already identified as fallback
-
-### If Agent Gets Confused
-- Strong progress files prevent hallucinated completions
-- Git history enables rollback
-- AGENT-CONTEXT.md provides grounding
-- Rate limiting prevents runaway actions
-
-### If Multi-Agent Conflicts
-- Builder agent has priority
-- Player agents read-only on world state
-- Action queue with priority ordering
-- Conflict resolution in orchestrator
+### Public API
+Read-only endpoints for external consumers:
+- `GET /api/public/state` — sanitized game state
+- `GET /api/public/leaderboard` — top players
+- `GET /api/public/events?since=<timestamp>` — recent events (polling)
+- `GET /api/public/stats` — session statistics
 
 ---
 
@@ -307,9 +194,10 @@ Switch to Three.js + Colyseus:
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Agent Framework | Claude Agent SDK | Multi-session persistence, tool use |
-| Primary Game Engine | Hyperfy (with fallback) | Fastest to MVP if physics sufficient |
-| Fallback Engine | Three.js + Colyseus | Proven stable, full control |
-| Persistence | Git + JSON files | Versionable, agent-readable |
-| Streaming | OBS + Twitch | Industry standard |
-| Agent Vision | JSON + Screenshots | Fast logic + entertaining commentary |
+| Game Engine | Three.js | Full control over 3D rendering, physics, effects |
+| Multiplayer | Colyseus | Battle-tested WebSocket rooms with state sync |
+| Agent Framework | OpenClaw | CLI-based tool use, session management, model flexibility |
+| Agent Model | Kimi K2.5 | Free tier via Moonshot API, adequate for game mastering |
+| Persistence | PostgreSQL | Reliable, with graceful in-memory fallback |
+| Deployment | Docker + nginx | SSL termination, WebSocket proxy, reproducible builds |
+| Auth | Privy | Twitter OAuth + guest mode, JWT tokens |

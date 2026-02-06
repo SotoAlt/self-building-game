@@ -63,7 +63,7 @@ export class AgentBridge {
     parts.push(this.getPhasePrompt(phase, context));
 
     // Drama level
-    parts.push(`\n**Drama Level**: ${drama}/100 ${this.getDramaEmoji(drama)}`);
+    parts.push(`\n**Drama Level**: ${drama}/100 ${this.getDramaLabel(drama)}`);
 
     // World snapshot
     parts.push(`\n**World State**:`);
@@ -92,10 +92,10 @@ export class AgentBridge {
       parts.push(`- Deaths in last 10s: ${context.recentDeathCount}`);
     }
 
-    // Recent chat
+    // Recent chat (last 10 messages)
     if (context.recentChat.length > 0) {
       parts.push(`\n**Recent Chat**:`);
-      for (const msg of context.recentChat.slice(-5)) {
+      for (const msg of context.recentChat.slice(-10)) {
         parts.push(`  [${msg.senderType}] ${msg.sender}: ${msg.text}`);
       }
     }
@@ -105,6 +105,22 @@ export class AgentBridge {
       parts.push(`\n**Player Requests (RESPOND TO THESE)**:`);
       for (const req of pendingRequests) {
         parts.push(`  - ${req.sender}: "${req.text}"`);
+      }
+    }
+
+    // Pending bribes
+    if (context.pendingBribes.length > 0) {
+      parts.push(`\n**Pending Bribes (ACT ON THESE — use honor_bribe tool)**:`);
+      for (const bribe of context.pendingBribes) {
+        parts.push(`  - ID: ${bribe.id} | From: ${bribe.playerId} | Amount: ${bribe.amount} | Request: "${bribe.request}"`);
+      }
+    }
+
+    // Bribe history
+    if (context.recentHonoredBribes.length > 0) {
+      parts.push(`\n**Recently Honored Bribes**:`);
+      for (const bribe of context.recentHonoredBribes) {
+        parts.push(`  - ${bribe.request} (${bribe.amount} tokens from ${bribe.playerId})`);
       }
     }
 
@@ -141,7 +157,7 @@ export class AgentBridge {
     }
   }
 
-  getDramaEmoji(drama) {
+  getDramaLabel(drama) {
     if (drama >= 80) return '(EXPLOSIVE!)';
     if (drama >= 60) return '(intense)';
     if (drama >= 40) return '(building)';

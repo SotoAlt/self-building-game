@@ -172,7 +172,48 @@
 
 ---
 
-## Phase 9: Blockchain & Credits (Future)
+## Phase 9: Agent Engagement Polish - IN PROGRESS
+
+- [x] Fix bribe honor system (honor_bribe tool + endpoint)
+- [x] Enrich agent context (more chat, bribe history, pending bribes with ACT ON THESE)
+- [x] Core concept docs (MANIFESTO.md + CONCEPT.md update)
+
+---
+
+## Phase 10: External Integration - IN PROGRESS
+
+- [x] Event webhooks (register, fire events)
+- [x] Public game API (state, leaderboard, events, stats)
+- [ ] OBS overlay guide
+
+---
+
+## Phase 11: Agent-as-Player - IN PROGRESS
+
+- [x] Player agent skill (game-player-skill.js)
+- [x] Agent player endpoints (join, move, state)
+- [x] Agent player documentation (AGENT-PLAYER-API.md)
+
+---
+
+## Phase 12: Mobile Support - IN PROGRESS
+
+- [x] Touch controls: virtual joystick (left thumb) + action buttons (right thumb)
+- [x] Responsive UI scaling for small screens
+- [x] Disable pointer lock on mobile, use touch-based camera
+- [ ] Test on iOS Safari, Android Chrome
+
+---
+
+## Phase 13: Demo Prep & Submission
+
+- [ ] Record demo video / GIF
+- [ ] Polish landing page
+- [ ] Submit to Moltiverse
+
+---
+
+## Future: Blockchain & Credits
 
 ### Persistent Inventory (Design)
 - [ ] Schema: userId, itemType, itemId, quantity, acquiredAt
@@ -199,8 +240,11 @@
 | 7-8 | VFX & game feel | DONE |
 | 8-9 | World dynamics (abyss/lava) | DONE |
 | 9-10 | Bribe system polish | DONE |
-| 10-11 | Auth & DB testing | IN PROGRESS |
-| 12-14 | Demo prep + first stream | TODO |
+| 10-11 | Auth & DB testing | DONE |
+| 11 | Agent engagement + docs | DONE |
+| 11-12 | External integration + agent-as-player | DONE |
+| 12-13 | Mobile support | IN PROGRESS |
+| 13-14 | Demo prep + submission | TODO |
 
 ---
 
@@ -212,11 +256,11 @@ Browser Client (Three.js + Colyseus)
     | WebSocket (real-time sync)
     |
 Game Server (Express + Colyseus, port 3000)
-    |           |            |
-    | HTTP API  | PostgreSQL | SSE Stream
-    |           |            |
-OpenClaw Agent (Chaos Magician)
-    |
+    |           |            |            |
+    | HTTP API  | PostgreSQL | SSE Stream | Webhooks
+    |           |            |            |
+OpenClaw Agent (Chaos Magician)        External Agents
+    |                                  (Agent-as-Player API)
     | AgentLoop.js (drama-based scheduling)
     |
 Kimi K2.5 via OpenClaw Gateway
@@ -226,7 +270,7 @@ Kimi K2.5 via OpenClaw Gateway
 
 | File | Purpose |
 |------|---------|
-| src/server/index.js | Express API (40+ endpoints) + Colyseus server |
+| src/server/index.js | Express API (50+ endpoints) + Colyseus server |
 | src/server/WorldState.js | Entities, players, physics, chat, leaderboard, spells |
 | src/server/GameRoom.js | Colyseus room: player sync, chat, ready system |
 | src/server/MiniGame.js | Mini-game base class with trick system |
@@ -236,6 +280,7 @@ Kimi K2.5 via OpenClaw Gateway
 | src/server/auth.js | Privy JWT verification |
 | src/server/db.js | PostgreSQL persistence with graceful fallback |
 | src/server/games/ | ReachGoal, CollectGame, Survival implementations |
-| src/client/main.js | Three.js client: rendering, input, camera, UI |
+| src/client/main.js | Three.js client: rendering, input, camera, mobile touch controls |
 | index.html | Game HTML with all UI panels |
-| config/openclaw/ | Agent skill (25 tools) + SOUL.md personality |
+| config/openclaw/game-world-skill.js | Agent skill (27 tools) + SOUL.md personality |
+| config/openclaw/game-player-skill.js | External agent player skill (8 tools) |

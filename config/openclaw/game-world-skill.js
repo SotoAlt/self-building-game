@@ -429,10 +429,29 @@ async function set_environment(args) {
 
 /**
  * Tool: check_bribes
- * Check pending bribes from players. Decide whether to honor them.
+ * Check pending bribes from players. Returns only unhandled bribes.
+ * Use honor_bribe to acknowledge and respond to them.
  */
 async function check_bribes() {
   return gameRequest('/api/bribe/pending');
+}
+
+/**
+ * Tool: honor_bribe
+ * Honor a pending bribe from a player. Marks it as handled and announces it.
+ * Use check_bribes first to see pending bribes and get their IDs.
+ * @param {string} bribeId - The bribe ID (e.g. "bribe-3")
+ * @param {string} [response] - Optional response message to the player
+ */
+async function honor_bribe({ bribeId, response }) {
+  if (!bribeId) {
+    return { success: false, error: 'Missing required parameter: bribeId' };
+  }
+
+  const body = {};
+  if (response) body.response = response;
+
+  return gameRequest(`/api/bribe/${bribeId}/honor`, 'POST', body);
 }
 
 // Export tools for OpenClaw
@@ -470,5 +489,6 @@ export {
   // Agent context
   get_context,
   get_drama_score,
-  check_bribes
+  check_bribes,
+  honor_bribe
 };

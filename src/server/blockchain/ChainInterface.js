@@ -14,6 +14,9 @@ export class ChainInterface {
   async getBalance(playerId) {
     throw new Error('Not implemented');
   }
+  async getHonoredBribes(limit = 5) {
+    throw new Error('Not implemented');
+  }
   async recordResult(gameId, winnerId, scores) {
     throw new Error('Not implemented');
   }
@@ -68,6 +71,12 @@ export class MockChainInterface extends ChainInterface {
       this.balances.set(playerId, 1000); // Starting balance
     }
     return this.balances.get(playerId);
+  }
+
+  async getHonoredBribes(limit = 5) {
+    return this.bribes
+      .filter(b => b.status === 'honored')
+      .slice(-limit);
   }
 
   async recordResult(gameId, winnerId, scores) {
