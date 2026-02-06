@@ -2,6 +2,40 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.11.0] - 2026-02-05
+
+### Fixed
+- **Invisible floor bug**: Players on `floorType: 'none'` now correctly fall through during gameplay (lobby/building still has invisible safety floor)
+- **Lava invulnerability**: Invulnerable players no longer die to lava (consistent with abyss behavior)
+
+### Changed
+- **Game cooldown**: Increased from 8s to 15s between games, preventing rapid restarts
+- **Agent cooldown guard**: Agent won't invoke during game cooldown period
+- **Game-end display**: Timer shows "YOU WIN!" / "GAME OVER" / "TIME UP!" / "DRAW!" with colored text
+- **Fall Guys-style countdown**: Players teleported to start position during countdown, can move freely (no movement lock)
+- **"GET READY!" announcement** before game type name during countdown
+- **"Returning to lobby..."** announcement 3s after game ends
+
+### Added
+- **Player welcome system**: Agent detects player joins, greets by name within 15-20s
+  - `pendingWelcomes` tracking in AgentLoop with drama score boost (+10 per join, +15 per pending welcome)
+  - "NEW PLAYERS TO WELCOME" section in agent prompt
+  - Visual `"[name] has entered the arena!"` announcement on join
+- **Mid-game spectator mode**: Players joining during active games become spectators
+  - Banner: "Game in progress — watching until next round..."
+  - Auto-activated when lobby phase returns
+  - Spectators skip game initialization and physics
+- **Randomized game parameters**: Every game plays differently
+  - Time limits: reach 40-75s, collect 30-60s, survival 60-120s
+  - ReachGoal: random goal position (x:-20..20, y:3..10, z:-10..-40)
+  - CollectGame: random count (5-20) and area size (15-30)
+  - Survival: random hazard interval (3-8s), max hazards (10-25), platform (20-40)
+- **Random obstacles**: Fall Guys-style obstacles spawn each game
+  - Sweepers (rotating), moving walls (kinematic), pendulum platforms, falling blocks
+  - 2-4 in ReachGoal, 1-3 in CollectGame
+- **Game variety enforcement**: Agent context includes `suggestedGameTypes` (excludes last played) and `lastGameType`
+- **Agent context enrichment**: `/api/agent/context` now includes `pendingWelcomes`, `lastGameType`, `lastGameEndTime`, `suggestedGameTypes`
+
 ## [0.10.0] - 2026-02-05
 
 ### Added

@@ -42,7 +42,8 @@ const state = {
   isReady: false,
   chatFocused: false,
   activeEffects: [],
-  respawnPoint: [0, 2, 0]
+  respawnPoint: [0, 2, 0],
+  isSpectating: false
 };
 
 // Auth state
@@ -899,6 +900,11 @@ function playSpellSound() {
 // ============================================
 // Collision Detection (Wall-Slide)
 // ============================================
+const GROUND_Y = 1;         // Standing height on solid/safe floor
+const ABYSS_DEATH_Y = -20;  // Fall-death threshold for 'none' floor
+const LAVA_DEATH_Y = 0;     // Death threshold for lava floor
+const VOID_DEATH_Y = -50;   // Absolute void death for any floor type
+
 const playerBox = new THREE.Box3();
 const entityBox = new THREE.Box3();
 
@@ -1176,21 +1182,37 @@ function updatePlayer(delta) {
   playerMesh.position.y += playerVelocity.y * delta;
   playerMesh.position.z += playerVelocity.z * delta;
 
-  // Ground collision: solid floors stop the player, lava kills, void (none) kills at y < -20
+  // Ground collision: per-type branching
   const phase = state.gameState.phase;
   const inSafePhase = phase === 'lobby' || phase === 'building';
   const invulnerable = Date.now() < respawnInvulnUntil;
-  const floorIsSolid = currentFloorType === 'solid' || (inSafePhase && currentFloorType !== 'lava');
 
-  if ((floorIsSolid || invulnerable) && playerMesh.position.y < 1) {
-    playerMesh.position.y = 1;
-    playerVelocity.y = 0;
-    isGrounded = true;
-  } else if (currentFloorType === 'lava' && playerMesh.position.y < 0) {
-    spawnParticles(playerMesh.position, '#ff4500', 20, 6);
-    spawnParticles(playerMesh.position, '#ffaa00', 10, 4);
-    playerDie();
-  } else if (playerMesh.position.y < -20) {
+  if (currentFloorType === 'solid') {
+    if (playerMesh.position.y < GROUND_Y) {
+      playerMesh.position.y = GROUND_Y;
+      playerVelocity.y = 0;
+      isGrounded = true;
+    }
+  } else if (currentFloorType === 'none') {
+    if (inSafePhase) {
+      // Safe phase: invisible floor keeps players safe
+      if (playerMesh.position.y < GROUND_Y) {
+        playerMesh.position.y = GROUND_Y;
+        playerVelocity.y = 0;
+        isGrounded = true;
+      }
+    } else if (playerMesh.position.y < ABYSS_DEATH_Y && !invulnerable) {
+      playerDie();
+    }
+  } else if (currentFloorType === 'lava') {
+    if (playerMesh.position.y < LAVA_DEATH_Y && !invulnerable) {
+      spawnParticles(playerMesh.position, '#ff4500', 20, 6);
+      spawnParticles(playerMesh.position, '#ffaa00', 10, 4);
+      playerDie();
+    }
+  }
+  // Fallback void death for all floor types
+  if (playerMesh.position.y < VOID_DEATH_Y) {
     playerDie();
   }
 
@@ -1806,6 +1828,24 @@ async function connectToServer() {
       if (playerMesh) playerMesh.scale.set(1, 1, 1);
     });
 
+    // Teleport all players to start position (Fall Guys countdown)
+    room.onMessage('players_teleported', (data) => {
+      if (playerMesh && data.position) {
+        playerMesh.position.set(data.position[0], data.position[1], data.position[2]);
+        playerVelocity.set(0, 0, 0);
+      }
+    });
+
+    // Mid-game spectator activation
+    room.onMessage('player_activated', () => {
+      if (state.isSpectating) {
+        state.isSpectating = false;
+        const banner = document.getElementById('spectator-banner');
+        if (banner) banner.remove();
+        showAnnouncement({ id: `activated-${Date.now()}`, text: "You're in! Get ready for the next game!", type: 'system', duration: 4000, timestamp: Date.now() });
+      }
+    });
+
     // Game state
     room.onMessage('game_state_changed', (gameState) => {
       console.log('[Event] Game state changed:', gameState.phase);
@@ -1841,14 +1881,30 @@ async function connectToServer() {
       }
 
       if (gameState.phase === 'ended') {
+        clearCountdownInterval();
+        const timerEl = document.getElementById('game-timer');
         setTimeout(fetchLeaderboard, 1000);
         const isWinner = gameState.result === 'win' && gameState.winners?.includes(room.sessionId);
         if (isWinner) {
+          timerEl.textContent = 'YOU WIN!';
+          timerEl.style.color = '#f1c40f';
           screenFlash('#f1c40f', 600);
           playWinFanfare();
           if (playerMesh) spawnParticles(playerMesh.position, '#f1c40f', 40, 10);
         } else if (gameState.result === 'win') {
+          // Another player won
+          timerEl.textContent = 'GAME OVER';
+          timerEl.style.color = '#e74c3c';
           screenFlash('#e74c3c', 500);
+        } else if (gameState.result === 'timeout') {
+          timerEl.textContent = 'TIME UP!';
+          timerEl.style.color = '#f39c12';
+        } else if (gameState.result === 'draw') {
+          timerEl.textContent = 'DRAW!';
+          timerEl.style.color = '#9b59b6';
+        } else {
+          timerEl.textContent = 'GAME OVER';
+          timerEl.style.color = '#e74c3c';
         }
       }
     });
@@ -1858,6 +1914,16 @@ async function connectToServer() {
       console.log('[Init] Received initial state from room');
       applyWorldState(data.worldState);
       updateUI();
+
+      // Handle mid-game spectator mode
+      if (data.spectating) {
+        state.isSpectating = true;
+        const banner = document.createElement('div');
+        banner.id = 'spectator-banner';
+        banner.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:#f39c12;padding:10px 24px;border-radius:8px;font-size:16px;z-index:999;pointer-events:none;';
+        banner.textContent = 'Game in progress — watching until next round...';
+        document.body.appendChild(banner);
+      }
     });
 
     return true;
@@ -1878,11 +1944,11 @@ function animate() {
 
   const delta = clock.getDelta();
 
-  // Update player (skip in spectator mode)
-  if (!isSpectator) updatePlayer(delta);
+  // Update player (skip in spectator mode or mid-game spectating)
+  if (!isSpectator && !state.isSpectating) updatePlayer(delta);
 
   // Check collisions with entities
-  if (!isSpectator) checkCollisions();
+  if (!isSpectator && !state.isSpectating) checkCollisions();
 
   // Interpolate remote players
   for (const [, mesh] of remotePlayers) {

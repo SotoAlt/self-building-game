@@ -7,6 +7,14 @@
 
 import { AgentBridge } from './AgentBridge.js';
 
+// Sliding window durations for recent-event tracking (ms)
+const DEATH_WINDOW = 10000;
+const CHAT_WINDOW = 30000;
+const JOIN_WINDOW = 60000;
+
+// Minimum interval between agent invocations (ms)
+const MIN_INVOKE_INTERVAL = 15000;
+
 // Session phase names
 const PHASE = {
   WELCOME: 'welcome',
@@ -45,7 +53,9 @@ export class AgentLoop {
     // Tracking for drama score
     this.recentDeaths = [];    // timestamps
     this.recentChats = [];     // timestamps
+    this.recentJoins = [];     // timestamps
     this.pendingMentions = []; // unhandled @agent messages
+    this.pendingWelcomes = []; // players to greet
     this.lastMessageId = 0;
     this.lastEventId = 0;
 
@@ -102,8 +112,7 @@ export class AgentLoop {
       if (this.paused) return;
       if (this.humanPlayerCount === 0) return;
 
-      // Rate limit: minimum 15s between invocations
-      if (Date.now() - this.lastInvokeTime < 15000) return;
+      if (Date.now() - this.lastInvokeTime < MIN_INVOKE_INTERVAL) return;
 
       // Gather context
       this.gatherContext();
@@ -145,18 +154,27 @@ export class AgentLoop {
       }
     }
 
-    // Gather events (deaths, etc.)
+    // Gather events (deaths, joins, etc.)
     const events = this.worldState.getEvents(this.lastEventId);
     for (const evt of events) {
       this.lastEventId = Math.max(this.lastEventId, evt.id);
       if (evt.type === 'player_death') {
         this.recentDeaths.push(now);
       }
+      if (evt.type === 'player_join' && evt.data?.type !== 'ai') {
+        this.recentJoins.push(now);
+        this.pendingWelcomes.push({
+          name: evt.data?.name || 'Unknown',
+          playerId: evt.data?.playerId,
+          timestamp: evt.timestamp
+        });
+      }
     }
 
-    // Clean old entries (10s window for deaths, 30s for chats)
-    this.recentDeaths = this.recentDeaths.filter(t => now - t < 10000);
-    this.recentChats = this.recentChats.filter(t => now - t < 30000);
+    // Clean old entries outside their sliding windows
+    this.recentDeaths = this.recentDeaths.filter(t => now - t < DEATH_WINDOW);
+    this.recentChats = this.recentChats.filter(t => now - t < CHAT_WINDOW);
+    this.recentJoins = this.recentJoins.filter(t => now - t < JOIN_WINDOW);
   }
 
   detectPhase() {
@@ -208,6 +226,12 @@ export class AgentLoop {
     // Unhandled @agent mentions
     score += this.pendingMentions.length * 15;
 
+    // Recent player joins
+    score += this.recentJoins.length * 10;
+
+    // Pending welcomes
+    score += this.pendingWelcomes.length * 15;
+
     // Active spells
     score += this.worldState.getActiveEffects().length * 5;
 
@@ -233,10 +257,16 @@ export class AgentLoop {
     // No session configured
     if (!this.bridge.sessionId) return false;
 
+    // Don't invoke during game cooldown
+    if (this.worldState.isInCooldown()) return false;
+
     const sinceLast = Date.now() - this.lastInvokeTime;
 
     // Always invoke for pending @agent mentions (but still respect minimum)
     if (this.pendingMentions.length > 0) return true;
+
+    // Invoke to welcome new players (but respect minimum interval)
+    if (this.pendingWelcomes.length > 0 && sinceLast > MIN_INVOKE_INTERVAL) return true;
 
     // Phase changes and game endings
     if (phaseChanged && sinceLast > 20000) return true;
@@ -268,8 +298,9 @@ export class AgentLoop {
       await this.bridge.invoke(context, this.phase, drama, this.pendingMentions);
       this.lastActionTime = Date.now();
 
-      // Clear pending mentions after handling
+      // Clear pending mentions and welcomes after handling
       this.pendingMentions = [];
+      this.pendingWelcomes = [];
     } catch (err) {
       console.error('[AgentLoop] Invoke failed:', err.message);
     }
@@ -302,6 +333,10 @@ export class AgentLoop {
       gamesPlayed: this.gamesPlayed,
       sessionUptime: Math.floor((Date.now() - this.sessionStartTime) / 1000),
       recentDeathCount: this.recentDeaths.length,
+      pendingWelcomes: this.pendingWelcomes,
+      lastGameType: this.worldState.lastGameType || null,
+      lastGameEndTime: this.worldState.lastGameEndTime || null,
+      suggestedGameTypes: ['reach', 'collect', 'survival'].filter(t => t !== this.worldState.lastGameType),
       pendingBribes: [],
       recentHonoredBribes: []
     };

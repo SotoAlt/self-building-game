@@ -234,17 +234,36 @@ export class GameRoom extends Room {
 
     if (!this.worldState) return;
 
-    const player = this.worldState.addPlayer(client.sessionId, name, type);
+    // Check if game is active — mid-game joiners become spectators
+    const gamePhase = this.worldState.gameState.phase;
+    const isGameActive = gamePhase === 'countdown' || gamePhase === 'playing';
+    const isHuman = type !== 'ai';
+    const initialState = (isGameActive && isHuman) ? 'spectating' : 'alive';
+
+    const player = this.worldState.addPlayer(client.sessionId, name, type, initialState);
 
     const initState = this.worldState.getState();
     initState.environment = { ...this.worldState.environment };
     client.send('init', {
       playerId: client.sessionId,
-      worldState: initState
+      worldState: initState,
+      spectating: initialState === 'spectating'
     });
 
     this.broadcast('player_joined', player, { except: client });
-    this._systemMessage(`${name} has entered the arena`);
+
+    // Visual announcement for human players
+    if (isHuman) {
+      const announcement = this.worldState.announce(`${name} has entered the arena!`, 'system', 4000);
+      this.broadcast('announcement', announcement);
+    }
+
+    if (initialState === 'spectating') {
+      this._systemMessage(`${name} joined — watching until next round`);
+    } else {
+      this._systemMessage(`${name} has entered the arena`);
+    }
+
     this.worldState.addEvent('player_join', { playerId: client.sessionId, name, type });
   }
 

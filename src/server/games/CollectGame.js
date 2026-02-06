@@ -15,8 +15,15 @@ export class CollectGame extends MiniGame {
   constructor(worldState, broadcastFn, config = {}) {
     super(worldState, broadcastFn, { ...config, type: 'collect' });
 
-    this.collectibleCount = config.collectibleCount || 10;
-    this.spawnArea = config.spawnArea || { x: [-20, 20], y: [2, 10], z: [-30, 10] };
+    this.collectibleCount = config.collectibleCount || (5 + Math.floor(Math.random() * 16)); // 5-20
+    const areaSize = 15 + Math.floor(Math.random() * 16); // 15-30
+    const offsetX = (Math.random() - 0.5) * 10;
+    const offsetZ = (Math.random() - 0.5) * 10;
+    this.spawnArea = config.spawnArea || {
+      x: [offsetX - areaSize, offsetX + areaSize],
+      y: [2, 10],
+      z: [offsetZ - areaSize, offsetZ + areaSize]
+    };
     this.collectibleIds = [];
   }
 
@@ -37,6 +44,9 @@ export class CollectGame extends MiniGame {
       });
       this.collectibleIds.push(collectible.id);
     }
+
+    // Spawn random obstacles to make collection harder
+    this._spawnRandomObstacles(1 + Math.floor(Math.random() * 3));
 
     this.announce(`COLLECT ${this.collectibleCount} ITEMS!`, 'challenge');
     console.log(`[CollectGame] Spawned ${this.collectibleCount} collectibles`);

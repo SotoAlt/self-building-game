@@ -7,12 +7,20 @@
 
 import { MiniGame } from '../MiniGame.js';
 
+// Player hitbox half-widths used for goal reach detection
+const PLAYER_HALF_WIDTH = 1;
+const PLAYER_HALF_HEIGHT = 2;
+
 export class ReachGoal extends MiniGame {
   constructor(worldState, broadcastFn, config = {}) {
     super(worldState, broadcastFn, { ...config, type: 'reach' });
 
     this.targetEntityId = config.targetEntityId || null;
-    this.goalPosition = config.goalPosition || [0, 5, -30];
+    this.goalPosition = config.goalPosition || [
+      (Math.random() - 0.5) * 40,  // x: -20..20
+      3 + Math.random() * 7,        // y: 3..10
+      -10 - Math.random() * 30      // z: -10..-40
+    ];
     this.goalSize = config.goalSize || [3, 3, 3];
 
     // Track who has reached checkpoints (for multi-checkpoint courses)
@@ -33,6 +41,9 @@ export class ReachGoal extends MiniGame {
       this.targetEntityId = goal.id;
       console.log(`[ReachGoal] Created goal at [${this.goalPosition.join(', ')}]`);
     }
+
+    // Spawn random obstacles between player and goal
+    this._spawnRandomObstacles(2 + Math.floor(Math.random() * 3));
 
     this.announce(`REACH THE GOLDEN GOAL!`, 'challenge');
     return this;
@@ -79,9 +90,9 @@ export class ReachGoal extends MiniGame {
       const dy = Math.abs(player.position[1] - targetPos[1]);
       const dz = Math.abs(player.position[2] - targetPos[2]);
 
-      const reachX = dx < (targetSize[0] / 2 + 1); // +1 for player size
-      const reachY = dy < (targetSize[1] / 2 + 2);
-      const reachZ = dz < (targetSize[2] / 2 + 1);
+      const reachX = dx < (targetSize[0] / 2 + PLAYER_HALF_WIDTH);
+      const reachY = dy < (targetSize[1] / 2 + PLAYER_HALF_HEIGHT);
+      const reachZ = dz < (targetSize[2] / 2 + PLAYER_HALF_WIDTH);
 
       if (reachX && reachY && reachZ) {
         console.log(`[ReachGoal] Player ${playerId} reached the goal!`);

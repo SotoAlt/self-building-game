@@ -53,6 +53,14 @@ function rejectIfActiveGame(res) {
 // Broadcast game state changes from internal transitions (countdown -> playing)
 worldState.onPhaseChange = function onPhaseChange(gameState) {
   broadcastToRoom('game_state_changed', gameState);
+
+  // When returning to lobby, activate spectating players
+  if (gameState.phase === 'lobby') {
+    const activated = worldState.activateSpectators();
+    if (activated > 0) {
+      broadcastToRoom('player_activated', {});
+    }
+  }
 };
 
 // Current mini-game instance
@@ -151,7 +159,11 @@ app.get('/api/agent/context', (req, res) => {
     recentEvents: worldState.getEvents(sinceEvent),
     leaderboard: worldState.getLeaderboard(),
     cooldownUntil: worldState.gameState.cooldownUntil,
-    environment: { ...worldState.environment }
+    environment: { ...worldState.environment },
+    pendingWelcomes: agentLoop.pendingWelcomes,
+    lastGameType: worldState.lastGameType || null,
+    lastGameEndTime: worldState.lastGameEndTime || null,
+    suggestedGameTypes: ['reach', 'collect', 'survival'].filter(t => t !== worldState.lastGameType)
   });
 });
 

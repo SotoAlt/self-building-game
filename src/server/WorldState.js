@@ -245,21 +245,35 @@ export class WorldState {
   // Player Management
   // ============================================
 
-  addPlayer(id, name, type = 'human') {
+  addPlayer(id, name, type = 'human', initialState = 'alive') {
     const player = {
       id,
       name,
       type, // 'human' or 'ai'
       position: [...this.respawnPoint],
       velocity: [0, 0, 0],
-      state: 'alive',
+      state: initialState,
       ready: false,
       joinedAt: Date.now()
     };
 
     this.players.set(id, player);
-    console.log(`[WorldState] Player joined: ${name} (${type})`);
+    console.log(`[WorldState] Player joined: ${name} (${type}, ${initialState})`);
     return player;
+  }
+
+  activateSpectators() {
+    let activated = 0;
+    for (const player of this.players.values()) {
+      if (player.state === 'spectating') {
+        player.state = 'alive';
+        activated++;
+      }
+    }
+    if (activated > 0) {
+      console.log(`[WorldState] Activated ${activated} spectating players`);
+    }
+    return activated;
   }
 
   updatePlayer(id, updates) {
@@ -429,10 +443,14 @@ export class WorldState {
 
     const endedGameId = this.gameState.currentGame;
 
+    // Track last game type for variety enforcement
+    this.lastGameType = this.gameState.gameType;
+    this.lastGameEndTime = Date.now();
+
     this.gameState.phase = 'ended';
     this.gameState.endTime = Date.now();
     this.gameState.result = result; // 'win', 'lose', 'timeout', 'cancelled'
-    this.gameState.cooldownUntil = Date.now() + 8000;
+    this.gameState.cooldownUntil = Date.now() + 15000;
 
     if (winnerId) {
       this.gameState.winners.push(winnerId);

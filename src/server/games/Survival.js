@@ -11,11 +11,12 @@ export class Survival extends MiniGame {
   constructor(worldState, broadcastFn, config = {}) {
     super(worldState, broadcastFn, { ...config, type: 'survival' });
 
-    this.hazardInterval = config.hazardInterval || 5000; // Spawn hazard every 5s
+    this.hazardInterval = config.hazardInterval || (3000 + Math.floor(Math.random() * 5000)); // 3-8s
     this.lastHazardTime = 0;
-    this.maxHazards = config.maxHazards || 20;
+    this.maxHazards = config.maxHazards || (10 + Math.floor(Math.random() * 16)); // 10-25
     this.currentHazards = 0;
-    this.platformSize = config.platformSize || [30, 1, 30];
+    const platDim = 20 + Math.floor(Math.random() * 21); // 20-40
+    this.platformSize = config.platformSize || [platDim, 1, platDim];
     this.platformId = null;
   }
 

@@ -10,6 +10,12 @@
 import { randomUUID } from 'crypto';
 import { saveGameHistory } from './db.js';
 
+// Random obstacle patterns used by _spawnRandomObstacles
+const OBSTACLE_PATTERNS = ['sweeper', 'moving_wall', 'pendulum', 'falling_block'];
+
+// Half-width of the arena area for random obstacle placement
+const ARENA_SPREAD = 30;
+
 // Game type registry - agents can query this
 export const GAME_TYPES = {
   reach: {
@@ -43,7 +49,7 @@ export class MiniGame {
     this.config = config;
 
     this.type = config.type || 'reach';
-    this.timeLimit = config.timeLimit || GAME_TYPES[this.type]?.defaultTimeLimit || 60000;
+    this.timeLimit = config.timeLimit || this._randomizeTimeLimit(config.type || 'reach');
     this.startTime = null;
     this.isActive = false;
 
@@ -78,14 +84,17 @@ export class MiniGame {
     this.isActive = true;
     this.startTime = Date.now();
 
-    // Initialize player states
+    // Initialize player states and teleport to start (skip spectators)
     for (const [id, player] of this.worldState.players) {
+      if (player.state === 'spectating') continue;
       this.players.set(id, {
         score: 0,
         alive: true,
         position: [...player.position]
       });
+      player.position = [...this.worldState.respawnPoint];
     }
+    this.broadcast('players_teleported', { position: this.worldState.respawnPoint });
 
     // Start game in world state
     this.worldState.startGame(this.type, {
@@ -96,7 +105,8 @@ export class MiniGame {
     // Setup default tricks (overridden by subclasses)
     this.setupDefaultTricks();
 
-    // Announce start
+    // Announce GET READY then game type
+    this.announce('GET READY!', 'system');
     this.announce(`${GAME_TYPES[this.type]?.name || this.type} starting!`, 'system');
 
     console.log(`[MiniGame] Started: ${this.type} (${this.timeLimit}ms)`);
@@ -229,6 +239,14 @@ export class MiniGame {
 
     // Cleanup game entities after delay
     setTimeout(() => this.cleanup(), 5000);
+
+    // Lobby return announcement
+    setTimeout(() => {
+      const { phase } = this.worldState.gameState;
+      if (phase === 'ended' || phase === 'lobby') {
+        this.announce('Returning to lobby... Next game soon!', 'system');
+      }
+    }, 3000);
 
     // Notify server (AgentLoop, cleanup currentMiniGame reference)
     this.onEnd?.();
@@ -369,6 +387,58 @@ export class MiniGame {
   // Override in subclasses for game-specific trick actions
   executeTrickAction(trick) {
     console.log(`[MiniGame] Unhandled trick action: ${trick.action}`);
+  }
+
+  _randomizeTimeLimit(type) {
+    const ranges = {
+      reach: [40000, 75000],
+      collect: [30000, 60000],
+      survival: [60000, 120000]
+    };
+    const [min, max] = ranges[type] || [45000, 75000];
+    return min + Math.floor(Math.random() * (max - min));
+  }
+
+  _spawnRandomObstacles(count) {
+    for (let i = 0; i < count; i++) {
+      const pattern = OBSTACLE_PATTERNS[Math.floor(Math.random() * OBSTACLE_PATTERNS.length)];
+      const x = (Math.random() - 0.5) * ARENA_SPREAD;
+      const z = (Math.random() - 0.5) * ARENA_SPREAD;
+
+      switch (pattern) {
+        case 'sweeper':
+          this.spawnEntity('obstacle', [x, 1, z], [8, 1, 1], {
+            color: '#e74c3c',
+            rotating: true,
+            speed: 2 + Math.random() * 3
+          });
+          break;
+        case 'moving_wall':
+          this.spawnEntity('obstacle', [-15, 1, z], [2, 3, 2], {
+            color: '#e74c3c',
+            kinematic: true,
+            path: [[-15, 1, z], [15, 1, z]],
+            speed: 1 + Math.random() * 2
+          });
+          break;
+        case 'pendulum':
+          this.spawnEntity('platform', [x, 5, z], [4, 0.5, 4], {
+            color: '#9b59b6',
+            kinematic: true,
+            path: [[x, 5, z], [x + 10, 5, z - 10]],
+            speed: 1 + Math.random() * 1.5
+          });
+          break;
+        case 'falling_block':
+          this.spawnEntity('obstacle', [x, 20, z], [2, 2, 2], {
+            color: '#e74c3c',
+            falling: true,
+            speed: 3 + Math.random() * 4
+          });
+          break;
+      }
+    }
+    console.log(`[MiniGame] Spawned ${count} random obstacles`);
   }
 
   // Get game status

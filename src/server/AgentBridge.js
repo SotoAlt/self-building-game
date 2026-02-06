@@ -100,6 +100,22 @@ export class AgentBridge {
       }
     }
 
+    // New players to welcome
+    if (context.pendingWelcomes?.length > 0) {
+      parts.push(`\n**NEW PLAYERS TO WELCOME (greet them by name!)**:`);
+      for (const w of context.pendingWelcomes) {
+        parts.push(`  - ${w.name}`);
+      }
+    }
+
+    // Game variety hint
+    if (context.lastGameType) {
+      parts.push(`\n**Last game type**: ${context.lastGameType} — try something different!`);
+    }
+    if (context.suggestedGameTypes?.length > 0) {
+      parts.push(`**Suggested next game types**: ${context.suggestedGameTypes.join(', ')}`);
+    }
+
     // Pending player requests
     if (pendingRequests.length > 0) {
       parts.push(`\n**Player Requests (RESPOND TO THESE)**:`);
@@ -135,7 +151,7 @@ export class AgentBridge {
   getPhasePrompt(phase, context) {
     switch (phase) {
       case 'welcome':
-        return `**Phase: WELCOME** — Players are joining! Greet them dramatically. Introduce yourself as the Chaos Magician. Tease what's coming. Use send_chat_message and announce tools. If you have enough players, start building an arena (clear_world, then spawn entities or load_template).`;
+        return `**Phase: WELCOME** — Players are joining! Greet each player BY NAME dramatically. Introduce yourself as the Chaos Magician. Tease what's coming. Use send_chat_message and announce tools. If you have enough players, start building an arena (clear_world, then spawn entities or load_template).`;
 
       case 'warmup':
         return `**Phase: WARMUP** — Time to build an arena! Use clear_world first, then either load_template or spawn entities manually to create an interesting arena. Set the respawn point with set_respawn. When ready, start a game with start_game. Keep chatting to build hype.`;
