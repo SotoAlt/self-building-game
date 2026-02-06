@@ -414,6 +414,9 @@ export class WorldState {
   // ============================================
 
   startGame(gameType, config = {}) {
+    // Cancel any pending lobby reset from a previous game
+    clearTimeout(this._lobbyResetTimer);
+
     const validTypes = ['reach', 'collect', 'survival'];
     if (!validTypes.includes(gameType)) {
       throw new Error(`Invalid game type: ${gameType}`);

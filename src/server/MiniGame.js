@@ -238,7 +238,7 @@ export class MiniGame {
     });
 
     // Cleanup game entities after delay
-    setTimeout(() => this.cleanup(), 5000);
+    this._cleanupTimer = setTimeout(() => this.cleanup(), 5000);
 
     // Lobby return announcement
     setTimeout(() => {
@@ -288,6 +288,7 @@ export class MiniGame {
 
   // Cleanup game entities
   cleanup() {
+    if (this.gameEntities.length === 0) return;
     const count = this.gameEntities.length;
     for (const entityId of this.gameEntities) {
       try {

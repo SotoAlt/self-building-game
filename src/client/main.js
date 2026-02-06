@@ -2163,9 +2163,7 @@ async function pollForUpdates() {
 
     state.physics = data.physics;
 
-    if (data.gameState) {
-      state.gameState = data.gameState;
-    }
+    // gameState intentionally omitted — WebSocket is authoritative for phase transitions
 
     const serverIds = new Set(data.entities.map(e => e.id));
 
