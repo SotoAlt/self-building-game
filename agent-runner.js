@@ -138,7 +138,7 @@ function shouldInvoke(phase, drama, context) {
   if (elapsed < 15000) return false;
 
   // Audience messages at standard interval (don't fast-track)
-  if (hasAudienceChat && elapsed >= 15000) return true;
+  if (hasAudienceChat) return true;
 
   // Phase-based interval
   const phaseInterval = PHASE_INTERVALS[phase] || 45000;
@@ -225,7 +225,7 @@ function buildPrompt(phase, context, drama) {
     const top3 = context.leaderboard.slice(0, 3);
     parts.push(`\n**Leaderboard (Top 3)**:`);
     top3.forEach((entry, i) => {
-      parts.push(`  ${i + 1}. ${entry.name} — ${entry.wins}W/${entry.losses}L`);
+      parts.push(`  ${i + 1}. ${entry.name} — ${entry.wins} wins (${entry.totalScore} pts)`);
     });
   }
 

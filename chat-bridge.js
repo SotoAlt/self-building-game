@@ -81,18 +81,16 @@ function startSSEListener(onAgentMessage) {
             if (!line.startsWith('data: ')) continue;
             try {
               const event = JSON.parse(line.slice(6));
-              if (event.type === 'chat_message' && event.senderType === 'agent') {
-                if (event.id > lastRelayedMessageId) {
-                  lastRelayedMessageId = event.id;
-                  const now = Date.now();
-                  // Only relay if bridge user was active recently and rate limit allows
-                  const bridgeActive = now - lastBridgeMessageTime < BRIDGE_ACTIVITY_WINDOW;
-                  const cooldownOk = now - lastRelayTime >= RELAY_COOLDOWN;
-                  if (bridgeActive && cooldownOk) {
-                    lastRelayTime = now;
-                    onAgentMessage(event.sender, event.text);
-                  }
-                }
+              if (event.type !== 'chat_message' || event.senderType !== 'agent') continue;
+              if (event.id <= lastRelayedMessageId) continue;
+
+              lastRelayedMessageId = event.id;
+              const now = Date.now();
+              const bridgeActive = now - lastBridgeMessageTime < BRIDGE_ACTIVITY_WINDOW;
+              const cooldownOk = now - lastRelayTime >= RELAY_COOLDOWN;
+              if (bridgeActive && cooldownOk) {
+                lastRelayTime = now;
+                onAgentMessage(event.sender, event.text);
               }
             } catch {}
           }
@@ -117,7 +115,7 @@ function startSSEListener(onAgentMessage) {
 // Twitch (tmi.js / raw IRC)
 // ============================================
 
-async function startTwitch(onAgentMessage) {
+async function startTwitch() {
   const channel = process.env.TWITCH_CHANNEL;
   const token = process.env.TWITCH_TOKEN; // oauth:xxx
   const username = process.env.TWITCH_USERNAME || 'chaos_magician_bot';
@@ -165,7 +163,7 @@ async function startTwitch(onAgentMessage) {
 // Discord (discord.js)
 // ============================================
 
-async function startDiscord(onAgentMessage) {
+async function startDiscord() {
   const token = process.env.DISCORD_TOKEN;
   const channelId = process.env.DISCORD_CHANNEL_ID;
 
@@ -219,7 +217,7 @@ async function startDiscord(onAgentMessage) {
 // Telegram (node-telegram-bot-api)
 // ============================================
 
-async function startTelegram(onAgentMessage) {
+async function startTelegram() {
   const token = process.env.TELEGRAM_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
