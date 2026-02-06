@@ -28,13 +28,27 @@ export async function verifyPrivyToken(accessToken) {
   if (!privyClient || !accessToken) return null;
   try {
     const claims = await privyClient.verifyAuthToken(accessToken);
-    const user = await privyClient.getUser(claims.userId);
+    let user = await privyClient.getUser(claims.userId);
     const twitter = user.linkedAccounts.find(a => a.type === 'twitter_oauth');
 
     // Extract embedded EVM wallet address
-    const evmWallet = user.linkedAccounts.find(
+    let evmWallet = user.linkedAccounts.find(
       a => a.type === 'wallet' && a.walletClientType === 'privy' && a.chainType === 'ethereum'
     );
+
+    // Create EVM wallet server-side if user doesn't have one
+    if (!evmWallet) {
+      try {
+        console.log(`[Auth] Creating EVM wallet for ${claims.userId}...`);
+        user = await privyClient.createWallets({ userId: claims.userId, createEthereumWallet: true });
+        evmWallet = user.linkedAccounts.find(
+          a => a.type === 'wallet' && a.walletClientType === 'privy' && a.chainType === 'ethereum'
+        );
+        console.log(`[Auth] EVM wallet created: ${evmWallet?.address}`);
+      } catch (walletErr) {
+        console.warn('[Auth] Wallet creation failed:', walletErr.message);
+      }
+    }
 
     return {
       privyUserId: claims.userId,
