@@ -1981,19 +1981,17 @@ async function connectToServer() {
 
       // Phase transition VFX
       if (gameState.phase === 'countdown' && prevPhase !== 'countdown') {
-        triggerCameraShake(0.1, 3000);
-        // Countdown beeps: 3, 2, 1, GO!
-        playCountdownBeep(440);
-        setTimeout(() => playCountdownBeep(440), 1000);
-        setTimeout(() => playCountdownBeep(440), 2000);
-        setTimeout(() => playCountdownBeep(880), 3000); // higher pitch for GO
+        triggerCameraShake(0.1, 5000);
+        // Countdown beeps: 5, 4, 3, 2, 1, GO!
+        for (let i = 0; i < 5; i++) setTimeout(() => playCountdownBeep(440), i * 1000);
+        setTimeout(() => playCountdownBeep(880), 5000); // higher pitch for GO
 
         // Ticking countdown display — clear any prior interval to prevent leaks
         clearCountdownInterval();
         const timerEl = document.getElementById('game-timer');
-        timerEl.textContent = '3...';
+        timerEl.textContent = '5...';
         timerEl.style.color = '#f39c12';
-        let countdownSec = 3;
+        let countdownSec = 5;
         countdownIntervalId = setInterval(() => {
           countdownSec--;
           if (countdownSec > 0) {

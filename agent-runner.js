@@ -159,12 +159,16 @@ function buildPrompt(phase, context, drama) {
   const parts = [];
 
   const phasePrompts = {
-    welcome: `**Phase: WELCOME** — A player just joined! Greet them as the Chaos Magician. Be dramatic and introduce yourself. Tease the chaos to come. DO NOT load templates, spawn entities, or start games. ONLY chat.`,
-    lobby: `**Phase: LOBBY** — Players are hanging out. Chat casually, tell jokes, react to chat. When the lobby timer expires (shown below), announce the next game and load a template. Do NOT start a game in the same turn as loading a template.`,
-    gaming: `**Phase: GAMING** — A game is active! Commentate, cast spells, add tricks. Do NOT use clear_world or load_template (server will reject these).`,
+    welcome: `**Phase: WELCOME** — A player just joined! Greet them as the Chaos Magician. Be dramatic and introduce yourself. Tease the chaos to come. DO NOT load templates, spawn entities, or start games. ONLY use send_chat_message.`,
+    lobby: `**Phase: LOBBY** — Players are hanging out in the lobby.
+  If the lobby timer is still active (shown below): ONLY chat. Tell jokes, react to messages. Do NOT build anything.
+  If the lobby timer has expired AND no arena is loaded: use load_template to load an arena (e.g. parkour_hell, floating_islands, obstacle_course, gauntlet, simple_arena). Do NOT spawn entities manually — always use load_template.
+  If an arena is already loaded AND the build gap has expired: use start_game to begin a mini-game (type: reach, collect, or survival). Players NEED a running game with a timer!
+  IMPORTANT: You MUST call start_game to create a game with a countdown and timer. Without start_game, players see no timer and no game rules.`,
+    gaming: `**Phase: GAMING** — A game is active! Commentate, cast spells, add tricks. Do NOT use clear_world or load_template.`,
     intermission: `**Phase: INTERMISSION** — Game just ended! Announce results, congratulate winners, roast losers. Chat about what happened. Do NOT build or start anything yet — cooldown and lobby timer must expire first.`,
-    escalation: `**Phase: ESCALATION** — ${gamesPlayed} games deep! Ramp up difficulty. Harder templates, more spells, shorter time limits.`,
-    finale: `**Phase: FINALE** — Grand finale! Maximum chaos. Epic commentary. Make it memorable!`
+    escalation: `**Phase: ESCALATION** — ${gamesPlayed} games deep! Ramp up difficulty. Harder templates, more spells, shorter time limits. Make sure to call start_game after loading a template!`,
+    finale: `**Phase: FINALE** — Grand finale! Maximum chaos. Epic commentary. Make it memorable! Use start_game for the final showdown!`
   };
 
   // Chat-only mode: audience is chatting but no one is in-game
@@ -177,9 +181,9 @@ function buildPrompt(phase, context, drama) {
     parts.push(phasePrompts[phase] || `**Phase: ${phase}** — Keep the game entertaining.`);
 
     // Creative palette reminder
-    parts.push(`\n**Your palette**: Types: platform, ramp, obstacle, collectible, trigger, decoration. Shapes (properties.shape): box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring. Decorations have no collision — use them for visual flair.`);
+    parts.push(`\n**Your palette**: Use load_template for arenas (don't manually spawn platforms). Shapes (properties.shape): box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring. Decorations have no collision — use them for visual flair.`);
 
-    parts.push(`\n**PACING**: Max 3 world-changing actions this turn. Do NOT load_template AND start_game in the same turn (10s build gap enforced). Spell cooldown: 10s between casts.`);
+    parts.push(`\n**PACING**: Max 3 world-changing actions this turn. Do NOT load_template AND start_game in the same turn (10s build gap enforced). Spell cooldown: 10s between casts. ALWAYS use start_game to begin a game — without it there's no timer or countdown!`);
   }
 
   // Drama level
@@ -218,7 +222,11 @@ function buildPrompt(phase, context, drama) {
     }
   }
   if (!lobbyTimerActive && context.gameState.phase === 'lobby') {
-    parts.push(`- ✅ Lobby timer expired — you can now load a template!`);
+    if (context.entityCount > 0) {
+      parts.push(`- ✅ Arena loaded (${context.entityCount} entities) — use start_game to begin!`);
+    } else {
+      parts.push(`- ✅ Lobby timer expired — use load_template to set up an arena!`);
+    }
   }
 
   // Active effects
