@@ -6,7 +6,7 @@ An AI agent ("Chaos Magician") builds a 3D multiplayer game in real-time while p
 
 ## Current Phase
 
-**Production v0.15.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
+**Production v0.16.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
 
 ## Architecture
 
@@ -94,10 +94,14 @@ npm run build        # Build client for production
 - **AgentLoop.js** runs inside Docker but is naturally inactive (no OpenClaw installed)
 - **2s tick interval** with drama score (0-100) driving invoke frequency (async, non-blocking)
 - **@mention fast-track**: 3s minimum for `@agent` mentions (vs 15s standard minimum)
+- **Audience pacing**: 30s minimum for audience-only chat (no in-game players)
 - **Session phases**: welcome → warmup → gaming → intermission → escalation → finale
 - **Agent auto-pauses** when 0 human players connected
 - **Player welcome system**: detects joins, queues `pendingWelcomes`, greets by name
 - **Cooldown guard**: agent skips invocation during 15s post-game cooldown
+- **Spell cooldown**: 10s between casts (server-enforced via `WorldState.SPELL_COOLDOWN`)
+- **Build-to-game gap**: 10s after loading template before game can start (server-enforced)
+- **Pacing rules**: Max 3 world-changing actions per invocation, rhythm: greet → build → start across turns
 - **Variety hints**: `suggestedGameTypes` excludes last played game type
 - **State tracking**: `lastProcessedChatId`, `welcomedPlayers`, `processedBribeIds` — no re-processing
 - **Personality**: Chaos magic apprentice — short messages, twists player requests, tool honesty

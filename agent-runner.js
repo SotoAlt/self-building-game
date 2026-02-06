@@ -6,7 +6,7 @@
  * Polls the game server for context, decides when to invoke the agent,
  * and uses `openclaw agent` CLI to send messages.
  *
- * v0.13.0 — Enriched context, faster @mention response, state tracking
+ * v0.16.0 — Audience mode: separate player vs audience messages, smart invoke timing
  */
 
 import { execFile } from 'child_process';
@@ -64,7 +64,7 @@ function calculateDrama(context) {
   ).length || 0;
   drama += Math.min(recentChats * 5, 15);
 
-  const newMentions = getNewMentions(context);
+  const newMentions = getNewPlayerMentions(context);
   drama += newMentions.length * 15;
 
   const timeSinceInvoke = (Date.now() - lastInvokeTime) / 1000;
@@ -73,15 +73,20 @@ function calculateDrama(context) {
   return Math.max(0, Math.min(100, drama));
 }
 
-function getNewMentions(context) {
+function getNewPlayerMentions(context) {
   return (context.recentChat || []).filter(m =>
-    m.id > lastProcessedChatId && (
-      m.text?.includes('@agent') ||
-      // All bridge messages are treated as mentions (they're talking to the agent)
-      m.sender?.startsWith('[twitch]') ||
-      m.sender?.startsWith('[discord]') ||
-      m.sender?.startsWith('[telegram]')
-    )
+    m.id > lastProcessedChatId &&
+    m.senderType !== 'audience' &&
+    m.senderType !== 'agent' &&
+    m.senderType !== 'system' &&
+    m.text?.includes('@agent')
+  );
+}
+
+function getNewAudienceMessages(context) {
+  return (context.recentChat || []).filter(m =>
+    m.id > lastProcessedChatId &&
+    m.senderType === 'audience'
   );
 }
 
@@ -111,20 +116,29 @@ const PHASE_INTERVALS = {
 
 function shouldInvoke(phase, drama, context) {
   const humanCount = (context.players || []).filter(p => p.type !== 'ai').length;
-  const hasBridgeChat = getNewMentions(context).length > 0;
-  // Allow invocation if humans are in-game OR bridge platforms are chatting
-  if (humanCount === 0 && !hasBridgeChat) return false;
+  const hasAudienceChat = getNewAudienceMessages(context).length > 0;
+  const hasPlayerMentions = getNewPlayerMentions(context).length > 0;
+  // Allow invocation if humans are in-game OR audience is chatting
+  if (humanCount === 0 && !hasAudienceChat && !hasPlayerMentions) return false;
 
   const elapsed = Date.now() - lastInvokeTime;
 
-  // Fast-track: @agent mentions or pending welcomes (3s minimum)
+  // Fast-track: in-game @agent mentions or pending welcomes (3s minimum)
   if (elapsed >= 3000) {
-    if (getNewMentions(context).length > 0) return true;
+    if (hasPlayerMentions) return true;
     if (getNewWelcomes(context).length > 0) return true;
+  }
+
+  // Audience-only mode (no in-game players): slower pace (30s minimum)
+  if (humanCount === 0 && hasAudienceChat) {
+    return elapsed >= 30000;
   }
 
   // Standard minimum interval for non-urgent invocations
   if (elapsed < 15000) return false;
+
+  // Audience messages at standard interval (don't fast-track)
+  if (hasAudienceChat && elapsed >= 15000) return true;
 
   // Phase-based interval
   const phaseInterval = PHASE_INTERVALS[phase] || 45000;
@@ -152,9 +166,9 @@ function buildPrompt(phase, context, drama) {
     finale: `**Phase: FINALE** — Grand finale! Maximum chaos. Multiple spells active. Hardest arenas. Epic commentary. Make it memorable!`
   };
 
-  // Chat-only mode: bridge platforms are chatting but no one is in-game
+  // Chat-only mode: audience is chatting but no one is in-game
   const humanCount = (context.players || []).filter(p => p.type !== 'ai').length;
-  const bridgeOnly = humanCount === 0 && getNewMentions(context).length > 0;
+  const bridgeOnly = humanCount === 0 && getNewAudienceMessages(context).length > 0;
 
   if (bridgeOnly) {
     parts.push(`**CHAT-ONLY MODE** — People are chatting from Twitch/Discord/Telegram but nobody is playing the game yet. ONLY use send_chat_message to chat with them. Do NOT spawn entities, start games, or cast spells — there's no one in the world to see them. Be friendly, tease the game, invite them to join at https://chaos.waweapps.win`);
@@ -163,6 +177,8 @@ function buildPrompt(phase, context, drama) {
 
     // Creative palette reminder
     parts.push(`\n**Your palette**: Types: platform, ramp, obstacle, collectible, trigger, decoration. Shapes (properties.shape): box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring. Decorations have no collision — use them for visual flair.`);
+
+    parts.push(`\n**PACING**: Max 3 world-changing actions this turn. Do NOT load_template AND start_game in the same turn (10s build gap enforced). Spell cooldown: 10s between casts.`);
   }
 
   // Drama level
@@ -185,10 +201,18 @@ function buildPrompt(phase, context, drama) {
   if (context.gameState.gameType) parts.push(`- Current game: ${context.gameState.gameType}`);
   parts.push(`- Games played: ${gamesPlayed}`);
 
-  // Cooldown
-  if (context.cooldownUntil > Date.now()) {
-    const remaining = Math.ceil((context.cooldownUntil - Date.now()) / 1000);
-    parts.push(`- ⏳ Cooldown: ${remaining}s remaining (cannot start new game yet)`);
+  // Active cooldowns
+  const now = Date.now();
+  const cooldowns = [
+    [context.cooldownUntil, 'Cooldown', 'cannot start new game yet'],
+    [context.spellCooldownUntil, 'Spell cooldown', 'cast blocked'],
+    [context.buildGapUntil, 'Build gap', "can't start game yet — hype the arena!"],
+  ];
+  for (const [until, label, hint] of cooldowns) {
+    if (until > now) {
+      const remaining = Math.ceil((until - now) / 1000);
+      parts.push(`- ⏳ ${label}: ${remaining}s (${hint})`);
+    }
   }
 
   // Active effects
@@ -235,12 +259,21 @@ function buildPrompt(phase, context, drama) {
     }
   }
 
-  // @agent mentions — urgent requests
-  const mentions = getNewMentions(context);
-  if (mentions.length > 0) {
+  // In-game @agent mentions — highest priority
+  const playerMentions = getNewPlayerMentions(context);
+  if (playerMentions.length > 0) {
     parts.push(`\n**🚨 Player Requests (RESPOND TO THESE FIRST)**:`);
-    for (const req of mentions) {
+    for (const req of playerMentions) {
       parts.push(`  - ${req.sender}: "${req.text}"`);
+    }
+  }
+
+  // Audience messages — lower priority
+  const audienceMessages = getNewAudienceMessages(context);
+  if (audienceMessages.length > 0) {
+    parts.push(`\n**📺 Audience Chat (lower priority, respond casually)**:`);
+    for (const msg of audienceMessages.slice(-5)) {
+      parts.push(`  - ${msg.sender}: "${msg.text}"`);
     }
   }
 
@@ -318,9 +351,10 @@ async function tick() {
     }
 
     const message = buildPrompt(phase, context, drama);
-    const mentions = getNewMentions(context);
+    const mentions = getNewPlayerMentions(context);
+    const audience = getNewAudienceMessages(context);
     const welcomes = getNewWelcomes(context);
-    console.log(`[Tick] Invoking agent (phase=${phase}, drama=${drama}, players=${context.playerCount}, mentions=${mentions.length}, welcomes=${welcomes.length})`);
+    console.log(`[Tick] Invoking agent (phase=${phase}, drama=${drama}, players=${context.playerCount}, mentions=${mentions.length}, audience=${audience.length}, welcomes=${welcomes.length})`);
 
     // Update tracking AFTER building prompt (so prompt includes the new messages)
     updateTracking(context);
@@ -350,7 +384,7 @@ async function tick() {
 // Start
 console.log(`
 ╔═══════════════════════════════════════╗
-║   Chaos Magician Agent Runner v0.15  ║
+║   Chaos Magician Agent Runner v0.16  ║
 ║                                       ║
 ║  Game: ${GAME_URL.padEnd(30)}║
 ║  Session: ${SESSION_ID.slice(0, 27).padEnd(27)}║

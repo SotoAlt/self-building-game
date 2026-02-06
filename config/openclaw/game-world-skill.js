@@ -203,6 +203,8 @@ async function get_game_types() {
 /**
  * Tool: start_game
  * Start a mini-game session
+ * Types: reach, collect, survival
+ * NOTE: 10s build gap after loading a template. Do NOT load_template and start_game in the same turn.
  */
 async function start_game({ type, timeLimit, goalPosition, collectibleCount }) {
   if (!type) {
@@ -275,6 +277,7 @@ async function get_chat_messages({ since = 0, limit = 20 } = {}) {
  * Tool: cast_spell
  * Cast a spell effect on all players
  * Types: invert_controls, low_gravity, high_gravity, speed_boost, slow_motion, bouncy, giant, tiny
+ * NOTE: 10s cooldown between casts. Only cast ONE spell per turn.
  */
 async function cast_spell({ type, duration }) {
   if (!type) {
@@ -358,6 +361,7 @@ async function clear_world() {
  * Tool: load_template
  * Load a pre-built arena template. Clears the world first.
  * Available templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell
+ * NOTE: After loading, wait 10s before starting a game. Use the time to hype the arena!
  */
 async function load_template({ name }) {
   if (!name) {

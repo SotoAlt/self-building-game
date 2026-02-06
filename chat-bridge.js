@@ -22,11 +22,18 @@ const GAME_URL = process.env.GAME_SERVER_URL || 'http://localhost:3000';
 // Track agent messages we've already relayed (prevent echo loops)
 let lastRelayedMessageId = 0;
 
+// Rate limiting for relay — prevent Telegram/Discord spam
+let lastRelayTime = 0;
+let lastBridgeMessageTime = 0;
+const RELAY_COOLDOWN = 10000; // 10s between relayed agent messages
+const BRIDGE_ACTIVITY_WINDOW = 60000; // only relay if bridge user was active in last 60s
+
 // ============================================
 // Game Server Communication
 // ============================================
 
 async function sendToGame(sender, platform, text) {
+  lastBridgeMessageTime = Date.now();
   try {
     const res = await fetch(`${GAME_URL}/api/chat/bridge`, {
       method: 'POST',
@@ -77,7 +84,14 @@ function startSSEListener(onAgentMessage) {
               if (event.type === 'chat_message' && event.senderType === 'agent') {
                 if (event.id > lastRelayedMessageId) {
                   lastRelayedMessageId = event.id;
-                  onAgentMessage(event.sender, event.text);
+                  const now = Date.now();
+                  // Only relay if bridge user was active recently and rate limit allows
+                  const bridgeActive = now - lastBridgeMessageTime < BRIDGE_ACTIVITY_WINDOW;
+                  const cooldownOk = now - lastRelayTime >= RELAY_COOLDOWN;
+                  if (bridgeActive && cooldownOk) {
+                    lastRelayTime = now;
+                    onAgentMessage(event.sender, event.text);
+                  }
                 }
               }
             } catch {}

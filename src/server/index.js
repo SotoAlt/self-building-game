@@ -26,6 +26,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3000;
+const BUILD_GAP_MS = 10000; // Minimum delay between loading a template and starting a game
 const app = express();
 
 app.use(cors());
@@ -142,6 +143,10 @@ app.get('/api/agent/context', (req, res) => {
     ready: p.ready
   }));
 
+  const allMessages = worldState.getMessages(sinceMessage);
+  const audienceChat = allMessages.filter(m => m.senderType === 'audience');
+  const spectatorCount = players.filter(p => p.state === 'spectating').length;
+
   res.json({
     players,
     playerCount: players.length,
@@ -155,10 +160,14 @@ app.get('/api/agent/context', (req, res) => {
     entityCount: worldState.entities.size,
     physics: { ...worldState.physics },
     activeEffects: worldState.getActiveEffects(),
-    recentChat: worldState.getMessages(sinceMessage),
+    recentChat: allMessages,
+    audienceChat,
+    audienceCount: spectatorCount + audienceChat.length,
     recentEvents: worldState.getEvents(sinceEvent),
     leaderboard: worldState.getLeaderboard(),
     cooldownUntil: worldState.gameState.cooldownUntil,
+    spellCooldownUntil: worldState.lastSpellCastTime + WorldState.SPELL_COOLDOWN,
+    buildGapUntil: worldState.lastTemplateLoadTime ? worldState.lastTemplateLoadTime + BUILD_GAP_MS : 0,
     environment: { ...worldState.environment },
     pendingWelcomes: agentLoop.pendingWelcomes,
     lastGameType: worldState.lastGameType || null,
@@ -334,6 +343,8 @@ app.post('/api/world/template', (req, res) => {
       broadcastToRoom('environment_changed', env);
     }
 
+    worldState.lastTemplateLoadTime = Date.now();
+
     res.json({
       success: true,
       template: name,
@@ -439,6 +450,20 @@ app.post('/api/game/start', (req, res) => {
   if (worldState.isInCooldown()) {
     const remaining = Math.ceil((worldState.gameState.cooldownUntil - Date.now()) / 1000);
     return res.status(400).json({ error: `Cooldown active — wait ${remaining}s` });
+  }
+
+  // Reject if no human players are connected
+  const humanPlayers = worldState.getPlayers().filter(p => p.type !== 'ai');
+  if (humanPlayers.length === 0) {
+    return res.status(400).json({ error: 'Cannot start game: no players connected' });
+  }
+
+  const timeSinceTemplate = Date.now() - worldState.lastTemplateLoadTime;
+  if (worldState.lastTemplateLoadTime > 0 && timeSinceTemplate < BUILD_GAP_MS) {
+    const remaining = Math.ceil((BUILD_GAP_MS - timeSinceTemplate) / 1000);
+    return res.status(400).json({
+      error: `Arena just loaded! Let players explore for ${remaining}s before starting.`
+    });
   }
 
   try {
@@ -587,7 +612,7 @@ app.post('/api/chat/bridge', (req, res) => {
   }
 
   const displayName = `[${platform}] ${sender}`;
-  const message = worldState.addMessage(displayName, 'player', String(text).trim().slice(0, 200));
+  const message = worldState.addMessage(displayName, 'audience', String(text).trim().slice(0, 200));
   broadcastToRoom('chat_message', message);
 
   res.json({ success: true, message });

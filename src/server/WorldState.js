@@ -46,6 +46,10 @@ export class WorldState {
 
     this.activeEffects = [];
 
+    // Pacing cooldowns
+    this.lastSpellCastTime = 0;
+    this.lastTemplateLoadTime = 0;
+
     // Event log
     this.events = [];
     this._eventIdCounter = 0;
@@ -672,6 +676,8 @@ export class WorldState {
   // Spells / World Effects
   // ============================================
 
+  static SPELL_COOLDOWN = 10000;
+
   static SPELL_TYPES = {
     invert_controls: { name: 'Inverted Controls', defaultDuration: 15000 },
     low_gravity: { name: 'Low Gravity', defaultDuration: 20000 },
@@ -689,16 +695,24 @@ export class WorldState {
       throw new Error(`Unknown spell: ${spellType}. Available: ${Object.keys(WorldState.SPELL_TYPES).join(', ')}`);
     }
 
+    const now = Date.now();
+    const timeSinceLast = now - this.lastSpellCastTime;
+    if (timeSinceLast < WorldState.SPELL_COOLDOWN) {
+      const remaining = Math.ceil((WorldState.SPELL_COOLDOWN - timeSinceLast) / 1000);
+      throw new Error(`Spell on cooldown! The magic needs ${remaining}s to recharge.`);
+    }
+
     const id = `spell-${randomUUID().slice(0, 8)}`;
     const spell = {
       id,
       type: spellType,
       name: spellDef.name,
       duration: duration || spellDef.defaultDuration,
-      startTime: Date.now()
+      startTime: now
     };
 
     this.activeEffects.push(spell);
+    this.lastSpellCastTime = now;
     console.log(`[WorldState] Spell cast: ${spellDef.name} for ${spell.duration}ms`);
     return spell;
   }

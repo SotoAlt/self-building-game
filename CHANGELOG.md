@@ -2,6 +2,24 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.16.0] - 2026-02-06
+
+### Added
+- **Spell cooldown** (10s): `WorldState.castSpell()` enforces 10s between casts — agent can no longer rapid-fire 5 spells in one invocation
+- **Build-to-game gap** (10s): `/api/game/start` rejects if a template was loaded <10s ago — forces agent to hype the arena before starting
+- **Cooldown visibility**: `/api/agent/context` exposes `spellCooldownUntil` and `buildGapUntil` so the agent sees active cooldowns
+- **Audience message handling**: Bridge messages (Twitch/Discord/Telegram) tracked as `audience` senderType with separate priority from in-game @mentions
+- **Audience-only pacing**: 30s minimum invoke interval when only audience is chatting (no in-game players)
+
+### Changed
+- **SOUL.md pacing rules**: Max 3 world-changing actions per invocation, rhythm guide (greet → build → start across turns), cooldown narration
+- **Agent prompt pacing**: `buildPrompt()` includes explicit pacing reminder + active cooldown timers
+- **Tool JSDoc updates**: `cast_spell` (10s cooldown warning), `start_game` (build gap warning), `load_template` (wait-to-start warning)
+- **Cooldown rendering**: Consolidated three if-blocks into data-driven loop in agent-runner
+- **Spell cooldown constant**: Extracted `WorldState.SPELL_COOLDOWN` static, referenced from index.js (single source of truth)
+- **Build gap constant**: `BUILD_GAP_MS` module-level constant in index.js
+- **Agent-runner banner**: v0.15 → v0.16
+
 ## [0.15.0] - 2026-02-06
 
 ### Added
