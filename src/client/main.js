@@ -75,6 +75,28 @@ function sendToServer(type, data) {
 let lastMoveTime = 0;
 const MOVE_INTERVAL = 50; // ms
 
+// Physics constants — tuned for Fall Guys / Stumble Guys feel
+const PHYSICS = {
+  GRAVITY:            -76.5,
+  FALL_MULTIPLIER:    2.2,
+  LOW_JUMP_MULTIPLIER: 4.0,
+  TERMINAL_VELOCITY:  -60,
+  JUMP_FORCE:         21.4,
+  COYOTE_TIME:        0.10,
+  JUMP_BUFFER_TIME:   0.10,
+  WALK_SPEED:         16,
+  SPRINT_SPEED:       26,
+  GROUND_ACCEL:       80,
+  GROUND_DECEL:       60,
+  AIR_ACCEL:          30,
+  AIR_DECEL:          10,
+};
+
+function moveToward(current, target, maxDelta) {
+  if (Math.abs(target - current) <= maxDelta) return target;
+  return current + Math.sign(target - current) * maxDelta;
+}
+
 // Reconnection logic
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -1013,6 +1035,7 @@ function checkCollisions() {
     playerMesh.position.y = platformY;
     playerVelocity.y = 0;
     isGrounded = true;
+    isJumping = false;
 
     // Carry player with moving platform
     if (platformVelocity) {
@@ -1071,6 +1094,9 @@ function respawnPlayer() {
   const rp = state.respawnPoint || [0, 2, 0];
   playerMesh.position.set(rp[0], rp[1], rp[2]);
   playerVelocity.set(0, 0, 0);
+  isJumping = false;
+  coyoteTimer = 0;
+  jumpBufferTimer = 0;
   playerMesh.material.color.setHex(0x00ff88);
   playerMesh.material.emissive.setHex(0x00ff88);
 
@@ -1104,6 +1130,10 @@ let playerMesh = null;
 const playerVelocity = new THREE.Vector3();
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
 let isGrounded = true;
+let coyoteTimer = 0;
+let jumpBufferTimer = 0;
+let isJumping = false;
+let jumpHeld = false;
 
 function addPlayerDecorations(mesh, color) {
   // Eyes
@@ -1149,73 +1179,113 @@ function hasEffect(effectType) {
 function updatePlayer(delta) {
   if (!playerMesh) return;
 
-  let speed = keys.shift ? 32 : 20;
-  let jumpForce = 16;
-  let gravityMult = 1;
+  // Clamp delta to prevent physics explosions on tab-switch
+  delta = Math.min(delta, 0.05);
 
-  // Apply spell modifiers (order matters: later overrides win)
-  if (hasEffect('speed_boost')) speed = 35;
-  if (hasEffect('slow_motion')) speed = 10;
-  if (hasEffect('low_gravity')) gravityMult = 0.3;
-  if (hasEffect('high_gravity')) gravityMult = 2.5;
-  if (hasEffect('bouncy')) jumpForce = 22;
-  if (hasEffect('giant')) { speed = 14; jumpForce = 20; }
-  if (hasEffect('tiny')) { speed = 25; jumpForce = 10; }
+  // --- Spell modifiers ---
+  let targetSpeed = keys.shift ? PHYSICS.SPRINT_SPEED : PHYSICS.WALK_SPEED;
+  let jumpForce = PHYSICS.JUMP_FORCE;
+  let spellGravityMult = 1;
 
-  // Camera-relative movement
+  if (hasEffect('speed_boost')) targetSpeed = 30;
+  if (hasEffect('slow_motion')) targetSpeed = 10;
+  if (hasEffect('low_gravity')) spellGravityMult = 0.3;
+  if (hasEffect('high_gravity')) spellGravityMult = 2.5;
+  if (hasEffect('bouncy')) jumpForce *= 1.5;
+  if (hasEffect('giant')) { targetSpeed = 14; jumpForce *= 1.2; }
+  if (hasEffect('tiny')) { targetSpeed = 25; jumpForce *= 0.6; }
+
+  // --- Camera-relative input direction ---
   const { forward, right } = getCameraDirections();
   const moveDir = new THREE.Vector3();
   const inputSign = hasEffect('invert_controls') ? -1 : 1;
 
   if (isMobile && touchJoystick.active) {
-    // Mobile: use virtual joystick
     moveDir.addScaledVector(forward, -touchJoystick.dy * inputSign);
     moveDir.addScaledVector(right, touchJoystick.dx * inputSign);
   } else {
-    // Desktop: use keyboard
     if (keys.w) moveDir.addScaledVector(forward, inputSign);
     if (keys.s) moveDir.addScaledVector(forward, -inputSign);
     if (keys.d) moveDir.addScaledVector(right, inputSign);
     if (keys.a) moveDir.addScaledVector(right, -inputSign);
   }
-  moveDir.normalize();
+  // Clamp to unit length but allow analog (mobile joystick) sub-unit values
+  if (moveDir.length() > 1) moveDir.normalize();
 
-  playerVelocity.x = moveDir.x * speed;
-  playerVelocity.z = moveDir.z * speed;
+  // --- Horizontal movement with acceleration ---
+  const targetVelX = moveDir.x * targetSpeed;
+  const targetVelZ = moveDir.z * targetSpeed;
+  const hasInput = moveDir.lengthSq() > 0.01;
 
-  // Gravity
-  playerVelocity.y += state.physics.gravity * gravityMult * delta;
+  let accel;
+  if (isGrounded) {
+    accel = hasInput ? PHYSICS.GROUND_ACCEL : PHYSICS.GROUND_DECEL;
+  } else {
+    accel = hasInput ? PHYSICS.AIR_ACCEL : PHYSICS.AIR_DECEL;
+  }
 
-  // Jump
-  if (keys.space && isGrounded) {
+  playerVelocity.x = moveToward(playerVelocity.x, targetVelX, accel * delta);
+  playerVelocity.z = moveToward(playerVelocity.z, targetVelZ, accel * delta);
+
+  // --- Gravity (asymmetric for game feel) ---
+  const serverGravityScale = state.physics.gravity / -9.8;
+  const gravity = PHYSICS.GRAVITY * serverGravityScale * spellGravityMult;
+
+  if (playerVelocity.y < 0) {
+    playerVelocity.y += gravity * PHYSICS.FALL_MULTIPLIER * delta;
+  } else if (playerVelocity.y > 0 && !keys.space) {
+    playerVelocity.y += gravity * PHYSICS.LOW_JUMP_MULTIPLIER * delta;
+  } else {
+    playerVelocity.y += gravity * delta;
+  }
+  playerVelocity.y = Math.max(playerVelocity.y, PHYSICS.TERMINAL_VELOCITY);
+
+  // --- Coyote time & jump buffer ---
+  if (isGrounded) {
+    coyoteTimer = PHYSICS.COYOTE_TIME;
+  } else {
+    coyoteTimer -= delta;
+  }
+
+  if (keys.space && !jumpHeld) {
+    jumpBufferTimer = PHYSICS.JUMP_BUFFER_TIME;
+  }
+  jumpBufferTimer -= delta;
+  jumpHeld = keys.space;
+
+  // --- Execute jump ---
+  const canJump = isGrounded || coyoteTimer > 0;
+  if (canJump && jumpBufferTimer > 0 && !isJumping) {
     playerVelocity.y = jumpForce;
+    isJumping = true;
     isGrounded = false;
+    coyoteTimer = 0;
+    jumpBufferTimer = 0;
     playJumpSound();
   }
 
-  // Apply velocity
+  // --- Apply velocity ---
   playerMesh.position.x += playerVelocity.x * delta;
   playerMesh.position.y += playerVelocity.y * delta;
   playerMesh.position.z += playerVelocity.z * delta;
 
-  // Reset grounded before this frame's collision detection
+  // Reset before this frame's collision detection
   isGrounded = false;
 
-  // Ground collision: per-type branching
+  // --- Ground collision ---
   const phase = state.gameState.phase;
   const inSafePhase = phase === 'lobby' || phase === 'building';
   const invulnerable = Date.now() < respawnInvulnUntil;
   const hasFloor = currentFloorType === 'solid' || (currentFloorType === 'none' && inSafePhase);
 
   if (hasFloor) {
-    // Solid floor, or invisible floor during safe phases
     if (playerMesh.position.y < GROUND_Y) {
       playerMesh.position.y = GROUND_Y;
       playerVelocity.y = 0;
       isGrounded = true;
+      isJumping = false;
     }
   } else if (currentFloorType === 'none') {
-    // Abyss: no floor during gameplay
     if (playerMesh.position.y < ABYSS_DEATH_Y && !invulnerable) {
       playerDie();
     }
@@ -1226,7 +1296,6 @@ function updatePlayer(delta) {
       playerDie();
     }
   }
-  // Fallback void death for all floor types
   if (playerMesh.position.y < VOID_DEATH_Y) {
     playerDie();
   }
@@ -1259,7 +1328,7 @@ document.addEventListener('keydown', (e) => {
 
   const key = e.key.toLowerCase();
   if (key in keys) keys[key] = true;
-  if (key === ' ') { keys.space = true; e.preventDefault(); }
+  if (key === ' ' && !e.repeat) { keys.space = true; e.preventDefault(); }
   if (e.key === 'Shift') keys.shift = true;
 
   // Enter to focus chat
@@ -1887,6 +1956,9 @@ async function connectToServer() {
       if (playerMesh && data.position) {
         playerMesh.position.set(data.position[0], data.position[1], data.position[2]);
         playerVelocity.set(0, 0, 0);
+        isJumping = false;
+        coyoteTimer = 0;
+        jumpBufferTimer = 0;
       }
     });
 
