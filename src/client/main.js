@@ -81,7 +81,7 @@ const PHYSICS = {
   FALL_MULTIPLIER:    2.2,
   LOW_JUMP_MULTIPLIER: 4.0,
   TERMINAL_VELOCITY:  -60,
-  JUMP_FORCE:         21.4,
+  JUMP_FORCE:         26.5,
   COYOTE_TIME:        0.10,
   JUMP_BUFFER_TIME:   0.10,
   WALK_SPEED:         16,
