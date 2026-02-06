@@ -552,20 +552,36 @@ function getEntityColor(type, customColor) {
     ramp: 0x2ecc71,
     collectible: 0xf1c40f,
     obstacle: 0xe74c3c,
-    trigger: 0x9b59b6
+    trigger: 0x9b59b6,
+    decoration: 0x95a5a6
   };
   return new THREE.Color(colors[type] || 0x95a5a6);
 }
 
-function createEntityMesh(entity) {
-  let geometry;
-  const color = getEntityColor(entity.type, entity.properties?.color);
+function getGeometry(entity) {
+  const shape = entity.properties?.shape;
+  const [sx, sy, sz] = entity.size || [1, 1, 1];
 
-  if (entity.type === 'collectible') {
-    geometry = new THREE.SphereGeometry(0.5, 16, 16);
-  } else {
-    geometry = new THREE.BoxGeometry(...entity.size);
+  // Collectibles default to sphere when no explicit shape is set
+  if (!shape && entity.type === 'collectible') {
+    return new THREE.SphereGeometry(0.5, 16, 16);
   }
+
+  switch (shape) {
+    case 'sphere': return new THREE.SphereGeometry(Math.max(sx, sy, sz) / 2, 16, 16);
+    case 'cylinder': return new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 16);
+    case 'cone': return new THREE.ConeGeometry(sx / 2, sy, 16);
+    case 'pyramid': return new THREE.ConeGeometry(sx / 2, sy, 4);
+    case 'torus': return new THREE.TorusGeometry(sx / 2, Math.min(sx, sz) / 6, 8, 24);
+    case 'dodecahedron': return new THREE.DodecahedronGeometry(Math.max(sx, sy, sz) / 2);
+    case 'ring': return new THREE.TorusGeometry(sx / 2, 0.15, 8, 32);
+    default: return new THREE.BoxGeometry(sx, sy, sz);
+  }
+}
+
+function createEntityMesh(entity) {
+  const geometry = getGeometry(entity);
+  const color = getEntityColor(entity.type, entity.properties?.color);
 
   const material = new THREE.MeshStandardMaterial({
     color,
@@ -626,7 +642,7 @@ function updateEntity(entity) {
 
   if (entity.size) {
     mesh.geometry.dispose();
-    mesh.geometry = new THREE.BoxGeometry(...entity.size);
+    mesh.geometry = getGeometry(entity);
   }
   if (entity.properties?.color) {
     mesh.material.color.set(entity.properties.color);

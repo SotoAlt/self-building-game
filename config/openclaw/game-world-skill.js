@@ -39,16 +39,27 @@ async function gameRequest(endpoint, method = 'GET', body = null) {
 
 /**
  * Tool: spawn_entity
- * Create a new entity in the world
+ * Create a new entity in the world.
+ *
+ * Types: platform, ramp, collectible, obstacle, trigger, decoration
+ * - decoration: visual only, no collision. Use for trees, crystals, signs, etc.
+ *
+ * Shape property (optional, in properties.shape):
+ *   box (default), sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
+ *
+ * Examples:
+ *   spawn_entity({ type: 'decoration', position: [0,5,0], size: [2,2,2], properties: { shape: 'dodecahedron', color: '#9b59b6' } })
+ *   spawn_entity({ type: 'obstacle', position: [5,1,-10], size: [1,3,1], properties: { shape: 'cone' } })
+ *   spawn_entity({ type: 'platform', position: [0,3,0], size: [8,0.5,8], properties: { shape: 'cylinder' } })
  */
 async function spawn_entity({ type, position, size = [1, 1, 1], properties = {} }) {
   if (!type || !position) {
     return { success: false, error: 'Missing required parameters: type, position' };
   }
 
-  const validTypes = ['platform', 'ramp', 'collectible', 'obstacle', 'trigger'];
+  const validTypes = ['platform', 'ramp', 'collectible', 'obstacle', 'trigger', 'decoration'];
   if (!validTypes.includes(type)) {
-    return { success: false, error: `Invalid type. Must be one of: ${validTypes.join(', ')}` };
+    return { success: false, error: `Spell fizzled! '${type}' isn't a real entity type. Use: ${validTypes.join(', ')}. For visual variety, set properties.shape (sphere, cylinder, cone, etc).` };
   }
 
   return gameRequest('/api/world/spawn', 'POST', {

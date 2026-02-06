@@ -8,13 +8,14 @@ An AI agent builds a 3D multiplayer game in real-time while players play and aud
 
 ## What It Does
 
-- An AI "Chaos Magician" controls the game world: spawning platforms, obstacles, and collectibles
+- An AI "Chaos Magician" (chaos magic apprentice) controls the game world — spawning platforms, obstacles, decorations with 8 different shapes
 - Players join via browser and navigate the 3D world with WASD + jump controls (mobile touch supported)
 - The agent runs mini-games (reach-the-goal, collect-a-thon, survival) with randomized parameters and Fall Guys-style obstacles
-- Players chat with the agent using @agent mentions; the agent responds and adapts
+- Players chat with the agent using @agent mentions — the agent twists requests chaotically instead of obeying
+- 6 entity types (platform, ramp, collectible, obstacle, trigger, decoration) with shape property (sphere, cylinder, cone, pyramid, torus, dodecahedron, ring)
 - Fall Guys-style countdown: players teleport to start, move freely during 3-2-1
 - Mid-game joiners become spectators until the next round
-- Agent greets new players by name within 15-20s
+- Agent greets new players by name within 5-15s
 
 ## Architecture
 
@@ -36,7 +37,7 @@ Claude (Anthropic) via OpenClaw Gateway
 
 **Game Server** hosts the world state, player sync, mini-game engine, and 50+ HTTP API endpoints.
 **Browser Client** renders the 3D world with Three.js and connects via WebSocket. Mobile touch controls supported.
-**AgentLoop.js** runs in-server, calculates drama score, detects session phases, and invokes the AI agent every 15-45s.
+**agent-runner.js** runs on the host (not in Docker), calculates drama score, detects session phases, and invokes the AI agent every 5s ticks with 15-45s invoke intervals.
 **OpenClaw Gateway** manages agent sessions and routes messages to Claude (Anthropic).
 **AI Agent** (Chaos Magician) controls the game via HTTP API calls — spawning arenas, starting games, casting spells, welcoming players, and chatting.
 **PostgreSQL** persists leaderboards, game history, and user data across restarts.
@@ -99,7 +100,7 @@ docker-compose up --build
 
 | Tool | Description |
 |------|-------------|
-| `spawn_entity` | Create platforms, ramps, collectibles, obstacles, triggers |
+| `spawn_entity` | Create platforms, ramps, collectibles, obstacles, triggers, decorations (with shape property) |
 | `modify_entity` | Update position, size, color, movement of entities |
 | `destroy_entity` | Remove entities from the world |
 | `set_physics` | Change gravity, friction, bounce globally |

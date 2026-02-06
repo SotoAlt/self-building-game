@@ -146,6 +146,9 @@ function buildPrompt(phase, context, drama) {
 
   parts.push(phasePrompts[phase] || `**Phase: ${phase}** — Keep the game entertaining.`);
 
+  // Creative palette reminder
+  parts.push(`\n**Your palette**: Types: platform, ramp, obstacle, collectible, trigger, decoration. Shapes (properties.shape): box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring. Decorations have no collision — use them for visual flair.`);
+
   // Drama level
   let dramaLabel;
   if (drama >= 80) dramaLabel = '(EXPLOSIVE!)';
@@ -324,7 +327,7 @@ async function tick() {
 // Start
 console.log(`
 ╔═══════════════════════════════════════╗
-║   Chaos Magician Agent Runner v0.13  ║
+║   Chaos Magician Agent Runner v0.14  ║
 ║                                       ║
 ║  Game: ${GAME_URL.padEnd(30)}║
 ║  Session: ${SESSION_ID.slice(0, 27).padEnd(27)}║

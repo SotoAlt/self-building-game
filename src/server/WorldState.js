@@ -76,7 +76,7 @@ export class WorldState {
   // ============================================
 
   spawnEntity(type, position, size = [1, 1, 1], properties = {}) {
-    const validTypes = ['platform', 'ramp', 'collectible', 'obstacle', 'trigger'];
+    const validTypes = ['platform', 'ramp', 'collectible', 'obstacle', 'trigger', 'decoration'];
     if (!validTypes.includes(type)) {
       throw new Error(`Invalid entity type: ${type}`);
     }
@@ -206,7 +206,8 @@ export class WorldState {
       ramp: '#2ecc71',
       collectible: '#f1c40f',
       obstacle: '#e74c3c',
-      trigger: '#9b59b6'
+      trigger: '#9b59b6',
+      decoration: '#95a5a6'
     };
     return colors[type] || '#95a5a6';
   }

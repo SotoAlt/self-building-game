@@ -2,6 +2,42 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.14.0] - 2026-02-06
+
+### Added
+- **Entity shapes**: `properties.shape` supports 8 geometries — box (default), sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
+- **Decoration entity type**: No collision, purely visual. Use for trees, crystals, signs, etc.
+- **`getGeometry()` client function**: Renders all shape types with proper Three.js geometries
+
+### Changed
+- **SOUL.md personality rewrite**: Chaos Magician is now a chaos magic apprentice — mischievous, energetic, not-quite-competent
+  - Short messages only (1-2 sentences, not paragraphs)
+  - Chaotic reinterpretation of player requests (twist, misinterpret, backfire, occasionally obey)
+  - Tool honesty: narrates failures in character instead of pretending tools worked
+  - Creative palette section: types, shapes, spells, floor types
+- **spawn_entity error message**: Now suggests available types AND shapes when invalid type is used
+- **Agent-runner prompt**: Includes creative palette reminder (types + shapes) in every invocation
+- **Agent-runner banner**: v0.13 → v0.14
+
+## [0.13.0] - 2026-02-06
+
+### Added
+- **Enriched agent context**: Leaderboard, active effects, variety hints, welcomes, deaths in agent-runner prompt
+- **Faster @mention response**: 5s tick interval (was 8s), 5s minimum for `@agent` mentions (was 15s)
+- **State tracking**: `lastProcessedChatId`, `welcomedPlayers` set, `processedBribeIds` — prevents re-processing old data
+- **Retry logic**: `gameAPIWithRetry()` retries fetch failures once after 2s delay
+- **Rate-limit feedback**: `GameRoom.js` sends `chat_error` to client, client shows "Too fast! Wait a moment." toast
+- **Client disconnect guard**: `sendChatMessage()` checks `state.connected` before sending
+- **Nginx keepalive**: `proxy_socket_keepalive on` + `proxy_send_timeout 86400` prevents idle disconnects
+
+### Fixed
+- **Fetch error suppression**: Suppresses "fetch failed" noise right after successful agent invoke
+- **Game count double-counting**: `lastGameEndedPhase` flag prevents incrementing gamesPlayed twice on ended phase
+- **agent-runner event field**: Uses `context.recentEvents` (matching API) instead of `context.events`
+
+### Changed
+- **agent-runner.js is sole agent system**: Runs on host with OpenClaw CLI access; AgentLoop.js naturally inactive in Docker
+
 ## [0.12.0] - 2026-02-06
 
 ### Fixed

@@ -6,7 +6,7 @@ An AI agent ("Chaos Magician") builds a 3D multiplayer game in real-time while p
 
 ## Current Phase
 
-**Production v0.11.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
+**Production v0.14.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
 
 ## Architecture
 
@@ -50,12 +50,12 @@ Claude (Anthropic) via OpenClaw Gateway
 │       ├── main.js           # Three.js renderer, physics, player controls
 │       └── auth.js           # Privy client-side auth
 ├── config/openclaw/
-│   ├── game-world-skill.js   # 27 agent tools (HTTP API wrappers)
+│   ├── game-world-skill.js   # 27 agent tools (HTTP API wrappers, decoration type, shape property)
 │   ├── game-player-skill.js  # 8 external agent player tools
 │   └── SOUL.md               # Chaos Magician personality
 ├── docs/                     # PRD, CONCEPT, ROADMAP, STACK-EVALUATION
 ├── index.html                # Game UI (login, chat, leaderboard, spectator)
-├── agent-runner.js           # Standalone agent loop (alternative to AgentLoop.js)
+├── agent-runner.js           # Standalone agent loop (sole agent system, runs on host)
 ├── deploy.sh                 # Production deployment script
 ├── docker-compose.yml        # Game server + PostgreSQL + nginx + certbot
 ├── Dockerfile                # Multi-stage build
@@ -88,16 +88,20 @@ npm run build        # Build client for production
 
 ## Agent System
 
-- **AgentLoop.js** runs in-server, invokes agent every 15-45s based on drama score
-- **Drama score** (0-100) rises with player activity, deaths, joins, and decays over time
+- **agent-runner.js** is the sole agent system — runs on VPS host (not in Docker), has OpenClaw CLI access
+- **AgentLoop.js** runs inside Docker but is naturally inactive (no OpenClaw installed)
+- **5s tick interval** with drama score (0-100) driving invoke frequency
+- **@mention fast-track**: 5s minimum for `@agent` mentions (vs 15s standard minimum)
 - **Session phases**: welcome → warmup → gaming → intermission → escalation → finale
 - **Agent auto-pauses** when 0 human players connected
 - **Player welcome system**: detects joins, queues `pendingWelcomes`, greets by name
 - **Cooldown guard**: agent skips invocation during 15s post-game cooldown
 - **Variety hints**: `suggestedGameTypes` excludes last played game type
+- **State tracking**: `lastProcessedChatId`, `welcomedPlayers`, `processedBribeIds` — no re-processing
+- **Personality**: Chaos magic apprentice — short messages, twists player requests, tool honesty
 - Model: Claude (Anthropic) via OpenClaw
 
-## Game Flow (v0.11.0)
+## Game Flow (v0.14.0)
 
 - **Countdown**: "GET READY!" → players teleported to start → free movement during 3s countdown (Fall Guys style)
 - **Randomized params**: time limits, goal positions, collectible counts, hazard intervals vary per game
@@ -105,6 +109,8 @@ npm run build        # Build client for production
 - **Game end**: timer shows "YOU WIN!" / "GAME OVER" / "TIME UP!" / "DRAW!" → 3s "Returning to lobby..." → 15s cooldown
 - **Mid-game spectator**: players joining during active games watch until next round
 - **Floor types**: `solid` (default), `none` (abyss — no floor during gameplay, invisible floor in lobby), `lava` (kills)
+- **Entity types**: platform, ramp, collectible, obstacle, trigger, decoration (no collision)
+- **Entity shapes** (via `properties.shape`): box (default), sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
 
 ## Key Files to Read
 
