@@ -66,14 +66,17 @@ export async function handleOAuthCallback() {
   }
 }
 
+function findEvmWallet(user) {
+  return user?.linked_accounts?.find(
+    a => a.type === 'wallet' && a.walletClientType === 'privy' && a.chainType === 'ethereum'
+  ) || null;
+}
+
 export async function ensureEmbeddedWallet() {
   if (!privy) return;
   try {
     const { user } = await privy.user.get();
-    const hasEvmWallet = user?.linked_accounts?.some(
-      a => a.type === 'wallet' && a.walletClientType === 'privy' && a.chainType === 'ethereum'
-    );
-    if (!hasEvmWallet) {
+    if (!findEvmWallet(user)) {
       console.log('[Auth] Creating EVM embedded wallet...');
       await privy.embeddedWallet.create({});
       console.log('[Auth] EVM wallet created');
@@ -135,6 +138,30 @@ export function getTwitterProfile(user) {
 export async function logout() {
   localStorage.removeItem('game:token');
   if (privy) await privy.auth.logout();
+}
+
+export async function getEmbeddedWalletProvider() {
+  if (!privy) return null;
+  try {
+    const { user } = await privy.user.get();
+    const wallet = findEvmWallet(user);
+    if (!wallet) return null;
+    const provider = await privy.embeddedWallet.getProvider(wallet);
+    return { provider, address: wallet.address };
+  } catch (e) {
+    console.error('[Auth] getEmbeddedWalletProvider failed:', e);
+    return null;
+  }
+}
+
+export async function getEmbeddedWalletAddress() {
+  if (!privy) return null;
+  try {
+    const { user } = await privy.user.get();
+    return findEvmWallet(user)?.address || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function debugAuth() {

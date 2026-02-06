@@ -1,11 +1,17 @@
 /**
  * ChainInterface - Abstract blockchain interface + mock implementation
  *
- * See MonadChainInterface for real ERC-20 implementation on Monad.
+ * See MonadChainInterface for real native MON implementation on Monad mainnet.
  */
 
 export class ChainInterface {
-  async submitBribe(playerId, amount, request) {
+  async submitBribe(playerId, amount, request, txHash) {
+    throw new Error('Not implemented');
+  }
+  async verifyBribeTransaction(txHash, expectedAmountWei) {
+    throw new Error('Not implemented');
+  }
+  async acknowledgeBribe(bribeId, honored) {
     throw new Error('Not implemented');
   }
   async checkPendingBribes() {
@@ -30,12 +36,17 @@ export class MockChainInterface extends ChainInterface {
     this._nextId = 1;
   }
 
-  async submitBribe(playerId, amount, request) {
+  async verifyBribeTransaction(txHash, expectedAmountWei) {
+    return { valid: true, txHash };
+  }
+
+  async submitBribe(playerId, amount, request, txHash) {
     const bribe = {
       id: `bribe-${this._nextId++}`,
       playerId,
       amount,
       request,
+      txHash: txHash || null,
       status: 'pending',
       timestamp: Date.now()
     };

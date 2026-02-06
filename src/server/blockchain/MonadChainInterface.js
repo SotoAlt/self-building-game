@@ -1,124 +1,98 @@
 /**
- * MonadChainInterface - ERC-20 token operations on Monad via viem
+ * MonadChainInterface - Native MON verification on Monad mainnet
  *
- * Falls back to MockChainInterface when env vars are not set.
- * Treasury wallet executes all transfers server-side (users don't need MON for gas).
+ * Read-only: no private keys needed. Users sign transactions client-side
+ * via Privy embedded wallet. Server verifies on-chain receipts.
  */
 
-import { createPublicClient, createWalletClient, http, formatUnits, parseUnits, parseAbi } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import { createPublicClient, http, formatEther } from 'viem';
 import { ChainInterface } from './ChainInterface.js';
 
-// Monad Testnet chain definition
+// Monad mainnet chain definition
 const monad = {
-  id: 10143,
-  name: 'Monad Testnet',
+  id: 143,
+  name: 'Monad',
   nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
   rpcUrls: {
-    default: { http: ['https://testnet-rpc.monad.xyz'] }
+    default: { http: ['https://rpc.monad.xyz'] }
   },
   blockExplorers: {
-    default: { name: 'Monad Explorer', url: 'https://testnet.monadexplorer.com' }
+    default: { name: 'Monadscan', url: 'https://monadscan.com' }
   }
 };
 
-const ERC20_ABI = parseAbi([
-  'function balanceOf(address owner) view returns (uint256)',
-  'function transfer(address to, uint256 amount) returns (bool)',
-  'function decimals() view returns (uint8)'
-]);
-
 export class MonadChainInterface extends ChainInterface {
-  constructor({ rpcUrl, tokenAddress, treasuryPrivateKey }) {
+  constructor({ rpcUrl, treasuryAddress }) {
     super();
 
-    const chain = {
-      ...monad,
-      rpcUrls: rpcUrl
-        ? { default: { http: [rpcUrl] } }
-        : monad.rpcUrls
-    };
+    const chain = rpcUrl
+      ? { ...monad, rpcUrls: { default: { http: [rpcUrl] } } }
+      : monad;
 
-    this.tokenAddress = tokenAddress;
+    this.treasuryAddress = treasuryAddress.toLowerCase();
     this.publicClient = createPublicClient({ chain, transport: http() });
-
-    this.treasuryAccount = privateKeyToAccount(treasuryPrivateKey);
-    this.walletClient = createWalletClient({
-      account: this.treasuryAccount,
-      chain,
-      transport: http()
-    });
-
     this.bribes = [];
     this._nextId = 1;
-    this._decimals = null;
+    this._verifiedTxHashes = new Set();
 
-    console.log(`[Chain] MonadChainInterface initialized — token: ${tokenAddress}, treasury: ${this.treasuryAccount.address}`);
+    console.log(`[Chain] MonadChainInterface initialized — treasury: ${treasuryAddress}`);
   }
 
-  async _getDecimals() {
-    if (this._decimals !== null) return this._decimals;
+  async getBalance(addressOrId) {
+    const isEvmAddress = addressOrId?.startsWith('0x') && addressOrId.length === 42;
+    if (!isEvmAddress) return '0';
+
     try {
-      this._decimals = await this.publicClient.readContract({
-        address: this.tokenAddress,
-        abi: ERC20_ABI,
-        functionName: 'decimals'
-      });
-    } catch {
-      this._decimals = 18;
-    }
-    return this._decimals;
-  }
-
-  async getBalance(walletOrPlayerId) {
-    const isAddress = walletOrPlayerId?.startsWith('0x') && walletOrPlayerId.length === 42;
-    if (isAddress) {
-      try {
-        const raw = await this.publicClient.readContract({
-          address: this.tokenAddress,
-          abi: ERC20_ABI,
-          functionName: 'balanceOf',
-          args: [walletOrPlayerId]
-        });
-        const decimals = await this._getDecimals();
-        return Number(formatUnits(raw, decimals));
-      } catch (err) {
-        console.error('[Chain] balanceOf failed:', err.message);
-        return 0;
-      }
-    }
-    return 1000; // Non-wallet players get mock balance
-  }
-
-  async transferTokens(to, amount) {
-    const decimals = await this._getDecimals();
-    const rawAmount = parseUnits(String(amount), decimals);
-    try {
-      const hash = await this.walletClient.writeContract({
-        address: this.tokenAddress,
-        abi: ERC20_ABI,
-        functionName: 'transfer',
-        args: [to, rawAmount]
-      });
-      console.log(`[Chain] Transfer ${amount} tokens to ${to} — tx: ${hash}`);
-      return { hash, success: true };
+      const raw = await this.publicClient.getBalance({ address: addressOrId });
+      return formatEther(raw);
     } catch (err) {
-      console.error('[Chain] Transfer failed:', err.message);
-      return { success: false, error: err.message };
+      console.error('[Chain] getBalance failed:', err.message);
+      return '0';
     }
   }
 
-  async submitBribe(playerId, amount, request) {
+  async verifyBribeTransaction(txHash, expectedAmountWei) {
+    // Replay check
+    if (this._verifiedTxHashes.has(txHash)) {
+      return { valid: false, error: 'Transaction already used for a bribe' };
+    }
+
+    try {
+      const receipt = await this.publicClient.getTransactionReceipt({ hash: txHash });
+      if (receipt.status !== 'success') {
+        return { valid: false, error: 'Transaction failed on-chain' };
+      }
+
+      const tx = await this.publicClient.getTransaction({ hash: txHash });
+      if (tx.to?.toLowerCase() !== this.treasuryAddress) {
+        return { valid: false, error: 'Transaction not sent to treasury address' };
+      }
+
+      const expected = BigInt(expectedAmountWei);
+      if (tx.value < expected) {
+        return { valid: false, error: `Insufficient amount: sent ${tx.value}, expected ${expected}` };
+      }
+
+      this._verifiedTxHashes.add(txHash);
+      return { valid: true, txHash };
+    } catch (err) {
+      console.error('[Chain] verifyBribeTransaction failed:', err.message);
+      return { valid: false, error: 'Failed to verify transaction: ' + err.message };
+    }
+  }
+
+  async submitBribe(playerId, amount, request, txHash) {
     const bribe = {
       id: `bribe-${this._nextId++}`,
       playerId,
       amount,
       request,
+      txHash: txHash || null,
       status: 'pending',
       timestamp: Date.now()
     };
     this.bribes.push(bribe);
-    console.log(`[Chain] Bribe submitted: ${amount} tokens from ${playerId} — "${request}"`);
+    console.log(`[Chain] Bribe submitted: ${amount} MON from ${playerId} — "${request}" (tx: ${txHash || 'none'})`);
     return bribe;
   }
 

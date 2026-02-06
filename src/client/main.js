@@ -7,8 +7,11 @@ import * as THREE from 'three';
 import { Client } from 'colyseus.js';
 import {
   initPrivy, handleOAuthCallback, exchangeForBackendToken,
-  loginAsGuest, loginWithTwitter, getPrivyUser, getToken, debugAuth, logout
+  loginAsGuest, loginWithTwitter, getPrivyUser, getToken, debugAuth, logout,
+  getEmbeddedWalletProvider, getEmbeddedWalletAddress
 } from './auth.js';
+
+const TREASURY_ADDRESS = import.meta.env.VITE_TREASURY_ADDRESS || '';
 
 // ============================================
 // Configuration
@@ -2305,6 +2308,7 @@ async function startAuthFlow() {
 // Bribe System
 // ============================================
 let bribeOptions = null;
+let bribeIsRealChain = false;
 
 function setupBribeUI() {
   if (isSpectator) return;
@@ -2322,18 +2326,31 @@ function setupBribeUI() {
   async function updateBalance() {
     if (!state.room) return;
     try {
-      const res = await fetch(`${API_URL}/api/balance/${state.room.sessionId}`);
-      const data = await res.json();
-      if (balanceEl) balanceEl.textContent = `${data.balance} tokens`;
+      if (bribeIsRealChain) {
+        const addr = await getEmbeddedWalletAddress();
+        if (!addr) { if (balanceEl) balanceEl.textContent = '— MON'; return; }
+        const res = await fetch(`${API_URL}/api/balance/${addr}`);
+        const data = await res.json();
+        const bal = parseFloat(data.balance || 0);
+        if (balanceEl) balanceEl.textContent = `${bal.toFixed(4)} MON`;
+      } else {
+        const res = await fetch(`${API_URL}/api/balance/${state.room.sessionId}`);
+        const data = await res.json();
+        if (balanceEl) balanceEl.textContent = `${data.balance} tokens`;
+      }
     } catch { /* silent */ }
   }
   updateBalance();
-  setInterval(updateBalance, 10000);
+  setInterval(updateBalance, 30000);
 
   // Fetch bribe options
   fetch(`${API_URL}/api/bribe/options`)
     .then(r => r.json())
-    .then(data => { bribeOptions = data.options; })
+    .then(data => {
+      bribeOptions = data.options;
+      bribeIsRealChain = !!data.isRealChain;
+      updateBalance();
+    })
     .catch(() => {});
 
   btn.addEventListener('click', () => {
@@ -2344,7 +2361,8 @@ function setupBribeUI() {
     for (const [key, opt] of Object.entries(bribeOptions)) {
       const item = document.createElement('button');
       item.className = 'bribe-option';
-      item.innerHTML = `<span class="bribe-opt-label">${opt.label}</span><span class="bribe-opt-cost">${opt.cost} tokens</span><span class="bribe-opt-desc">${opt.description}</span>`;
+      const costText = bribeIsRealChain ? `${opt.costMON} MON` : `${opt.cost} tokens`;
+      item.innerHTML = `<span class="bribe-opt-label">${opt.label}</span><span class="bribe-opt-cost">${costText}</span><span class="bribe-opt-desc">${opt.description}</span>`;
       item.addEventListener('click', () => submitBribe(key));
       optionsList.appendChild(item);
     }
@@ -2357,11 +2375,77 @@ function setupBribeUI() {
     });
   }
 
+  function handleBribeResponse(data) {
+    if (data.success) {
+      updateBalance();
+      if (data.autoExecuted) {
+        showToast('Bribe accepted! Effect applied.', 'success');
+      } else {
+        showToast('Bribe queued! The Magician will consider it...', 'warning');
+      }
+    } else {
+      showToast(data.error || 'Bribe rejected', 'error');
+    }
+  }
+
+  async function signAndSendTransaction(option) {
+    if (authUser?.user?.type === 'guest') {
+      showToast('Login with Twitter to unlock bribes', 'error');
+      return null;
+    }
+
+    const walletResult = await getEmbeddedWalletProvider();
+    if (!walletResult) {
+      showToast('Wallet not available. Try logging in again.', 'error');
+      return null;
+    }
+    const { provider, address } = walletResult;
+
+    // Pre-check balance
+    try {
+      const balHex = await provider.request({ method: 'eth_getBalance', params: [address, 'latest'] });
+      if (BigInt(balHex) < BigInt(option.costWei)) {
+        showToast(`Insufficient MON. Need ${option.costMON} MON.`, 'error');
+        return null;
+      }
+    } catch {
+      showToast('Could not check balance', 'error');
+      return null;
+    }
+
+    // Send transaction
+    try {
+      showToast('Confirm transaction in your wallet...', 'warning');
+      return await provider.request({
+        method: 'eth_sendTransaction',
+        params: [{
+          from: address,
+          to: TREASURY_ADDRESS,
+          value: '0x' + BigInt(option.costWei).toString(16),
+          chainId: '0x8f' // Monad mainnet (143)
+        }]
+      });
+    } catch (err) {
+      const isUserRejection = err.code === 4001
+        || err.message?.includes('rejected')
+        || err.message?.includes('denied');
+      if (isUserRejection) {
+        showToast('Transaction cancelled', 'warning');
+      } else {
+        showToast('Transaction failed: ' + (err.message || 'Unknown error'), 'error');
+      }
+      return null;
+    }
+  }
+
   async function submitBribe(bribeType) {
     if (!state.room?.sessionId) {
       showToast('Not connected to server', 'error');
       return;
     }
+
+    const option = bribeOptions[bribeType];
+    if (!option) return;
 
     let request = null;
     if (bribeType === 'custom') {
@@ -2372,29 +2456,32 @@ function setupBribeUI() {
 
     modal.style.display = 'none';
 
+    // Real chain: sign transaction client-side, then submit with txHash
+    let txHash = null;
+    if (bribeIsRealChain) {
+      txHash = await signAndSendTransaction(option);
+      if (!txHash) return;
+    }
+
+    // Submit bribe to server
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      const token = getToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+
       const res = await fetch(`${API_URL}/api/bribe`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           playerId: state.room.sessionId,
           bribeType,
-          request
+          request,
+          ...(txHash ? { txHash } : {})
         })
       });
-      const data = await res.json();
-      if (data.success) {
-        updateBalance();
-        if (data.autoExecuted) {
-          showToast('Bribe accepted! Effect applied.', 'success');
-        } else {
-          showToast('Bribe queued! The Magician will consider it...', 'warning');
-        }
-      } else if (data.error) {
-        showToast(data.error, 'error');
-      }
+      handleBribeResponse(await res.json());
     } catch {
-      showToast('Bribe failed. Try again.', 'error');
+      showToast('Bribe submission failed', 'error');
     }
   }
 }
@@ -2559,9 +2646,9 @@ function populateWalletPanel(user) {
   // Header
   setAvatarSrc(document.getElementById('wp-pfp'), isAuthenticated ? twitter.avatar : null);
   document.getElementById('wp-display-name').textContent = user.name || twitter.username || 'Player';
-  let usernameLabel = '';
-  if (isAuthenticated && twitter.username) usernameLabel = `@${twitter.username}`;
-  else if (user.type === 'guest') usernameLabel = 'Guest';
+  const usernameLabel = isAuthenticated && twitter.username
+    ? `@${twitter.username}`
+    : user.type === 'guest' ? 'Guest' : '';
   document.getElementById('wp-username').textContent = usernameLabel;
 
   const walletSection = document.getElementById('wp-wallet-section');
@@ -2592,7 +2679,7 @@ function populateWalletPanel(user) {
   const balanceEl = document.getElementById('wp-balance');
   const copyBtn = document.getElementById('wp-copy');
   const explorerBtn = document.getElementById('wp-explorer');
-  const explorerBase = 'https://testnet.monadexplorer.com/address';
+  const explorerBase = 'https://monadscan.com/address';
 
   function displayAddress(addr) {
     addressEl.textContent = addr.slice(0, 6) + '...' + addr.slice(-4);
@@ -2605,6 +2692,13 @@ function populateWalletPanel(user) {
   }
 
   async function refreshWallet() {
+    // Try client-side Privy embedded wallet first
+    const clientAddr = await getEmbeddedWalletAddress();
+    if (clientAddr) {
+      displayAddress(clientAddr);
+      return;
+    }
+    // Fall back to server lookup
     try {
       const res = await fetch(`${API_URL}/api/wallet/${userId}`);
       if (!res.ok) return;
@@ -2621,10 +2715,13 @@ function populateWalletPanel(user) {
 
   async function refreshBalance() {
     try {
-      const res = await fetch(`${API_URL}/api/balance/${state.room?.sessionId || userId}`);
+      const balanceId = addressEl.dataset.full || state.room?.sessionId || userId;
+      const res = await fetch(`${API_URL}/api/balance/${balanceId}`);
       if (!res.ok) return;
       const data = await res.json();
-      balanceEl.textContent = data.balance;
+      balanceEl.textContent = bribeIsRealChain
+        ? parseFloat(data.balance || 0).toFixed(4)
+        : data.balance;
     } catch { /* silent */ }
   }
 
@@ -2651,7 +2748,25 @@ function populateWalletPanel(user) {
     if (full) window.open(`${explorerBase}/${full}`, '_blank');
   });
 
+  // Update faucet button label based on chain mode
+  if (bribeIsRealChain) {
+    faucetBtn.textContent = 'Receive MON';
+  }
+
   faucetBtn.addEventListener('click', async () => {
+    // Real chain: copy wallet address so user can send MON from MetaMask
+    if (bribeIsRealChain) {
+      const full = addressEl.dataset.full;
+      if (full) {
+        navigator.clipboard.writeText(full).then(() => {
+          showToast('Wallet address copied! Send MON from MetaMask or an exchange.', 'success');
+        });
+      } else {
+        showToast('Wallet address not available', 'error');
+      }
+      return;
+    }
+
     faucetBtn.disabled = true;
     faucetBtn.textContent = 'Requesting...';
     try {

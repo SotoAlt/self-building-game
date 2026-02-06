@@ -87,12 +87,12 @@ worldState.onPhaseChange = function onPhaseChange(gameState) {
 // Current mini-game instance
 let currentMiniGame = null;
 
-// Blockchain interface — real ERC-20 on Monad when env vars set, otherwise mock
-const chain = process.env.MONAD_TOKEN_ADDRESS && process.env.TREASURY_PRIVATE_KEY
+// Blockchain interface — real native MON on Monad when TREASURY_ADDRESS set, otherwise mock
+const isRealChain = !!process.env.TREASURY_ADDRESS;
+const chain = isRealChain
   ? new MonadChainInterface({
-      rpcUrl: process.env.MONAD_RPC_URL || 'https://testnet-rpc.monad.xyz',
-      tokenAddress: process.env.MONAD_TOKEN_ADDRESS,
-      treasuryPrivateKey: process.env.TREASURY_PRIVATE_KEY
+      rpcUrl: process.env.MONAD_RPC_URL || 'https://rpc.monad.xyz',
+      treasuryAddress: process.env.TREASURY_ADDRESS
     })
   : new MockChainInterface();
 
@@ -715,12 +715,30 @@ app.get('/api/spell/active', (req, res) => {
 // ============================================
 
 const BRIBE_OPTIONS = {
-  spawn_obstacles: { label: 'Spawn Obstacles', cost: 50, description: 'Obstacles near other players' },
-  lava_floor: { label: 'Turn Floor to Lava', cost: 100, description: 'Floor becomes deadly lava' },
-  random_spell: { label: 'Cast Random Spell', cost: 30, description: 'Random spell on all players' },
-  move_goal: { label: 'Move the Goal', cost: 75, description: 'Relocate the goal (reach games)' },
-  extra_time: { label: 'Extra Time (+15s)', cost: 40, description: 'Add 15 seconds to the clock' },
-  custom: { label: 'Custom Request', cost: 200, description: 'Free-text request for the Magician' }
+  spawn_obstacles: {
+    label: 'Spawn Obstacles', description: 'Obstacles near other players',
+    cost: 50, costMON: '0.002', costWei: '2000000000000000'
+  },
+  lava_floor: {
+    label: 'Turn Floor to Lava', description: 'Floor becomes deadly lava',
+    cost: 100, costMON: '0.005', costWei: '5000000000000000'
+  },
+  random_spell: {
+    label: 'Cast Random Spell', description: 'Random spell on all players',
+    cost: 30, costMON: '0.001', costWei: '1000000000000000'
+  },
+  move_goal: {
+    label: 'Move the Goal', description: 'Relocate the goal (reach games)',
+    cost: 75, costMON: '0.003', costWei: '3000000000000000'
+  },
+  extra_time: {
+    label: 'Extra Time (+15s)', description: 'Add 15 seconds to the clock',
+    cost: 40, costMON: '0.002', costWei: '2000000000000000'
+  },
+  custom: {
+    label: 'Custom Request', description: 'Free-text request for the Magician',
+    cost: 200, costMON: '0.01', costWei: '10000000000000000'
+  }
 };
 
 async function executeAutoBribe(bribeType, bribeId) {
@@ -786,11 +804,11 @@ async function executeAutoBribe(bribeType, bribeId) {
 }
 
 app.get('/api/bribe/options', (req, res) => {
-  res.json({ options: BRIBE_OPTIONS });
+  res.json({ options: BRIBE_OPTIONS, isRealChain });
 });
 
 app.post('/api/bribe', async (req, res) => {
-  const { playerId, bribeType, request } = req.body;
+  const { playerId, bribeType, request, txHash } = req.body;
   if (!playerId || !bribeType) {
     return res.status(400).json({ error: 'Missing required: playerId, bribeType' });
   }
@@ -804,34 +822,48 @@ app.post('/api/bribe', async (req, res) => {
     return res.status(400).json({ error: 'Custom bribe requires a request text' });
   }
 
-  const balance = await chain.getBalance(playerId);
-  if (balance < option.cost) {
-    return res.status(400).json({ error: 'Insufficient balance', balance });
+  // Real chain: verify on-chain transaction
+  if (isRealChain) {
+    if (!txHash) {
+      return res.status(400).json({ error: 'Missing txHash for on-chain bribe' });
+    }
+    const verification = await chain.verifyBribeTransaction(txHash, option.costWei);
+    if (!verification.valid) {
+      return res.status(400).json({ error: verification.error });
+    }
+  } else {
+    // Mock chain: check mock balance
+    const balance = await chain.getBalance(playerId);
+    if (balance < option.cost) {
+      return res.status(400).json({ error: 'Insufficient balance', balance });
+    }
   }
 
+  const amount = isRealChain ? option.costMON : option.cost;
+  const costLabel = isRealChain ? `${option.costMON} MON` : `${option.cost} tokens`;
   const description = bribeType === 'custom' ? request : option.label;
-  const bribe = await chain.submitBribe(playerId, option.cost, description);
+  const bribe = await chain.submitBribe(playerId, amount, description, txHash);
 
   const player = worldState.players.get(playerId);
   const name = player?.name || playerId.slice(0, 8);
-  const announcement = worldState.announce(
-    `${name} bribed the Magician (${option.label}) for ${option.cost} tokens!`,
-    'player', 8000
-  );
-  broadcastToRoom('announcement', announcement);
 
-  const msg = worldState.addMessage('System', 'system', `Bribe: ${option.label} from ${name}`);
-  broadcastToRoom('chat_message', msg);
+  broadcastToRoom('announcement', worldState.announce(
+    `${name} bribed the Magician (${option.label}) for ${costLabel}!`,
+    'player', 8000
+  ));
+  broadcastToRoom('chat_message',
+    worldState.addMessage('System', 'system', `Bribe: ${option.label} from ${name}`)
+  );
 
   worldState.addEvent('bribe', {
-    playerId, name, amount: option.cost, bribeType,
-    request: description, bribeId: bribe.id
+    playerId, name, amount, bribeType,
+    request: description, bribeId: bribe.id, txHash: txHash || null
   });
 
   // Auto-execute simple bribes server-side; others are queued for agent
   const autoExecuted = await executeAutoBribe(bribeType, bribe.id);
 
-  res.json({ success: true, bribe, autoExecuted, balance: await chain.getBalance(playerId) });
+  res.json({ success: true, bribe, autoExecuted });
 });
 
 app.get('/api/bribe/pending', async (req, res) => {
@@ -872,13 +904,20 @@ app.get('/api/bribe/honored', async (req, res) => {
   res.json({ bribes: honored });
 });
 
-app.get('/api/balance/:playerId', async (req, res) => {
-  const playerId = req.params.playerId;
-  // If real chain is active, try to resolve wallet address for on-chain balance
-  const user = await findUser(playerId);
-  const walletAddress = user?.wallet_address;
-  const balance = await chain.getBalance(walletAddress || playerId);
-  res.json({ playerId, balance, walletAddress: walletAddress || null });
+app.get('/api/balance/:addressOrId', async (req, res) => {
+  const param = req.params.addressOrId;
+  const isEvmAddress = param?.startsWith('0x') && param.length === 42;
+
+  if (isEvmAddress) {
+    const balance = await chain.getBalance(param);
+    return res.json({ address: param, balance });
+  }
+
+  // Fall back to session/user ID lookup
+  const user = await findUser(param);
+  const walletAddress = user?.wallet_address || null;
+  const balance = await chain.getBalance(walletAddress || param);
+  res.json({ playerId: param, balance, walletAddress });
 });
 
 app.get('/api/wallet/:playerId', async (req, res) => {
@@ -888,22 +927,16 @@ app.get('/api/wallet/:playerId', async (req, res) => {
   res.json({ playerId, walletAddress, hasWallet: !!walletAddress });
 });
 
-// Token faucet (sends tokens from treasury to player wallet)
+// Token faucet — mock mode only (real chain uses native MON)
 app.post('/api/tokens/faucet', requireAuth, async (req, res) => {
-  if (!chain.transferTokens) {
-    return res.status(400).json({ error: 'Token transfers not available (mock mode)' });
+  if (isRealChain) {
+    return res.status(400).json({ error: 'Faucet not available on mainnet. Send MON to your wallet address.' });
   }
-  const user = await findUser(req.user.id);
-  if (!user?.wallet_address) {
-    return res.status(400).json({ error: 'No wallet address found. Login with Twitter first.' });
-  }
-  const amount = req.body.amount || 100;
-  const result = await chain.transferTokens(user.wallet_address, amount);
-  if (result.success) {
-    res.json({ success: true, amount, txHash: result.hash });
-  } else {
-    res.status(500).json({ error: result.error || 'Transfer failed' });
-  }
+  // Mock mode: grant tokens
+  const playerId = req.user.id;
+  const balance = await chain.getBalance(playerId);
+  chain.balances.set(playerId, balance + 100);
+  res.json({ success: true, amount: 100, balance: balance + 100 });
 });
 
 // ============================================
