@@ -29,13 +29,13 @@ OpenClaw Agent (Chaos Magician)        External Agents
     |                                  (Agent-as-Player API)
     | AgentLoop.js (drama-based scheduling)
     |
-Kimi K2.5 via OpenClaw Gateway
+Claude (Anthropic) via OpenClaw Gateway
 ```
 
 ### Components
 
 **Game Server** (Express + Colyseus)
-- Express HTTP API with 40+ endpoints for agent control, game lifecycle, chat, bribes, webhooks
+- Express HTTP API with 50+ endpoints for agent control, game lifecycle, chat, bribes, webhooks, public API
 - Colyseus WebSocket rooms for real-time player sync (positions, states, events)
 - WorldState manages all game data: entities, players, physics, spells, leaderboard
 - SSE event feed for OBS overlays and external consumers
@@ -52,9 +52,12 @@ Kimi K2.5 via OpenClaw Gateway
 **Agent System** (OpenClaw)
 - AgentLoop.js: in-server drama-based autonomous scheduling (15-45s intervals)
 - AgentBridge.js: invokes OpenClaw CLI with context-rich prompts
-- 26 agent tools via game-world-skill.js (spawn, modify, destroy, game lifecycle, spells, chat, bribes)
+- 27 agent tools via game-world-skill.js (spawn, modify, destroy, game lifecycle, spells, chat, bribes)
 - Session phases: welcome, warmup, gaming, intermission, escalation, finale
 - Drama score (0-100) drives intervention frequency
+- Player welcome system: detects joins, greets by name
+- Cooldown guard: skips invocation during 15s post-game cooldown
+- Variety hints: suggests game types different from last played
 
 **Persistence** (PostgreSQL)
 - Users, leaderboard, game history tables
@@ -86,7 +89,7 @@ AgentLoop.js runs continuously:
 7. Repeat
 ```
 
-**Tools** (26 available):
+**Tools** (27 available):
 - World: spawn_entity, modify_entity, destroy_entity, clear_world, load_template, set_floor, set_respawn, set_environment
 - Games: start_game, end_game, start_building, add_trick
 - Spells: cast_spell, clear_spells
@@ -115,9 +118,17 @@ External AI agents connect via the Agent-as-Player API:
 
 ## Game Systems
 
+### Game Flow (v0.11.0)
+
+1. **Lobby**: Players join, agent greets by name, builds arena
+2. **Countdown**: "GET READY!" → players teleport to start → 3s countdown with free movement (Fall Guys style)
+3. **Playing**: Randomized parameters (time limits, goal positions, obstacle layouts). Random obstacles spawn each game.
+4. **Ended**: Timer shows "YOU WIN!" / "GAME OVER" / "TIME UP!" / "DRAW!" → 3s "Returning to lobby..." → 15s cooldown
+5. **Mid-game joiners** become spectators with a banner, auto-activated next round
+
 ### Mini-Games
 
-Three game types, each with game-specific tricks:
+Three game types, each with randomized parameters and game-specific tricks:
 
 | Type | Objective | Tricks |
 |------|-----------|--------|
@@ -197,7 +208,7 @@ Read-only endpoints for external consumers:
 | Game Engine | Three.js | Full control over 3D rendering, physics, effects |
 | Multiplayer | Colyseus | Battle-tested WebSocket rooms with state sync |
 | Agent Framework | OpenClaw | CLI-based tool use, session management, model flexibility |
-| Agent Model | Kimi K2.5 | Free tier via Moonshot API, adequate for game mastering |
+| Agent Model | Claude (Anthropic) | Powerful reasoning for dynamic game mastering |
 | Persistence | PostgreSQL | Reliable, with graceful in-memory fallback |
 | Deployment | Docker + nginx | SSL termination, WebSocket proxy, reproducible builds |
 | Auth | Privy | Twitter OAuth + guest mode, JWT tokens |

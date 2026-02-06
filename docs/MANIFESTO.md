@@ -75,12 +75,12 @@ OpenClaw Agent (Chaos Magician)        External Agents
     |                                  (Agent-as-Player API)
     | AgentLoop.js (drama-based scheduling)
     |
-Kimi K2.5 via OpenClaw Gateway
+Claude (Anthropic) via OpenClaw Gateway
 ```
 
-- **Client**: Three.js for 3D rendering, AABB collision, camera effects, particle systems
-- **Server**: Express HTTP API (40+ endpoints) + Colyseus WebSocket rooms
-- **Agent**: OpenClaw framework with 26 tools, drama-based autonomous scheduling
+- **Client**: Three.js for 3D rendering, AABB collision, camera effects, particle systems, mobile touch
+- **Server**: Express HTTP API (50+ endpoints) + Colyseus WebSocket rooms
+- **Agent**: OpenClaw framework with 27 tools, drama-based autonomous scheduling, player welcomes
 - **Persistence**: PostgreSQL with in-memory fallback
 - **Deployment**: Docker + nginx + Let's Encrypt SSL on Hetzner VPS
 

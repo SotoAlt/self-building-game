@@ -6,7 +6,7 @@ An AI agent ("Chaos Magician") builds a 3D multiplayer game in real-time while p
 
 ## Current Phase
 
-**Production** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
+**Production v0.11.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
 
 ## Architecture
 
@@ -23,7 +23,7 @@ OpenClaw Agent (Chaos Magician)
     |
     | AgentLoop.js (in-server, drama-based scheduling)
     |
-Kimi K2.5 via OpenClaw Gateway
+Claude (Anthropic) via OpenClaw Gateway
 ```
 
 **Stack**: Three.js + Colyseus + Express + OpenClaw + PostgreSQL
@@ -34,11 +34,11 @@ Kimi K2.5 via OpenClaw Gateway
 /self-building-game
 ├── src/
 │   ├── server/
-│   │   ├── index.js          # Express API (40+ endpoints) + Colyseus setup
-│   │   ├── WorldState.js     # Entities, players, leaderboard, spells, events
-│   │   ├── GameRoom.js       # WebSocket message handlers
-│   │   ├── MiniGame.js       # Game lifecycle, trick system, scoring
-│   │   ├── AgentLoop.js      # Drama score, phase detection, agent scheduling
+│   │   ├── index.js          # Express API (50+ endpoints) + Colyseus setup
+│   │   ├── WorldState.js     # Entities, players, leaderboard, spells, events, spectator mgmt
+│   │   ├── GameRoom.js       # WebSocket message handlers, mid-game spectator detection
+│   │   ├── MiniGame.js       # Game lifecycle, trick system, scoring, random obstacles
+│   │   ├── AgentLoop.js      # Drama score, phase detection, agent scheduling, player welcomes
 │   │   ├── AgentBridge.js    # OpenClaw CLI invocation
 │   │   ├── AIPlayer.js       # Personality-driven AI bots
 │   │   ├── ArenaTemplates.js # 5 pre-built arena layouts
@@ -50,7 +50,8 @@ Kimi K2.5 via OpenClaw Gateway
 │       ├── main.js           # Three.js renderer, physics, player controls
 │       └── auth.js           # Privy client-side auth
 ├── config/openclaw/
-│   ├── game-world-skill.js   # 26 agent tools (HTTP API wrappers)
+│   ├── game-world-skill.js   # 27 agent tools (HTTP API wrappers)
+│   ├── game-player-skill.js  # 8 external agent player tools
 │   └── SOUL.md               # Chaos Magician personality
 ├── docs/                     # PRD, CONCEPT, ROADMAP, STACK-EVALUATION
 ├── index.html                # Game UI (login, chat, leaderboard, spectator)
@@ -88,10 +89,22 @@ npm run build        # Build client for production
 ## Agent System
 
 - **AgentLoop.js** runs in-server, invokes agent every 15-45s based on drama score
-- **Drama score** (0-100) rises with player activity, decays over time
+- **Drama score** (0-100) rises with player activity, deaths, joins, and decays over time
 - **Session phases**: welcome → warmup → gaming → intermission → escalation → finale
 - **Agent auto-pauses** when 0 human players connected
-- Model: Kimi K2.5 (free via OpenClaw/Moonshot)
+- **Player welcome system**: detects joins, queues `pendingWelcomes`, greets by name
+- **Cooldown guard**: agent skips invocation during 15s post-game cooldown
+- **Variety hints**: `suggestedGameTypes` excludes last played game type
+- Model: Claude (Anthropic) via OpenClaw
+
+## Game Flow (v0.11.0)
+
+- **Countdown**: "GET READY!" → players teleported to start → free movement during 3s countdown (Fall Guys style)
+- **Randomized params**: time limits, goal positions, collectible counts, hazard intervals vary per game
+- **Random obstacles**: sweepers, moving walls, pendulums, falling blocks spawn each game
+- **Game end**: timer shows "YOU WIN!" / "GAME OVER" / "TIME UP!" / "DRAW!" → 3s "Returning to lobby..." → 15s cooldown
+- **Mid-game spectator**: players joining during active games watch until next round
+- **Floor types**: `solid` (default), `none` (abyss — no floor during gameplay, invisible floor in lobby), `lava` (kills)
 
 ## Key Files to Read
 

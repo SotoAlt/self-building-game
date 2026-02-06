@@ -85,7 +85,7 @@
 
 ### Game Lifecycle
 - [x] Phase guards on 6 endpoints (prevent actions during active games)
-- [x] 8-second cooldown between games
+- [x] 8-second cooldown between games (now 15s in v0.11.0)
 - [x] Agent auto-pause when 0 human players
 - [x] Building phase in state machine
 
@@ -162,7 +162,43 @@
 
 ---
 
-## Phase 8: Auth & DB Testing - IN PROGRESS
+## Phase 8: Game Lifecycle & Variety - COMPLETE
+
+*Completed Feb 5, 2026 (v0.11.0)*
+
+### Bug Fixes
+- [x] Invisible floor bug — `floorType: 'none'` now lets players fall during gameplay (lobby/building keeps safety floor)
+- [x] Lava invulnerability — invulnerable players no longer die to lava
+
+### Game Flow
+- [x] 15s cooldown between games (was 8s)
+- [x] Agent cooldown guard — skips invocation during cooldown
+- [x] Fall Guys-style countdown — teleport to start, free movement during 3s countdown
+- [x] "GET READY!" announcement before game type
+- [x] Game-end display: YOU WIN / GAME OVER / TIME UP / DRAW on timer
+- [x] "Returning to lobby..." announcement 3s after game ends
+
+### Player Welcome
+- [x] Agent detects player joins (tracks `player_join` events)
+- [x] `pendingWelcomes` system — agent greets new players by name
+- [x] Visual join announcement: "[name] has entered the arena!"
+- [x] Drama boost for joins (+10) and pending welcomes (+15)
+
+### Mid-Game Spectator
+- [x] Players joining during active games become spectators
+- [x] Banner: "Game in progress — watching until next round..."
+- [x] Auto-activated when lobby phase returns
+- [x] Spectators skip game physics and initialization
+
+### Game Variety
+- [x] Randomized time limits: reach 40-75s, collect 30-60s, survival 60-120s
+- [x] Randomized goal positions, collectible counts, hazard intervals
+- [x] Random obstacles per game: sweepers, moving walls, pendulums, falling blocks
+- [x] Variety enforcement: `suggestedGameTypes` excludes last played type
+
+---
+
+## Phase 8.5: Auth & DB Testing - IN PROGRESS
 
 - [x] Fix production DB password persistence
 - [ ] Test Twitter OAuth login on production
@@ -243,6 +279,7 @@
 | 10-11 | Auth & DB testing | DONE |
 | 11 | Agent engagement + docs | DONE |
 | 11-12 | External integration + agent-as-player | DONE |
+| 12 | Game lifecycle & variety | DONE |
 | 12-13 | Mobile support | IN PROGRESS |
 | 13-14 | Demo prep + submission | TODO |
 
@@ -263,7 +300,7 @@ OpenClaw Agent (Chaos Magician)        External Agents
     |                                  (Agent-as-Player API)
     | AgentLoop.js (drama-based scheduling)
     |
-Kimi K2.5 via OpenClaw Gateway
+Claude (Anthropic) via OpenClaw Gateway
 ```
 
 ### Key Files
