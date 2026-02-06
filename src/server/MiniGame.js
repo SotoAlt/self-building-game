@@ -96,6 +96,10 @@ export class MiniGame {
     }
     this.broadcast('players_teleported', { position: this.worldState.respawnPoint });
 
+    // Announce BEFORE phase change so clients see these first
+    this.announce('GET READY!', 'system');
+    this.announce(`${GAME_TYPES[this.type]?.name || this.type} starting!`, 'system');
+
     // Start game in world state
     this.worldState.startGame(this.type, {
       timeLimit: this.timeLimit,
@@ -104,10 +108,6 @@ export class MiniGame {
 
     // Setup default tricks (overridden by subclasses)
     this.setupDefaultTricks();
-
-    // Announce GET READY then game type
-    this.announce('GET READY!', 'system');
-    this.announce(`${GAME_TYPES[this.type]?.name || this.type} starting!`, 'system');
 
     console.log(`[MiniGame] Started: ${this.type} (${this.timeLimit}ms)`);
     return this;
@@ -120,7 +120,7 @@ export class MiniGame {
   update(delta) {
     if (!this.isActive) return;
 
-    // Don't process game logic during countdown — players can't move yet
+    // Skip scoring, tricks, and time tracking during countdown — players can move freely
     if (this.worldState.gameState.phase === 'countdown') return;
 
     // Reset startTime on first real update tick (after countdown ends)

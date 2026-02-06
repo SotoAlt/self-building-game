@@ -8,7 +8,7 @@ DOMAIN="chaos.waweapps.win"
 echo "=== Self-Building Game Deployment ==="
 
 # Step 1: Install Docker if not present
-echo "[1/6] Checking Docker..."
+echo "[1/7] Checking Docker..."
 ssh $SERVER 'command -v docker >/dev/null 2>&1 || {
   echo "Installing Docker..."
   apt-get update -qq
@@ -24,16 +24,16 @@ ssh $SERVER 'command -v docker >/dev/null 2>&1 || {
 }'
 
 # Step 2: Create app directory
-echo "[2/6] Setting up app directory..."
+echo "[2/7] Setting up app directory..."
 ssh $SERVER "mkdir -p $APP_DIR"
 
 # Step 3: Sync project files
-echo "[3/6] Syncing project files..."
+echo "[3/7] Syncing project files..."
 rsync -avz --exclude node_modules --exclude dist --exclude .git --exclude .env \
   /Users/rodrigosoto/repos/self-building-game/ $SERVER:$APP_DIR/
 
 # Step 4: Create production .env on server (preserving secrets across deploys)
-echo "[4/6] Setting up production .env..."
+echo "[4/7] Setting up production .env..."
 ssh $SERVER "
   if [ -f $APP_DIR/.env ]; then
     echo 'Existing .env found — preserving secrets'
@@ -59,7 +59,7 @@ ENVEOF
 "
 
 # Step 5: Get SSL cert (first time: use HTTP-only nginx, get cert, then restart with HTTPS)
-echo "[5/6] Setting up SSL..."
+echo "[5/7] Setting up SSL..."
 ssh $SERVER "cd $APP_DIR && {
   # Check if cert already exists
   if [ ! -f /etc/letsencrypt/live/$DOMAIN/fullchain.pem ]; then
@@ -106,12 +106,104 @@ NGEOF
 }"
 
 # Step 6: Start everything
-echo "[6/6] Starting services..."
+echo "[6/7] Starting services..."
 ssh $SERVER "cd $APP_DIR && docker compose up -d --build"
+
+# Step 7: Setup agent-runner as host-side systemd service
+echo "[7/7] Setting up Chaos Agent (agent-runner)..."
+
+# Read Anthropic API key from local OpenClaw config
+ANTHROPIC_KEY=$(python3 -c "import json; d=json.load(open('$HOME/.openclaw/openclaw.json')); print(d['models']['providers']['anthropic']['apiKey'])" 2>/dev/null || echo "")
+if [ -z "$ANTHROPIC_KEY" ]; then
+  echo "WARNING: No Anthropic API key found in ~/.openclaw/openclaw.json"
+  echo "Agent-runner will not work without it. Set ANTHROPIC_API_KEY env var on VPS manually."
+fi
+
+# Install Node.js on VPS if not present
+ssh $SERVER 'command -v node >/dev/null 2>&1 || {
+  echo "Installing Node.js 20..."
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y -qq nodejs
+}'
+
+# Install OpenClaw CLI globally if not present
+ssh $SERVER 'command -v openclaw >/dev/null 2>&1 || {
+  echo "Installing OpenClaw CLI..."
+  npm install -g @anthropic-ai/openclaw 2>/dev/null || npm install -g openclaw 2>/dev/null || echo "OpenClaw install failed - may need manual install"
+}'
+
+# Setup minimal OpenClaw config for agent (write locally, scp to server)
+OPENCLAW_TMP=$(mktemp)
+cat > "$OPENCLAW_TMP" << OCEOF
+{
+  "models": {
+    "providers": {
+      "anthropic": {
+        "baseUrl": "https://api.anthropic.com",
+        "apiKey": "${ANTHROPIC_KEY}",
+        "api": "anthropic-messages",
+        "models": [{
+          "id": "claude-haiku-4-5",
+          "name": "Claude Haiku 4.5",
+          "api": "anthropic-messages",
+          "reasoning": false,
+          "input": ["text"],
+          "cost": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 },
+          "contextWindow": 200000,
+          "maxTokens": 8192
+        }]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": { "primary": "anthropic/claude-haiku-4-5" },
+      "workspace": "/root/.openclaw/workspace",
+      "compaction": { "mode": "safeguard" },
+      "maxConcurrent": 2
+    }
+  },
+  "commands": { "native": "auto", "nativeSkills": "auto" },
+  "skills": { "install": { "nodeManager": "npm" } }
+}
+OCEOF
+ssh $SERVER "mkdir -p /root/.openclaw"
+scp "$OPENCLAW_TMP" $SERVER:/root/.openclaw/openclaw.json
+rm -f "$OPENCLAW_TMP"
+
+# Create systemd service for agent-runner
+SVCFILE=$(mktemp)
+cat > "$SVCFILE" << 'SVCEOF'
+[Unit]
+Description=Chaos Magician Agent Runner
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/self-building-game
+ExecStart=/usr/bin/node /opt/self-building-game/agent-runner.js
+Environment=GAME_SERVER_URL=http://localhost:3000
+Environment=TICK_INTERVAL=10000
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+scp "$SVCFILE" $SERVER:/etc/systemd/system/chaos-agent.service
+rm -f "$SVCFILE"
+
+ssh $SERVER "systemctl daemon-reload && systemctl enable chaos-agent && systemctl restart chaos-agent && echo 'Agent runner service started!'"
 
 echo ""
 echo "=== Deployment complete! ==="
 echo "URL: https://$DOMAIN"
 echo "Spectator: https://$DOMAIN/?spectator=true"
 echo ""
-echo "To check logs: ssh $SERVER 'cd $APP_DIR && docker compose logs -f game'"
+echo "To check logs:"
+echo "  Game:  ssh $SERVER 'cd $APP_DIR && docker compose logs -f game'"
+echo "  Agent: ssh $SERVER 'journalctl -u chaos-agent -f'"

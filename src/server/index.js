@@ -672,6 +672,34 @@ async function executeAutoBribe(bribeType, bribeId) {
       break;
     }
 
+    case 'move_goal': {
+      if (currentMiniGame?.isActive && currentMiniGame.type === 'reach' && currentMiniGame.targetEntityId) {
+        const newPos = [
+          (Math.random() - 0.5) * 40,
+          3 + Math.random() * 8,
+          (Math.random() - 0.5) * 40
+        ];
+        const updated = worldState.modifyEntity(currentMiniGame.targetEntityId, { position: newPos });
+        if (updated) {
+          broadcastToRoom('entity_modified', updated);
+          broadcastToRoom('announcement', worldState.announce('A BRIBE MOVES THE GOAL!', 'system', 5000));
+        }
+      } else {
+        broadcastToRoom('announcement', worldState.announce('The Magician notes your bribe... the goal will shift next game!', 'agent', 5000));
+      }
+      break;
+    }
+
+    case 'extra_time': {
+      if (currentMiniGame?.isActive) {
+        currentMiniGame.timeLimit += 15000;
+        broadcastToRoom('announcement', worldState.announce('EXTRA TIME! +15 seconds!', 'system', 5000));
+      } else {
+        broadcastToRoom('announcement', worldState.announce('The Magician pockets the bribe... extra time next game!', 'agent', 5000));
+      }
+      break;
+    }
+
     default:
       return false;
   }

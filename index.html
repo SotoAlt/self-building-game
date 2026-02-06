@@ -443,6 +443,51 @@
       color: #888;
       margin-top: 2px;
     }
+    /* Toast notifications */
+    #toast-container {
+      position: fixed;
+      top: 120px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 300;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .toast {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: white;
+      animation: toastIn 0.3s ease-out forwards;
+      white-space: nowrap;
+    }
+    .toast.success {
+      background: rgba(46, 204, 113, 0.9);
+      border: 1px solid #27ae60;
+    }
+    .toast.warning {
+      background: rgba(243, 156, 18, 0.9);
+      border: 1px solid #e67e22;
+    }
+    .toast.error {
+      background: rgba(231, 76, 60, 0.9);
+      border: 1px solid #c0392b;
+    }
+    .toast.fade-out {
+      animation: toastOut 0.4s ease-in forwards;
+    }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes toastOut {
+      from { opacity: 1; }
+      to { opacity: 0; transform: translateY(-10px); }
+    }
     /* Crosshair for pointer lock */
     #crosshair {
       position: fixed;
@@ -492,6 +537,7 @@
   <div id="controls" style="display:none">
     WASD: Move | Space: Jump | Click: Mouse Look | R: Ready | Enter: Chat
   </div>
+  <div id="toast-container"></div>
   <div id="announcements"></div>
   <div id="game-status" style="display:none">
     <div id="game-phase">LOBBY</div>

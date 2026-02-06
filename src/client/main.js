@@ -1132,6 +1132,7 @@ function hasEffect(effectType) {
 
 function updatePlayer(delta) {
   if (!playerMesh) return;
+  isGrounded = false;
 
   let speed = keys.shift ? 32 : 20;
   let jumpForce = 16;
@@ -1529,6 +1530,19 @@ function removeRemotePlayer(id) {
 // ============================================
 // Announcements
 // ============================================
+
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = message;
+  container.appendChild(el);
+  setTimeout(() => {
+    el.classList.add('fade-out');
+    setTimeout(() => el.remove(), 400);
+  }, 3000);
+}
 
 function showAnnouncement(announcement) {
   const container = document.getElementById('announcements');
@@ -2185,7 +2199,7 @@ function setupBribeUI() {
       const item = document.createElement('button');
       item.className = 'bribe-option';
       item.innerHTML = `<span class="bribe-opt-label">${opt.label}</span><span class="bribe-opt-cost">${opt.cost} tokens</span><span class="bribe-opt-desc">${opt.description}</span>`;
-      item.addEventListener('click', () => submitBribe(key, opt));
+      item.addEventListener('click', () => submitBribe(key));
       optionsList.appendChild(item);
     }
     modal.style.display = 'flex';
@@ -2197,7 +2211,7 @@ function setupBribeUI() {
     });
   }
 
-  async function submitBribe(bribeType, opt) {
+  async function submitBribe(bribeType) {
     let request = null;
     if (bribeType === 'custom') {
       request = prompt('What do you want the Magician to do?');
@@ -2218,9 +2232,19 @@ function setupBribeUI() {
         })
       });
       const data = await res.json();
-      if (data.success) updateBalance();
-      if (data.error) console.warn('[Bribe]', data.error);
-    } catch { /* silent */ }
+      if (data.success) {
+        updateBalance();
+        if (data.autoExecuted) {
+          showToast('Bribe accepted! Effect applied.', 'success');
+        } else {
+          showToast('Bribe queued! The Magician will consider it...', 'warning');
+        }
+      } else if (data.error) {
+        showToast(data.error, 'error');
+      }
+    } catch {
+      showToast('Bribe failed. Try again.', 'error');
+    }
   }
 }
 
