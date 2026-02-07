@@ -2430,7 +2430,7 @@ function setupBribeUI() {
 
     const walletResult = await getEmbeddedWalletProvider();
     if (!walletResult) {
-      showToast('Wallet not available. Try logging in again.', 'error');
+      showToast('Wallet not available. Try refreshing the page.', 'error');
       return null;
     }
     const { provider, address } = walletResult;

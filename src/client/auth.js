@@ -75,14 +75,11 @@ function findEvmWallet(user) {
 export async function ensureEmbeddedWallet() {
   if (!privy) return;
   try {
-    const { user } = await privy.user.get();
-    if (!findEvmWallet(user)) {
-      console.log('[Auth] Creating EVM embedded wallet...');
-      await privy.embeddedWallet.create({});
-      console.log('[Auth] EVM wallet created');
-    }
+    await privy.embeddedWallet.create({});
+    console.log('[Auth] Embedded wallet provisioned on device');
   } catch (e) {
-    console.warn('[Auth] Embedded wallet creation skipped:', e.message);
+    // Expected if wallet already provisioned on this device
+    console.log('[Auth] Embedded wallet create:', e.message);
   }
 }
 
@@ -143,15 +140,27 @@ export async function logout() {
 export async function getEmbeddedWalletProvider() {
   if (!privy) return null;
   try {
-    const { user } = await privy.user.get();
-    const wallet = findEvmWallet(user);
+    let wallet = findEvmWallet((await privy.user.get()).user);
     if (!wallet) return null;
-    const provider = await privy.embeddedWallet.getProvider(wallet);
-    return { provider, address: wallet.address };
+
+    // Try getting the provider directly; if it fails, provision keys and retry
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const provider = await privy.embeddedWallet.getProvider(wallet);
+        return { provider, address: wallet.address };
+      } catch (err) {
+        if (attempt > 0) throw err;
+        console.warn('[Auth] getProvider failed, provisioning keys:', err.message);
+        await privy.embeddedWallet.create({}).catch(() => {});
+        wallet = findEvmWallet((await privy.user.get()).user);
+        if (!wallet) return null;
+      }
+    }
   } catch (e) {
     console.error('[Auth] getEmbeddedWalletProvider failed:', e);
     return null;
   }
+  return null;
 }
 
 export async function getEmbeddedWalletAddress() {
