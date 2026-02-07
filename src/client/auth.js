@@ -45,7 +45,7 @@ function setupEmbeddedWalletProxy() {
   });
 
   window.addEventListener('message', (e) => {
-    if (e.source === iframe.contentWindow) {
+    if (e.source === iframe.contentWindow && e.data?.type?.startsWith?.('privy:')) {
       privy.embeddedWallet.onMessage(e.data);
     }
   });
