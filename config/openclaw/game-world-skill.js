@@ -202,18 +202,28 @@ async function get_game_types() {
 
 /**
  * Tool: start_game
- * Start a mini-game session
- * Types: reach, collect, survival
- * NOTE: 10s build gap after loading a template. Do NOT load_template and start_game in the same turn.
+ * Start a mini-game session. Optionally loads a template atomically (clears world, spawns arena, then starts game).
+ *
+ * Parameters:
+ *   template (optional): Arena template name. Available: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell
+ *   type (optional if template provided): Game type — reach, collect, survival. If omitted, uses the template's default gameType.
+ *   timeLimit, goalPosition, collectibleCount (optional): Game config overrides.
+ *
+ * Examples:
+ *   start_game({ template: 'parkour_hell' })  — loads arena + starts with template's default type
+ *   start_game({ template: 'gauntlet', type: 'survival', timeLimit: 45000 })
+ *   start_game({ type: 'collect' })  — starts with existing world state (no template)
  */
-async function start_game({ type, timeLimit, goalPosition, collectibleCount }) {
-  if (!type) {
-    return { success: false, error: 'Missing required parameter: type' };
+async function start_game({ type, template, timeLimit, goalPosition, collectibleCount }) {
+  if (!type && !template) {
+    return { success: false, error: 'Provide either type or template (or both). Available templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell' };
   }
 
-  const validTypes = ['reach', 'collect', 'survival'];
-  if (!validTypes.includes(type)) {
-    return { success: false, error: `Invalid type. Must be one of: ${validTypes.join(', ')}` };
+  if (type) {
+    const validTypes = ['reach', 'collect', 'survival'];
+    if (!validTypes.includes(type)) {
+      return { success: false, error: `Invalid type. Must be one of: ${validTypes.join(', ')}` };
+    }
   }
 
   // Pre-flight: reject unless in lobby or building, and not in cooldown
@@ -229,7 +239,9 @@ async function start_game({ type, timeLimit, goalPosition, collectibleCount }) {
     }
   }
 
-  const body = { type };
+  const body = {};
+  if (type) body.type = type;
+  if (template) body.template = template;
   if (timeLimit) body.timeLimit = timeLimit;
   if (goalPosition) body.goalPosition = goalPosition;
   if (collectibleCount) body.collectibleCount = collectibleCount;
@@ -359,19 +371,14 @@ async function clear_world() {
 
 /**
  * Tool: load_template
- * Load a pre-built arena template. Clears the world first.
- * Available templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell
- * NOTE: After loading, wait 10s before starting a game. Use the time to hype the arena!
+ * DEPRECATED — Use start_game with a template parameter instead.
+ * start_game now loads the template and starts the game atomically.
  */
 async function load_template({ name }) {
-  if (!name) {
-    return { success: false, error: 'Missing required parameter: name' };
-  }
-
-  const blocked = await checkNotInActiveGame('load template');
-  if (blocked) return blocked;
-
-  return gameRequest('/api/world/template', 'POST', { name });
+  return {
+    success: false,
+    error: `load_template is deprecated. Use start_game with template parameter instead: start_game({ template: '${name || 'parkour_hell'}' }). Available templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell`
+  };
 }
 
 /**

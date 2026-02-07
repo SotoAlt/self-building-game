@@ -490,7 +490,13 @@ function setupMobileControls() {
   }, { passive: false });
 }
 
-// Spectator follow target
+// Spectator state helpers
+function clearSpectating() {
+  state.isSpectating = false;
+  const banner = document.getElementById('spectator-banner');
+  if (banner) banner.remove();
+}
+
 let spectatorFollowIndex = -1; // -1 = auto, 0+ = specific player
 
 function updateCamera() {
@@ -518,16 +524,19 @@ function updateCamera() {
 }
 
 function updateSpectatorCamera() {
-  // Auto-follow: find the most "interesting" player (highest position or closest to goal)
+  // Follow target player using mouse-controlled yaw/pitch (no auto-rotation)
   const allPlayers = Array.from(remotePlayers.entries());
 
   if (allPlayers.length === 0) {
-    // No players: orbit the world center
-    cameraYaw += 0.002;
+    // No players: static elevated view of the world center
+    const dist = 40;
+    const elevAngle = cameraPitch + 0.3;
+    const y = dist * Math.sin(elevAngle);
+    const horiz = dist * Math.cos(elevAngle);
     camera.position.set(
-      Math.sin(cameraYaw) * 40,
-      25,
-      Math.cos(cameraYaw) * 40
+      Math.sin(cameraYaw) * horiz,
+      y,
+      Math.cos(cameraYaw) * horiz
     );
     camera.lookAt(0, 5, 0);
     return;
@@ -546,12 +555,14 @@ function updateSpectatorCamera() {
   }
 
   if (targetMesh) {
-    cameraYaw += 0.003;
     const dist = 25;
+    const elevAngle = cameraPitch + 0.3; // slight overhead offset
+    const y = targetMesh.position.y + dist * Math.sin(elevAngle);
+    const horiz = dist * Math.cos(elevAngle);
     camera.position.set(
-      targetMesh.position.x + Math.sin(cameraYaw) * dist,
-      targetMesh.position.y + 12,
-      targetMesh.position.z + Math.cos(cameraYaw) * dist
+      targetMesh.position.x + Math.sin(cameraYaw) * horiz,
+      y,
+      targetMesh.position.z + Math.cos(cameraYaw) * horiz
     );
     camera.lookAt(targetMesh.position.x, targetMesh.position.y + 1, targetMesh.position.z);
   }
@@ -984,7 +995,11 @@ function checkCollisions() {
       continue;
     }
     if (entity.type === 'obstacle') {
-      playerDie();
+      // Only kill on obstacle collision during active gameplay (not countdown/lobby/ended)
+      const gamePhase = state.gameState.phase;
+      if (gamePhase === 'playing') {
+        playerDie();
+      }
       continue;
     }
     if (entity.type === 'trigger') {
@@ -1277,9 +1292,10 @@ function updatePlayer(delta) {
 
   // --- Ground collision ---
   const phase = state.gameState.phase;
-  const inSafePhase = phase === 'lobby' || phase === 'building';
+  const inSafePhase = phase === 'lobby' || phase === 'building' || phase === 'countdown' || phase === 'ended';
   const invulnerable = Date.now() < respawnInvulnUntil;
-  const hasFloor = currentFloorType === 'solid' || (currentFloorType === 'none' && inSafePhase);
+  // All floors act solid during safe phases so players don't fall through
+  const hasFloor = currentFloorType === 'solid' || inSafePhase;
 
   if (hasFloor) {
     if (playerMesh.position.y < GROUND_Y) {
@@ -1299,6 +1315,7 @@ function updatePlayer(delta) {
       playerDie();
     }
   }
+  // Void death (Y < -50) stays always active as ultimate safety net
   if (playerMesh.position.y < VOID_DEATH_Y) {
     playerDie();
   }
@@ -1987,9 +2004,7 @@ async function connectToServer() {
     // Mid-game spectator activation
     room.onMessage('player_activated', () => {
       if (state.isSpectating) {
-        state.isSpectating = false;
-        const banner = document.getElementById('spectator-banner');
-        if (banner) banner.remove();
+        clearSpectating();
         showAnnouncement({ id: `activated-${Date.now()}`, text: "You're in! Get ready for the next game!", type: 'system', duration: 4000, timestamp: Date.now() });
       }
     });
@@ -2000,6 +2015,11 @@ async function connectToServer() {
       const prevPhase = state.gameState.phase;
       state.gameState = gameState;
       updateGameStateUI();
+
+      // Auto-clear spectating when returning to lobby
+      if (gameState.phase === 'lobby' && state.isSpectating) {
+        clearSpectating();
+      }
 
       // Phase transition VFX
       if (gameState.phase === 'countdown' && prevPhase !== 'countdown') {

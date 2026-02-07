@@ -27,7 +27,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3000;
-const BUILD_GAP_MS = 10000; // Minimum delay between loading a template and starting a game
 const MIN_LOBBY_MS = 15000; // Minimum time in lobby before games/templates/spawns allowed
 const app = express();
 
@@ -65,22 +64,50 @@ function rejectIfLobbyTimer(res) {
   return false;
 }
 
+// Auto-start timer — if agent doesn't start a game within 45s, auto-start one
+let autoStartTimer = null;
+const AUTO_START_DELAY = 45000;
+
+function scheduleAutoStart() {
+  clearTimeout(autoStartTimer);
+  autoStartTimer = setTimeout(() => {
+    if (worldState.gameState.phase !== 'lobby') return;
+    const humanPlayers = worldState.getPlayers().filter(p => p.type !== 'ai');
+    if (humanPlayers.length === 0) return;
+
+    const templates = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell'];
+    const template = templates[Math.floor(Math.random() * templates.length)];
+    console.log(`[AutoStart] Agent didn't start a game in ${AUTO_START_DELAY / 1000}s — auto-starting with ${template}`);
+    fetch(`http://localhost:${PORT}/api/game/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ template })
+    }).catch(e => console.error('[AutoStart] Failed:', e.message));
+  }, AUTO_START_DELAY);
+}
+
 // Broadcast game state changes from internal transitions (countdown -> playing)
 worldState.onPhaseChange = function onPhaseChange(gameState) {
   broadcastToRoom('game_state_changed', gameState);
 
-  if (gameState.phase !== 'lobby') return;
+  if (gameState.phase === 'lobby') {
+    // Returning to lobby — sync clean world state and activate spectators
+    broadcastToRoom('world_cleared', {});
+    broadcastToRoom('physics_changed', worldState.physics);
+    broadcastToRoom('environment_changed', worldState.environment);
+    broadcastToRoom('floor_changed', { type: worldState.floorType });
+    broadcastToRoom('effects_cleared', {});
 
-  // Returning to lobby — sync clean world state and activate spectators
-  broadcastToRoom('world_cleared', {});
-  broadcastToRoom('physics_changed', worldState.physics);
-  broadcastToRoom('environment_changed', worldState.environment);
-  broadcastToRoom('floor_changed', { type: worldState.floorType });
-  broadcastToRoom('effects_cleared', {});
+    const activated = worldState.activateSpectators();
+    if (activated > 0) {
+      broadcastToRoom('player_activated', {});
+    }
 
-  const activated = worldState.activateSpectators();
-  if (activated > 0) {
-    broadcastToRoom('player_activated', {});
+    // Schedule auto-start if agent is too slow
+    scheduleAutoStart();
+  } else {
+    // Game starting — cancel auto-start
+    clearTimeout(autoStartTimer);
   }
 };
 
@@ -194,7 +221,6 @@ app.get('/api/agent/context', (req, res) => {
     cooldownUntil: worldState.gameState.cooldownUntil,
     lobbyReadyAt: worldState.lobbyEnteredAt + MIN_LOBBY_MS,
     spellCooldownUntil: worldState.lastSpellCastTime + WorldState.SPELL_COOLDOWN,
-    buildGapUntil: worldState.lastTemplateLoadTime ? worldState.lastTemplateLoadTime + BUILD_GAP_MS : 0,
     environment: { ...worldState.environment },
     pendingWelcomes: agentLoop.pendingWelcomes,
     lastGameType: worldState.lastGameType || null,
@@ -318,10 +344,43 @@ app.post('/api/world/respawn', (req, res) => {
   res.json({ success: true, respawnPoint: rp });
 });
 
-// Load arena template
+// Shared helper: clear world and apply a template (entities, respawn, floor, environment)
+function applyTemplate(tmpl) {
+  const cleared = worldState.clearEntities();
+  for (const id of cleared) broadcastToRoom('entity_destroyed', { id });
+
+  const spawned = [];
+  for (const entityDef of tmpl.entities) {
+    const entity = worldState.spawnEntity(entityDef.type, entityDef.position, entityDef.size, entityDef.properties || {});
+    broadcastToRoom('entity_spawned', entity);
+    spawned.push(entity.id);
+  }
+
+  if (tmpl.respawnPoint) {
+    worldState.setRespawnPoint(tmpl.respawnPoint);
+    broadcastToRoom('respawn_point_changed', { position: tmpl.respawnPoint });
+  }
+  if (tmpl.floorType) {
+    worldState.setFloorType(tmpl.floorType);
+    broadcastToRoom('floor_changed', { type: tmpl.floorType });
+  }
+  if (tmpl.environment) {
+    const env = worldState.setEnvironment(tmpl.environment);
+    broadcastToRoom('environment_changed', env);
+  }
+
+  return spawned;
+}
+
+// Load arena template (blocked during lobby — use start_game with template param instead)
 app.post('/api/world/template', (req, res) => {
+  const phase = worldState.gameState.phase;
+  if (phase === 'lobby' || phase === 'building') {
+    return res.status(400).json({
+      error: 'Cannot load template during lobby. Use start_game with a template parameter instead. Example: POST /api/game/start { "template": "parkour_hell" }'
+    });
+  }
   if (rejectIfActiveGame(res)) return;
-  if (rejectIfLobbyTimer(res)) return;
 
   const { name } = req.body;
   if (!name) {
@@ -337,43 +396,7 @@ app.post('/api/world/template', (req, res) => {
       });
     }
 
-    // Clear existing entities first
-    const cleared = worldState.clearEntities();
-    for (const id of cleared) {
-      broadcastToRoom('entity_destroyed', { id });
-    }
-
-    // Spawn template entities
-    const spawned = [];
-    for (const entityDef of template.entities) {
-      const entity = worldState.spawnEntity(
-        entityDef.type,
-        entityDef.position,
-        entityDef.size,
-        entityDef.properties || {}
-      );
-      broadcastToRoom('entity_spawned', entity);
-      spawned.push(entity.id);
-    }
-
-    // Set respawn point if defined
-    if (template.respawnPoint) {
-      worldState.setRespawnPoint(template.respawnPoint);
-      broadcastToRoom('respawn_point_changed', { position: template.respawnPoint });
-    }
-
-    // Set floor type if defined
-    if (template.floorType) {
-      worldState.setFloorType(template.floorType);
-      broadcastToRoom('floor_changed', { type: template.floorType });
-    }
-
-    // Apply environment overrides if defined
-    if (template.environment) {
-      const env = worldState.setEnvironment(template.environment);
-      broadcastToRoom('environment_changed', env);
-    }
-
+    const spawned = applyTemplate(template);
     worldState.lastTemplateLoadTime = Date.now();
 
     res.json({
@@ -461,12 +484,53 @@ app.get('/api/game/types', (req, res) => {
   res.json({ gameTypes: GAME_TYPES });
 });
 
-// Start a game
-app.post('/api/game/start', (req, res) => {
-  const { type, timeLimit, targetEntityId, goalPosition, collectibleCount, countdownTime } = req.body;
+// Internal helper to create + start a MiniGame (used by /api/game/start)
+function startGameInternal(gameType, options, res) {
+  const { timeLimit, targetEntityId, goalPosition, collectibleCount, countdownTime } = options;
 
-  if (!type) {
-    return res.status(400).json({ error: 'Missing required: type' });
+  try {
+    currentMiniGame = createGameSync(gameType, worldState, broadcastToRoom, {
+      timeLimit,
+      targetEntityId,
+      goalPosition,
+      collectibleCount,
+      countdownTime
+    });
+
+    if (gameRoom) {
+      gameRoom.currentMiniGame = currentMiniGame;
+    }
+
+    currentMiniGame.onEnd = () => {
+      agentLoop.onGameEnded();
+      currentMiniGame = null;
+      if (gameRoom) gameRoom.currentMiniGame = null;
+    };
+
+    currentMiniGame.start();
+
+    broadcastToRoom('game_state_changed', worldState.getGameState());
+
+    const startMsg = worldState.addMessage('System', 'system', `Game started: ${gameType}`);
+    broadcastToRoom('chat_message', startMsg);
+    worldState.addEvent('game_start', { type: gameType, gameId: currentMiniGame.id });
+
+    res.json({
+      success: true,
+      gameId: currentMiniGame.id,
+      gameState: worldState.getGameState()
+    });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+}
+
+// Start a game (optionally with a template that loads atomically)
+app.post('/api/game/start', (req, res) => {
+  const { type, template } = req.body;
+
+  if (!type && !template) {
+    return res.status(400).json({ error: 'Missing required: type or template' });
   }
 
   if (currentMiniGame?.isActive) {
@@ -491,54 +555,26 @@ app.post('/api/game/start', (req, res) => {
     return res.status(400).json({ error: 'Cannot start game: no players connected' });
   }
 
-  const timeSinceTemplate = Date.now() - worldState.lastTemplateLoadTime;
-  if (worldState.lastTemplateLoadTime > 0 && timeSinceTemplate < BUILD_GAP_MS) {
-    const remaining = Math.ceil((BUILD_GAP_MS - timeSinceTemplate) / 1000);
-    return res.status(400).json({
-      error: `Arena just loaded! Let players explore for ${remaining}s before starting.`
+  if (template) {
+    // Atomic: load template + start game in one call
+    import('./ArenaTemplates.js').then(({ TEMPLATES }) => {
+      const tmpl = TEMPLATES[template];
+      if (!tmpl) {
+        return res.status(404).json({
+          error: `Template not found: ${template}. Available: ${Object.keys(TEMPLATES).join(', ')}`
+        });
+      }
+
+      applyTemplate(tmpl);
+
+      const gameType = type || tmpl.gameType || 'reach';
+      startGameInternal(gameType, req.body, res);
+    }).catch(err => {
+      res.status(500).json({ error: err.message });
     });
-  }
-
-  try {
-    // Create mini-game instance
-    currentMiniGame = createGameSync(type, worldState, broadcastToRoom, {
-      timeLimit,
-      targetEntityId,
-      goalPosition,
-      collectibleCount,
-      countdownTime
-    });
-
-    // Share with game room immediately for event handling
-    if (gameRoom) {
-      gameRoom.currentMiniGame = currentMiniGame;
-    }
-
-    // Wire up end callback before starting
-    currentMiniGame.onEnd = () => {
-      agentLoop.onGameEnded();
-      currentMiniGame = null;
-      if (gameRoom) gameRoom.currentMiniGame = null;
-    };
-
-    // Start the game
-    currentMiniGame.start();
-
-    // Broadcast game state change to clients
-    broadcastToRoom('game_state_changed', worldState.getGameState());
-
-    // System message + event
-    const startMsg = worldState.addMessage('System', 'system', `Game started: ${type}`);
-    broadcastToRoom('chat_message', startMsg);
-    worldState.addEvent('game_start', { type, gameId: currentMiniGame.id });
-
-    res.json({
-      success: true,
-      gameId: currentMiniGame.id,
-      gameState: worldState.getGameState()
-    });
-  } catch (error) {
-    res.status(400).json({ success: false, error: error.message });
+  } else {
+    // No template — start with existing world state
+    startGameInternal(type, req.body, res);
   }
 });
 
