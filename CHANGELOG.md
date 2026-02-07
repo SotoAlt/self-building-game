@@ -2,6 +2,29 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.18.0] - 2026-02-06
+
+### Added
+- **Atomic `start_game` with `template` param** — single API call loads arena + starts game (no more separate load_template → start_game)
+- **45s auto-start fallback** — if agent doesn't start a game within 45s of lobby, a random template auto-starts
+- **Countdown invulnerability** — `inSafePhase` covers countdown and ended phases; players can't die during transitions
+- **Safe-phase floor override** — lava and `none` floors become solid during lobby/countdown/ended so players don't die between games
+- **Obstacle collision safety** — obstacles only kill during `playing` phase
+- **Spectator camera mouse control** — spectators use click-drag to orbit camera (no auto-rotation)
+- **`applyTemplate()` shared helper** — extracted from template load and game start endpoints
+- **`clearSpectating()` helper** — extracted spectator cleanup logic
+
+### Changed
+- **`load_template` blocked during lobby** — returns error directing agent to use `start_game({ template })` instead (deprecated)
+- **`BUILD_GAP_MS` removed** — no longer needed since template + game start are atomic
+- **`isSpectating` auto-clear** — spectator state cleared on lobby transition so spectators rejoin as active players
+- **Announcement duration cap** — announcements capped at 4s (was 5s)
+- **Max 3 visible announcements** — oldest removed when limit exceeded
+- **Spell phase guard** — `POST /api/spell/cast` blocked outside `playing` phase
+- **Agent chat rate limit** — 3s cooldown on `POST /api/chat/send`
+- **Announcement rate limit** — 5s cooldown on `POST /api/announce`
+- **`end_game` pre-flight check** — agent tool rejects if no active game (prevents "Game ended: cancelled" during lobby)
+
 ## [0.16.0] - 2026-02-06
 
 ### Added

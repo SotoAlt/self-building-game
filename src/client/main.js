@@ -1668,10 +1668,23 @@ function showConnectionWarning(disconnected) {
   }
 }
 
+const MAX_VISIBLE_ANNOUNCEMENTS = 3;
+
+function enforceAnnouncementLimit(container) {
+  while (container.children.length >= MAX_VISIBLE_ANNOUNCEMENTS) {
+    const oldest = container.firstChild;
+    const oldId = oldest.id?.replace('ann-', '');
+    oldest.remove();
+    if (oldId) state.announcements.delete(oldId);
+  }
+}
+
 function showAnnouncement(announcement) {
   const container = document.getElementById('announcements');
 
   if (state.announcements.has(announcement.id)) return;
+
+  enforceAnnouncementLimit(container);
 
   const div = document.createElement('div');
   div.className = `announcement ${announcement.type || 'agent'}`;
@@ -1681,7 +1694,7 @@ function showAnnouncement(announcement) {
 
   state.announcements.set(announcement.id, true);
 
-  const duration = announcement.duration || 5000;
+  const duration = Math.min(announcement.duration || 5000, 4000);
   setTimeout(() => {
     div.classList.add('fade-out');
     setTimeout(() => {
@@ -1699,6 +1712,9 @@ function showAnnouncement(announcement) {
 
 function showSpellEffect(spell) {
   const container = document.getElementById('announcements');
+
+  enforceAnnouncementLimit(container);
+
   const div = document.createElement('div');
   div.className = 'announcement agent';
   div.textContent = `${spell.name}!`;

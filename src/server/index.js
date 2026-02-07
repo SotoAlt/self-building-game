@@ -457,8 +457,18 @@ app.get('/api/challenge/status', (req, res) => {
 // Announcements API
 // ============================================
 
+// Rate limit: announcements
+let lastAnnouncementTime = 0;
+const ANNOUNCEMENT_COOLDOWN = 5000;
+
 // Post announcement
 app.post('/api/announce', (req, res) => {
+  const now = Date.now();
+  if (now - lastAnnouncementTime < ANNOUNCEMENT_COOLDOWN) {
+    return res.status(429).json({ error: 'Announcement rate limit: wait before announcing again' });
+  }
+  lastAnnouncementTime = now;
+
   const { text, type, duration } = req.body;
 
   if (!text) {
@@ -655,8 +665,18 @@ app.get('/api/chat/messages', (req, res) => {
   res.json({ messages: worldState.getMessages(since, limit) });
 });
 
+// Rate limit: agent chat
+let lastAgentChatTime = 0;
+const AGENT_CHAT_COOLDOWN = 3000;
+
 // Send chat message (agent sends via this)
 app.post('/api/chat/send', (req, res) => {
+  const now = Date.now();
+  if (now - lastAgentChatTime < AGENT_CHAT_COOLDOWN) {
+    return res.status(429).json({ error: 'Chat rate limit: wait before sending another message' });
+  }
+  lastAgentChatTime = now;
+
   const { text } = req.body;
   if (!text || String(text).trim().length === 0) {
     return res.status(400).json({ error: 'Missing required: text' });
@@ -716,6 +736,11 @@ app.get('/api/stats', async (req, res) => {
 // ============================================
 
 app.post('/api/spell/cast', (req, res) => {
+  const phase = worldState.gameState.phase;
+  if (phase !== 'playing') {
+    return res.status(400).json({ error: `Cannot cast spells during ${phase} phase. Wait for a game to start.` });
+  }
+
   const { type, duration } = req.body;
   if (!type) {
     return res.status(400).json({ error: 'Missing required: type' });

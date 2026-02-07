@@ -6,7 +6,7 @@ An AI agent ("Chaos Magician") builds a 3D multiplayer game in real-time while p
 
 ## Current Phase
 
-**Production v0.16.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
+**Production v0.18.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
 
 ## Architecture
 
@@ -100,21 +100,30 @@ npm run build        # Build client for production
 - **Player welcome system**: detects joins, queues `pendingWelcomes`, greets by name
 - **Cooldown guard**: agent skips invocation during 15s post-game cooldown
 - **Spell cooldown**: 10s between casts (server-enforced via `WorldState.SPELL_COOLDOWN`)
-- **Build-to-game gap**: 10s after loading template before game can start (server-enforced)
+- **Spell phase guard**: spells only castable during `playing` phase
+- **Agent chat rate limit**: 3s cooldown on `/api/chat/send`
+- **Announcement rate limit**: 5s cooldown on `/api/announce`
 - **Pacing rules**: Max 3 world-changing actions per invocation, rhythm: greet → build → start across turns
+- **Auto-start fallback**: 45s timer starts on lobby entry; if agent doesn't start a game, random template auto-starts
 - **Variety hints**: `suggestedGameTypes` excludes last played game type
 - **State tracking**: `lastProcessedChatId`, `welcomedPlayers`, `processedBribeIds` — no re-processing
 - **Personality**: Chaos magic apprentice — short messages, twists player requests, tool honesty
 - Model: Claude (Anthropic) via OpenClaw
 
-## Game Flow (v0.14.0)
+## Game Flow (v0.18.0)
 
+- **Atomic game start**: `start_game({ template })` loads arena + starts game in one call (no separate load_template step)
+- **45s auto-start**: if agent doesn't start a game within 45s of lobby, a random template auto-starts
 - **Countdown**: "GET READY!" → players teleported to start → free movement during 3s countdown (Fall Guys style)
+- **Countdown invulnerability**: `inSafePhase` covers lobby, countdown, and ended — no deaths during transitions
+- **Safe-phase floors**: lava and `none` floors become solid during safe phases
+- **Obstacle safety**: obstacles only kill during `playing` phase
 - **Randomized params**: time limits, goal positions, collectible counts, hazard intervals vary per game
 - **Random obstacles**: sweepers, moving walls, pendulums, falling blocks spawn each game
 - **Game end**: timer shows "YOU WIN!" / "GAME OVER" / "TIME UP!" / "DRAW!" → 3s "Returning to lobby..." → 15s cooldown
-- **Mid-game spectator**: players joining during active games watch until next round
-- **Floor types**: `solid` (default), `none` (abyss — no floor during gameplay, invisible floor in lobby), `lava` (kills)
+- **Mid-game spectator**: players joining during active games watch until next round; auto-activated on lobby transition
+- **Spectator camera**: mouse-drag orbit control (no auto-rotation)
+- **Floor types**: `solid` (default), `none` (abyss — no floor during gameplay, solid in safe phases), `lava` (kills during playing only)
 - **Entity types**: platform, ramp, collectible, obstacle, trigger, decoration (no collision)
 - **Entity shapes** (via `properties.shape`): box (default), sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
 
