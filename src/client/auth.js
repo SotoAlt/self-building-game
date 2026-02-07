@@ -5,7 +5,7 @@
  * Falls back to guest-only when Privy credentials aren't configured.
  */
 
-import Privy, { LocalStorage } from '@privy-io/js-sdk-core';
+import Privy, { LocalStorage, getUserEmbeddedEthereumWallet } from '@privy-io/js-sdk-core';
 import { Buffer } from 'buffer';
 globalThis.Buffer = Buffer;
 
@@ -39,29 +39,15 @@ async function setupEmbeddedWalletProxy() {
     iframe.addEventListener('load', resolve, { once: true });
   });
 
-  privy.setMessagePoster({
-    postMessage(msg, origin, transfer) {
-      iframe.contentWindow?.postMessage(msg, origin, transfer);
-    },
-    reload() {
-      iframe.src = iframeUrl;
-    }
-  });
+  privy.setMessagePoster(iframe.contentWindow);
 
   window.addEventListener('message', (e) => {
-    if (e.source === iframe.contentWindow && e.data?.type?.startsWith?.('privy:')) {
+    if (e.source === iframe.contentWindow) {
       privy.embeddedWallet.onMessage(e.data);
     }
   });
 
-  // Verify proxy is responsive — iframe JS may take time to boot after HTML loads
-  let ready = false;
-  for (let i = 0; i < 3; i++) {
-    ready = await privy.embeddedWallet.ping(5000).catch(() => false);
-    if (ready) break;
-    await new Promise(r => setTimeout(r, 1000));
-  }
-  console.log('[Auth] Embedded wallet proxy:', ready ? 'ready' : 'timeout (will retry on use)');
+  console.log('[Auth] Embedded wallet proxy set up');
 }
 
 export async function getPrivyUser() {
@@ -105,9 +91,7 @@ export async function handleOAuthCallback() {
 }
 
 function findEvmWallet(user) {
-  return user?.linked_accounts?.find(
-    a => a.type === 'wallet' && a.walletClientType === 'privy' && a.chainType === 'ethereum'
-  ) || null;
+  return getUserEmbeddedEthereumWallet(user);
 }
 
 export async function ensureEmbeddedWallet() {
@@ -186,40 +170,22 @@ export async function getEmbeddedWalletProvider() {
 
     // If no wallet linked yet, provision one and re-fetch
     if (!wallet) {
-      console.warn('[Auth] getProvider: no EVM wallet in linked_accounts, provisioning...');
-      const types = user?.linked_accounts?.map(a => `${a.type}:${a.walletClientType || ''}:${a.chainType || ''}`);
-      console.log('[Auth] linked_accounts:', types);
-      await privy.embeddedWallet.create({}).catch(e => console.log('[Auth] create:', e.message));
-      user = (await privy.user.get()).user;
+      console.log('[Auth] No embedded wallet found, creating...');
+      const result = await privy.embeddedWallet.create({});
+      user = result.user;
       wallet = findEvmWallet(user);
       if (!wallet) {
-        const types2 = user?.linked_accounts?.map(a => `${a.type}:${a.walletClientType || ''}:${a.chainType || ''}`);
-        console.warn('[Auth] getProvider: still no EVM wallet after create. accounts:', types2);
+        console.warn('[Auth] Still no embedded wallet after create');
         return null;
       }
     }
 
-    // Try getting the provider directly; if it fails, re-provision keys and retry
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const provider = await privy.embeddedWallet.getProvider(wallet);
-        return { provider, address: wallet.address };
-      } catch (err) {
-        if (attempt > 0) throw err;
-        console.warn('[Auth] getProvider failed, re-provisioning keys:', err.message);
-        await privy.embeddedWallet.create({}).catch(() => {});
-        wallet = findEvmWallet((await privy.user.get()).user);
-        if (!wallet) {
-          console.warn('[Auth] getProvider: no EVM wallet after re-provisioning');
-          return null;
-        }
-      }
-    }
+    const provider = await privy.embeddedWallet.getProvider(wallet);
+    return { provider, address: wallet.address };
   } catch (e) {
     console.error('[Auth] getEmbeddedWalletProvider failed:', e);
     return null;
   }
-  return null;
 }
 
 export async function getEmbeddedWalletAddress() {
