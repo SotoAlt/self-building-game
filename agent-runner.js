@@ -6,7 +6,7 @@
  * Polls the game server for context, decides when to invoke the agent,
  * and uses `openclaw agent` CLI to send messages.
  *
- * v0.17.0 — Lobby pacing: proper lobby phase, lobby timer, rewritten phase prompts
+ * v0.20.0 — Prefabs, breakable platforms, hex_a_gone template
  */
 
 import { execFile } from 'child_process';
@@ -164,7 +164,7 @@ function buildPrompt(phase, context, drama) {
   If the lobby timer is still active (shown below): ONLY chat. Tell jokes, react to messages. Do NOT build anything.
   If the lobby timer has expired: use start_game with a template to begin! This loads the arena AND starts the game in one step.
   Example: start_game({ template: 'parkour_hell' }) or start_game({ template: 'gauntlet', type: 'survival' })
-  Available templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell
+  Available templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone
   DO NOT use load_template — it's been merged into start_game.
   IMPORTANT: If you don't start a game, one will auto-start in 45s!`,
     gaming: `**Phase: GAMING** — A game is active! Commentate, cast spells, add tricks. Do NOT use clear_world or load_template.`,
@@ -183,7 +183,7 @@ function buildPrompt(phase, context, drama) {
     parts.push(phasePrompts[phase] || `**Phase: ${phase}** — Keep the game entertaining.`);
 
     // Creative palette reminder
-    parts.push(`\n**Your palette**: Use start_game({ template: '...' }) to load arenas. Shapes (properties.shape): box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring. Decorations have no collision — use them for visual flair.`);
+    parts.push(`\n**Your palette**: Use start_game({ template: '...' }) to load arenas. Templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone. Prefabs (spawn_prefab): spider, spinning_blade, swinging_axe, crusher, rolling_boulder, bounce_pad, checkpoint, speed_strip, torch, crystal, barrel, flag. Shapes (properties.shape): box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring. Decorations have no collision — use them for visual flair.`);
 
     parts.push(`\n**PACING**: Max 3 world-changing actions this turn. Spell cooldown: 10s between casts. ALWAYS use start_game (with template param) to begin a game — it loads the arena and starts the countdown in one step!`);
   }
@@ -394,7 +394,7 @@ async function tick() {
 // Start
 console.log(`
 ╔═══════════════════════════════════════╗
-║   Chaos Magician Agent Runner v0.17  ║
+║   Chaos Magician Agent Runner v0.20  ║
 ║                                       ║
 ║  Game: ${GAME_URL.padEnd(30)}║
 ║  Session: ${SESSION_ID.slice(0, 27).padEnd(27)}║

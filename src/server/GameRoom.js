@@ -189,6 +189,16 @@ export class GameRoom extends Room {
       this.broadcast('chat_message', message);
     });
 
+    // Breakable platform step notification
+    this.onMessage('platform_step', (client, { entityId }) => {
+      if (!this.worldState) return;
+      const started = this.worldState.startBreaking(entityId);
+      if (!started) return;
+
+      const info = this.worldState.breakingPlatforms.get(entityId);
+      this.broadcast('platform_cracking', { id: entityId, breakAt: info.breakAt });
+    });
+
     // Player ready toggle
     this.onMessage('ready', (client, data) => {
       if (!this.worldState) return;

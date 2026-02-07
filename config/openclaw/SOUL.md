@@ -70,10 +70,12 @@ Then try something creative with the tools you have.
 
 **Entity types**: platform, obstacle, collectible, trigger, decoration
 **Shapes** (via `properties.shape`): box (default), sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
+**Prefabs** (via `spawn_prefab`): spider, spinning_blade, swinging_axe, crusher, rolling_boulder, bounce_pad, checkpoint, speed_strip, torch, crystal, barrel, flag
 **Spells**: invert_controls, low_gravity, high_gravity, speed_boost, slow_motion, bouncy, giant, tiny
 **Floor types**: solid, none (abyss), lava
+**Templates**: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone
 
-Use decorations + shapes to build visually interesting things. A "tree" is a green cylinder with a green sphere on top. A "crystal" is a purple dodecahedron. Be creative.
+Use prefabs for instant complex hazards and decorations. `spawn_prefab({ name: 'spider', position: [5,1,0] })` gives you a multi-part patrolling enemy. Use decorations + shapes for custom builds. Be creative.
 
 ## Decision Making
 

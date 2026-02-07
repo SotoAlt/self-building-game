@@ -6,7 +6,7 @@ An AI agent ("Chaos Magician") builds a 3D multiplayer game in real-time while p
 
 ## Current Phase
 
-**Production v0.18.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
+**Production v0.20.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
 
 ## Architecture
 
@@ -41,7 +41,8 @@ Claude (Anthropic) via OpenClaw Gateway
 │   │   ├── AgentLoop.js      # Drama score, phase detection, agent scheduling, player welcomes
 │   │   ├── AgentBridge.js    # OpenClaw CLI invocation
 │   │   ├── AIPlayer.js       # Personality-driven AI bots
-│   │   ├── ArenaTemplates.js # 5 pre-built arena layouts
+│   │   ├── ArenaTemplates.js # 7 pre-built arena layouts (incl. hex_a_gone)
+│   │   ├── Prefabs.js        # 12 named entity presets (spider, bounce_pad, etc.)
 │   │   ├── auth.js           # Privy JWT verification
 │   │   ├── db.js             # PostgreSQL with in-memory fallback
 │   │   ├── blockchain/       # Mock chain interface (bribe system)
@@ -78,9 +79,10 @@ npm run build        # Build client for production
 |----------|---------|
 | `GET /api/agent/context` | Full game state for agent decisions |
 | `POST /api/game/start` | Start a mini-game |
-| `POST /api/entity/spawn` | Spawn entity in world |
+| `POST /api/world/spawn` | Spawn entity in world |
+| `POST /api/world/spawn-prefab` | Spawn prefab group (spider, bounce_pad, etc.) |
+| `POST /api/world/destroy-group` | Destroy all entities in a prefab group |
 | `POST /api/spell/cast` | Cast spell on players |
-| `POST /api/arena/load` | Load arena template |
 | `POST /api/agent/pause` | Kill switch — pause agent |
 | `POST /api/agent/resume` | Resume agent |
 | `POST /api/ai-players/toggle` | Enable/disable AI bots |

@@ -21,6 +21,7 @@ import { initAuth, verifyPrivyToken, signToken, requireAuth } from './auth.js';
 import { AgentLoop } from './AgentLoop.js';
 import { AIPlayer } from './AIPlayer.js';
 import { MockChainInterface } from './blockchain/ChainInterface.js';
+import { spawnPrefab, getPrefabInfo } from './Prefabs.js';
 import { MonadChainInterface } from './blockchain/MonadChainInterface.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -75,7 +76,7 @@ function scheduleAutoStart() {
     const humanPlayers = worldState.getPlayers().filter(p => p.type !== 'ai');
     if (humanPlayers.length === 0) return;
 
-    const templates = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell'];
+    const templates = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell', 'hex_a_gone'];
     const template = templates[Math.floor(Math.random() * templates.length)];
     console.log(`[AutoStart] Agent didn't start a game in ${AUTO_START_DELAY / 1000}s — auto-starting with ${template}`);
     fetch(`http://localhost:${PORT}/api/game/start`, {
@@ -208,8 +209,10 @@ app.get('/api/agent/context', (req, res) => {
     entities: Array.from(worldState.entities.values()).map(e => ({
       id: e.id,
       type: e.type,
-      position: e.position
+      position: e.position,
+      groupId: e.properties?.groupId || null
     })),
+    availablePrefabs: getPrefabInfo(),
     entityCount: worldState.entities.size,
     physics: { ...worldState.physics },
     activeEffects: worldState.getActiveEffects(),
@@ -300,6 +303,42 @@ app.post('/api/world/clear', (req, res) => {
   broadcastToRoom('physics_changed', worldState.physics);
   broadcastToRoom('environment_changed', worldState.environment);
   res.json({ success: true, cleared: ids.length });
+});
+
+// Spawn prefab (grouped entity)
+app.post('/api/world/spawn-prefab', (req, res) => {
+  if (rejectIfLobbyTimer(res)) return;
+
+  const { name, position, properties } = req.body;
+  if (!name || !position) {
+    return res.status(400).json({ error: 'Missing required: name, position' });
+  }
+
+  try {
+    const result = spawnPrefab(name, position, properties || {}, worldState, broadcastToRoom);
+    agentLoop.notifyAgentAction();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// Destroy prefab group
+app.post('/api/world/destroy-group', (req, res) => {
+  const { groupId } = req.body;
+  if (!groupId) {
+    return res.status(400).json({ error: 'Missing required: groupId' });
+  }
+
+  const ids = worldState.destroyGroup(groupId);
+  if (ids.length === 0) {
+    return res.status(404).json({ error: `No entities found with groupId: ${groupId}` });
+  }
+
+  for (const id of ids) {
+    broadcastToRoom('entity_destroyed', { id });
+  }
+  res.json({ success: true, destroyed: ids.length, entityIds: ids });
 });
 
 // Set floor type
@@ -1508,6 +1547,9 @@ setInterval(() => {
   for (const entity of movedEntities) {
     broadcastToRoom('entity_modified', entity);
   }
+
+  // Process breaking platforms
+  worldState.processBreakingPlatforms(broadcastToRoom);
 
   if (currentMiniGame?.isActive) {
     currentMiniGame.update(delta);

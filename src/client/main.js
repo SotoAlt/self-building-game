@@ -949,6 +949,47 @@ function playSpellSound() {
   });
 }
 
+function playCrackSound() {
+  playSound(() => {
+    const { osc, gain, t } = createTone('sawtooth');
+    osc.frequency.setValueAtTime(400, t);
+    osc.frequency.exponentialRampToValueAtTime(200, t + 0.15);
+    gain.gain.setValueAtTime(0.08, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    osc.start(t);
+    osc.stop(t + 0.15);
+  });
+}
+
+function playBreakSound() {
+  playSound(() => {
+    const { osc, gain, t } = createTone('square');
+    osc.frequency.setValueAtTime(200, t);
+    osc.frequency.exponentialRampToValueAtTime(60, t + 0.2);
+    gain.gain.setValueAtTime(0.1, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    osc.start(t);
+    osc.stop(t + 0.25);
+  });
+}
+
+function playBounceSound() {
+  playSound(() => {
+    const notes = [300, 600, 800];
+    notes.forEach((freq, i) => {
+      const { osc, gain, t } = createTone('sine');
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.12, t + i * 0.06);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + 0.15);
+      osc.start(t + i * 0.06);
+      osc.stop(t + i * 0.06 + 0.15);
+    });
+  });
+}
+
+// Speed boost state
+let speedBoostUntil = 0;
+
 // ============================================
 // Collision Detection (Wall-Slide)
 // ============================================
@@ -1003,6 +1044,23 @@ function checkCollisions() {
       continue;
     }
     if (entity.type === 'trigger') {
+      // Bounce pad
+      if (entity.properties?.isBounce) {
+        const force = entity.properties.bounceForce || 18;
+        playerVelocity.y = force;
+        isGrounded = false;
+        isJumping = true;
+        spawnParticles(playerMesh.position, '#2ecc71', 15, 4);
+        playBounceSound();
+        continue;
+      }
+      // Speed strip
+      if (entity.properties?.isSpeedBoost) {
+        const duration = entity.properties.boostDuration || 3000;
+        speedBoostUntil = Date.now() + duration;
+        spawnParticles(playerMesh.position, '#e67e22', 8, 2);
+        continue;
+      }
       triggerEvent(entity);
       continue;
     }
@@ -1024,6 +1082,12 @@ function checkCollisions() {
         standingOnPlatform = true;
         platformY = platformTop + 1;
         standingOnEntity = entity;
+
+        // Breakable platform — notify server once
+        if (entity.properties?.breakable && !mesh.userData._breakNotified) {
+          mesh.userData._breakNotified = true;
+          sendToServer('platform_step', { entityId: entity.id });
+        }
 
         // Track kinematic platform velocity for carry
         if (entity.properties?.kinematic && mesh.userData.lastPosition) {
@@ -1207,6 +1271,7 @@ function updatePlayer(delta) {
 
   if (hasEffect('speed_boost')) targetSpeed = 30;
   if (hasEffect('slow_motion')) targetSpeed = 10;
+  if (Date.now() < speedBoostUntil) targetSpeed *= 2;
   if (hasEffect('low_gravity')) spellGravityMult = 0.3;
   if (hasEffect('high_gravity')) spellGravityMult = 2.5;
   if (hasEffect('bouncy')) jumpForce *= 1.5;
@@ -1885,7 +1950,24 @@ async function connectToServer() {
     });
 
     room.onMessage('entity_destroyed', ({ id }) => {
+      // Break particles if this entity was cracking
+      const mesh = entityMeshes.get(id);
+      if (mesh?.userData.cracking) {
+        const entity = mesh.userData.entity;
+        const color = entity?.properties?.color || '#aaaaaa';
+        spawnParticles(mesh.position, color, 20, 5);
+        playBreakSound();
+      }
       removeEntity(id);
+    });
+
+    room.onMessage('platform_cracking', ({ id }) => {
+      const mesh = entityMeshes.get(id);
+      if (mesh) {
+        mesh.userData.cracking = true;
+        mesh.userData.crackStart = Date.now();
+        playCrackSound();
+      }
     });
 
     room.onMessage('physics_changed', (physics) => {
@@ -2157,6 +2239,19 @@ function animate() {
 
     if (mesh.userData.rotating) {
       mesh.rotation.y += mesh.userData.speed * delta;
+    }
+
+    // Cracking animation for breakable platforms
+    if (mesh.userData.cracking) {
+      const elapsed = (Date.now() - mesh.userData.crackStart) / 1000;
+      // Shake
+      mesh.position.x += (Math.random() - 0.5) * 0.04;
+      mesh.position.z += (Math.random() - 0.5) * 0.04;
+      // Darken and fade
+      if (mesh.material) {
+        mesh.material.transparent = true;
+        mesh.material.opacity = Math.max(0.2, 1 - elapsed * 1.5);
+      }
     }
 
     // Collectible bobbing

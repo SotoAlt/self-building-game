@@ -5,6 +5,42 @@
  * Each template defines entities, a goal position, game type, and respawn point.
  */
 
+// Generate 3-layer hex-staggered breakable grid for Hex-A-Gone
+function generateHexAGoneEntities() {
+  const entities = [];
+  const layers = [
+    { y: 1, color: '#e67e22', breakDelay: 400 },    // bottom — orange
+    { y: 5, color: '#2ecc71', breakDelay: 350 },    // middle — green
+    { y: 9, color: '#3498db', breakDelay: 300 },    // top — blue
+  ];
+  const spacing = 2.5;
+  const maxRadius = 8.75;
+
+  for (const layer of layers) {
+    for (let row = -4; row <= 4; row++) {
+      const zOffset = row % 2 !== 0 ? spacing / 2 : 0;
+      for (let col = -4; col <= 4; col++) {
+        const x = col * spacing + zOffset;
+        const z = row * spacing;
+        if (Math.sqrt(x * x + z * z) > maxRadius) continue;
+
+        entities.push({
+          type: 'platform',
+          position: [x, layer.y, z],
+          size: [2, 0.3, 2],
+          properties: {
+            color: layer.color,
+            breakable: true,
+            breakDelay: layer.breakDelay,
+          },
+        });
+      }
+    }
+  }
+
+  return entities;
+}
+
 export const TEMPLATES = {
   spiral_tower: {
     name: 'Spiral of Madness',
@@ -160,6 +196,16 @@ export const TEMPLATES = {
       { type: 'platform', position: [0, 38, -25], size: [4, 1, 4], properties: { color: '#f1c40f' } },
       { type: 'trigger', position: [0, 40, -25], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } }
     ]
+  },
+
+  hex_a_gone: {
+    name: 'Hex-A-Gone',
+    gameType: 'survival',
+    floorType: 'none',
+    environment: { skyColor: '#120326', fogColor: '#120326', fogNear: 20, fogFar: 80, ambientColor: '#553388', ambientIntensity: 0.5, sunColor: '#aa77ff', sunIntensity: 0.7 },
+    respawnPoint: [0, 12, 0],
+    goalPosition: null,
+    entities: generateHexAGoneEntities(),
   },
 
   blank_canvas: {

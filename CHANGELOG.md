@@ -2,6 +2,29 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.20.0] - 2026-02-06
+
+### Added
+- **Prefab system** (`src/server/Prefabs.js`) — 12 named entity presets that bundle multiple child entities with behaviors into a single spawn call
+  - **Hazards**: `spider` (patrolling), `spinning_blade` (fast rotate), `swinging_axe` (pendulum), `crusher` (vertical slam), `rolling_boulder` (linear patrol)
+  - **Utility**: `bounce_pad` (launches players upward), `checkpoint` (respawn flag), `speed_strip` (temporary 2x speed boost)
+  - **Decoration**: `torch` (emissive flame), `crystal` (rotating glow), `barrel`, `flag`
+- **Breakable platforms** — server-authoritative break/regen cycle: client sends `platform_step` → server broadcasts `platform_cracking` → entity destroyed after `breakDelay` ms → optional regen via `regenDelay`
+- **Bounce pad trigger** — upward launch with force, particles, and ascending sound
+- **Speed strip trigger** — temporary 2x speed boost with duration
+- **`hex_a_gone` arena template** — 3-layer hex-staggered grid (111 breakable platforms), survival mode, dark purple environment
+- **API endpoints**: `POST /api/world/spawn-prefab`, `POST /api/world/destroy-group`
+- **Agent tools**: `spawn_prefab` (12 prefab names + properties), `destroy_prefab` (by groupId)
+- **Agent context**: `availablePrefabs` field in `/api/agent/context`, `groupId` on entity data
+- **Client sounds**: `playCrackSound()`, `playBreakSound()`, `playBounceSound()`
+- **Client crack animation**: shake + fade for breakable platforms before destruction + break particles on destroy
+
+### Changed
+- **SOUL.md creative palette** — now includes prefab names and hex_a_gone template
+- **Agent prompt** — prefab and template list in creative palette reminder
+- **Auto-start template list** — `hex_a_gone` added to random rotation
+- **WorldState.clearEntities()** — also clears `breakingPlatforms` map
+
 ## [0.18.0] - 2026-02-06
 
 ### Added

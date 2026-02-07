@@ -205,7 +205,7 @@ async function get_game_types() {
  * Start a mini-game session. Optionally loads a template atomically (clears world, spawns arena, then starts game).
  *
  * Parameters:
- *   template (optional): Arena template name. Available: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell
+ *   template (optional): Arena template name. Available: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone
  *   type (optional if template provided): Game type — reach, collect, survival. If omitted, uses the template's default gameType.
  *   timeLimit, goalPosition, collectibleCount (optional): Game config overrides.
  *
@@ -216,7 +216,7 @@ async function get_game_types() {
  */
 async function start_game({ type, template, timeLimit, goalPosition, collectibleCount }) {
   if (!type && !template) {
-    return { success: false, error: 'Provide either type or template (or both). Available templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell' };
+    return { success: false, error: 'Provide either type or template (or both). Available templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone' };
   }
 
   if (type) {
@@ -386,7 +386,7 @@ async function clear_world() {
 async function load_template({ name }) {
   return {
     success: false,
-    error: `load_template is deprecated. Use start_game with template parameter instead: start_game({ template: '${name || 'parkour_hell'}' }). Available templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell`
+    error: `load_template is deprecated. Use start_game with template parameter instead: start_game({ template: '${name || 'parkour_hell'}' }). Available templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone`
   };
 }
 
@@ -485,6 +485,48 @@ async function honor_bribe({ bribeId, response }) {
   return gameRequest(`/api/bribe/${bribeId}/honor`, 'POST', body);
 }
 
+// ============================================
+// Prefabs
+// ============================================
+
+/**
+ * Tool: spawn_prefab
+ * Spawn a named prefab (multi-entity group) in the world.
+ *
+ * Available prefabs:
+ *   HAZARDS: spider, spinning_blade, swinging_axe, crusher, rolling_boulder
+ *   UTILITY: bounce_pad, checkpoint, speed_strip
+ *   DECORATION: torch, crystal, barrel, flag
+ *
+ * Examples:
+ *   spawn_prefab({ name: 'spider', position: [5, 1, 0] })
+ *   spawn_prefab({ name: 'bounce_pad', position: [0, 0.5, -10] })
+ *   spawn_prefab({ name: 'torch', position: [8, 0, 3] })
+ *   spawn_prefab({ name: 'spider', position: [5, 1, 0], properties: { patrolRadius: 10, speed: 2 } })
+ */
+async function spawn_prefab({ name, position, properties = {} }) {
+  if (!name || !position) {
+    return { success: false, error: 'Missing required: name, position' };
+  }
+
+  return gameRequest('/api/world/spawn-prefab', 'POST', { name, position, properties });
+}
+
+/**
+ * Tool: destroy_prefab
+ * Destroy all entities in a prefab group by groupId.
+ * Use get_context to find groupId values on entities.
+ *
+ * Example: destroy_prefab({ groupId: 'prefab-spider-a1b2c3d4' })
+ */
+async function destroy_prefab({ groupId }) {
+  if (!groupId) {
+    return { success: false, error: 'Missing required: groupId' };
+  }
+
+  return gameRequest('/api/world/destroy-group', 'POST', { groupId });
+}
+
 // Export tools for OpenClaw
 export {
   // World management
@@ -521,5 +563,8 @@ export {
   get_context,
   get_drama_score,
   check_bribes,
-  honor_bribe
+  honor_bribe,
+  // Prefabs
+  spawn_prefab,
+  destroy_prefab
 };

@@ -46,6 +46,9 @@ export class WorldState {
 
     this.activeEffects = [];
 
+    // Breaking platforms: entityId → { breakAt, regenDelay, originalEntity }
+    this.breakingPlatforms = new Map();
+
     // Pacing cooldowns
     this.lastSpellCastTime = 0;
     this.lastTemplateLoadTime = 0;
@@ -144,11 +147,87 @@ export class WorldState {
   clearEntities() {
     const ids = [...this.entities.keys()];
     this.entities.clear();
+    this.breakingPlatforms.clear();
     this.physics = { ...WorldState.DEFAULT_PHYSICS };
     this.floorType = 'solid';
     this.environment = { ...WorldState.DEFAULT_ENVIRONMENT };
     this.clearEffects();
     console.log(`[WorldState] Cleared ${ids.length} entities`);
+    return ids;
+  }
+
+  // ============================================
+  // Breakable Platforms
+  // ============================================
+
+  startBreaking(entityId) {
+    if (this.breakingPlatforms.has(entityId)) return false;
+
+    const entity = this.entities.get(entityId);
+    if (!entity || !entity.properties?.breakable) return false;
+
+    const breakDelay = entity.properties.breakDelay || 500;
+    const regenDelay = entity.properties.regenDelay || 0; // 0 = no regen
+
+    this.breakingPlatforms.set(entityId, {
+      breakAt: Date.now() + breakDelay,
+      regenDelay,
+      originalEntity: {
+        type: entity.type,
+        position: [...entity.position],
+        size: [...entity.size],
+        properties: { ...entity.properties },
+      },
+    });
+
+    return true;
+  }
+
+  processBreakingPlatforms(broadcastFn) {
+    const now = Date.now();
+
+    for (const [entityId, info] of this.breakingPlatforms) {
+      if (now >= info.breakAt && this.entities.has(entityId)) {
+        // Destroy the platform
+        this.entities.delete(entityId);
+        broadcastFn('entity_destroyed', { id: entityId });
+        console.log(`[WorldState] Breakable platform destroyed: ${entityId}`);
+
+        // Schedule regen if configured
+        if (info.regenDelay > 0) {
+          const orig = info.originalEntity;
+          setTimeout(() => {
+            try {
+              const reborn = this.spawnEntity(orig.type, orig.position, orig.size, orig.properties);
+              broadcastFn('entity_spawned', reborn);
+              console.log(`[WorldState] Platform regenerated: ${reborn.id}`);
+            } catch { /* entity limit or world cleared */ }
+          }, info.regenDelay);
+        }
+
+        this.breakingPlatforms.delete(entityId);
+      }
+    }
+  }
+
+  // ============================================
+  // Group Operations (Prefabs)
+  // ============================================
+
+  getEntitiesByGroup(groupId) {
+    return Array.from(this.entities.values()).filter(
+      e => e.properties?.groupId === groupId
+    );
+  }
+
+  destroyGroup(groupId) {
+    const ids = [];
+    for (const [id, entity] of this.entities) {
+      if (entity.properties?.groupId !== groupId) continue;
+      ids.push(id);
+      this.entities.delete(id);
+    }
+    console.log(`[WorldState] Destroyed group ${groupId} (${ids.length} entities)`);
     return ids;
   }
 
