@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { Client } from 'colyseus.js';
 import {
-  initPrivy, handleOAuthCallback, exchangeForBackendToken,
+  initPrivy, handleOAuthCallback, exchangeForBackendToken, ensureEmbeddedWallet,
   loginAsGuest, loginWithTwitter, getPrivyUser, getToken, debugAuth, logout,
   getEmbeddedWalletProvider, getEmbeddedWalletAddress
 } from './auth.js';
@@ -2401,8 +2401,9 @@ async function startAuthFlow() {
 
   return new Promise((resolve) => {
     // Continue with cached session
-    continueBtn?.addEventListener('click', () => {
+    continueBtn?.addEventListener('click', async () => {
       if (cachedSession) {
+        await ensureEmbeddedWallet();
         document.getElementById('login-screen').style.display = 'none';
         resolve(cachedSession);
       }
@@ -2526,6 +2527,7 @@ function setupBribeUI() {
     const walletResult = await getEmbeddedWalletProvider();
     if (!walletResult) {
       showToast('Wallet not available. Try refreshing the page.', 'error');
+      console.error('[Bribe] getEmbeddedWalletProvider returned null (see [Auth] warnings)');
       return null;
     }
     const { provider, address } = walletResult;

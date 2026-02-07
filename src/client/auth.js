@@ -21,19 +21,23 @@ export async function initPrivy(appId, clientId) {
   try {
     await privy.initialize();
     console.log('[Auth] Privy initialized');
-    setupEmbeddedWalletProxy();
+    await setupEmbeddedWalletProxy();
   } catch (e) {
     console.error('[Auth] Privy initialization failed:', e);
   }
 }
 
-function setupEmbeddedWalletProxy() {
+async function setupEmbeddedWalletProxy() {
   const iframeUrl = privy.embeddedWallet.getURL();
   const iframe = document.createElement('iframe');
   iframe.src = iframeUrl;
   iframe.style.display = 'none';
   iframe.id = 'privy-embedded-wallet-iframe';
   document.body.appendChild(iframe);
+
+  await new Promise((resolve) => {
+    iframe.addEventListener('load', resolve, { once: true });
+  });
 
   privy.setMessagePoster({
     postMessage(msg, origin, transfer) {
@@ -49,7 +53,10 @@ function setupEmbeddedWalletProxy() {
       privy.embeddedWallet.onMessage(e.data);
     }
   });
-  console.log('[Auth] Embedded wallet proxy initialized');
+
+  // Verify proxy is responsive
+  const ready = await privy.embeddedWallet.ping(10000).catch(() => false);
+  console.log('[Auth] Embedded wallet proxy:', ready ? 'ready' : 'timeout (will retry on use)');
 }
 
 export async function getPrivyUser() {
@@ -164,10 +171,16 @@ export async function logout() {
 }
 
 export async function getEmbeddedWalletProvider() {
-  if (!privy) return null;
+  if (!privy) {
+    console.warn('[Auth] getProvider: privy not initialized');
+    return null;
+  }
   try {
     let wallet = findEvmWallet((await privy.user.get()).user);
-    if (!wallet) return null;
+    if (!wallet) {
+      console.warn('[Auth] getProvider: no EVM wallet in linked_accounts');
+      return null;
+    }
 
     // Try getting the provider directly; if it fails, provision keys and retry
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -179,7 +192,10 @@ export async function getEmbeddedWalletProvider() {
         console.warn('[Auth] getProvider failed, provisioning keys:', err.message);
         await privy.embeddedWallet.create({}).catch(() => {});
         wallet = findEvmWallet((await privy.user.get()).user);
-        if (!wallet) return null;
+        if (!wallet) {
+          console.warn('[Auth] getProvider: no EVM wallet after provisioning');
+          return null;
+        }
       }
     }
   } catch (e) {
