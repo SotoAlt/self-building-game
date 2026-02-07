@@ -2532,6 +2532,13 @@ function setupBribeUI() {
     }
     const { provider, address } = walletResult;
 
+    // Switch to Monad chain
+    try {
+      await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x8f' }] });
+    } catch (switchErr) {
+      console.warn('[Bribe] Chain switch failed:', switchErr.message);
+    }
+
     // Pre-check balance
     try {
       const balHex = await provider.request({ method: 'eth_getBalance', params: [address, 'latest'] });

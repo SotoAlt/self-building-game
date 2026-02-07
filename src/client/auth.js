@@ -14,10 +14,24 @@ const API_URL = isLocalhost
   ? 'http://localhost:3000'
   : `${window.location.protocol}//${window.location.host}`;
 
+const monad = {
+  id: 143,
+  name: 'Monad',
+  network: 'monad',
+  nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['https://rpc.monad.xyz'] },
+    public: { http: ['https://rpc.monad.xyz'] }
+  },
+  blockExplorers: {
+    default: { name: 'Monadscan', url: 'https://monadscan.com' }
+  }
+};
+
 let privy = null;
 
 export async function initPrivy(appId, clientId) {
-  privy = new Privy({ appId, clientId, storage: new LocalStorage() });
+  privy = new Privy({ appId, clientId, storage: new LocalStorage(), supportedChains: [monad] });
   try {
     await privy.initialize();
     console.log('[Auth] Privy initialized');
