@@ -21,9 +21,35 @@ export async function initPrivy(appId, clientId) {
   try {
     await privy.initialize();
     console.log('[Auth] Privy initialized');
+    setupEmbeddedWalletProxy();
   } catch (e) {
     console.error('[Auth] Privy initialization failed:', e);
   }
+}
+
+function setupEmbeddedWalletProxy() {
+  const iframeUrl = privy.embeddedWallet.getURL();
+  const iframe = document.createElement('iframe');
+  iframe.src = iframeUrl;
+  iframe.style.display = 'none';
+  iframe.id = 'privy-embedded-wallet-iframe';
+  document.body.appendChild(iframe);
+
+  privy.setMessagePoster({
+    postMessage(msg, origin, transfer) {
+      iframe.contentWindow?.postMessage(msg, origin, transfer);
+    },
+    reload() {
+      iframe.src = iframeUrl;
+    }
+  });
+
+  window.addEventListener('message', (e) => {
+    if (e.source === iframe.contentWindow) {
+      privy.embeddedWallet.onMessage(e.data);
+    }
+  });
+  console.log('[Auth] Embedded wallet proxy initialized');
 }
 
 export async function getPrivyUser() {
