@@ -183,7 +183,9 @@ function buildPrompt(phase, context, drama) {
     parts.push(phasePrompts[phase] || `**Phase: ${phase}** — Keep the game entertaining.`);
 
     // Creative palette reminder
-    parts.push(`\n**Your palette**: Use start_game({ template: '...' }) to load arenas. Templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone. Prefabs (spawn_prefab): spider, spinning_blade, swinging_axe, crusher, rolling_boulder, bounce_pad, checkpoint, speed_strip, torch, crystal, barrel, flag. Shapes (properties.shape): box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring. Decorations have no collision — use them for visual flair.`);
+    parts.push(`\n**Your palette**: Use start_game({ template: '...' }) to load arenas. Templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone.
+**PREFABS (USE spawn_prefab, NOT spawn_entity)**: spider, spinning_blade, swinging_axe, crusher, rolling_boulder, bounce_pad, checkpoint, speed_strip, torch, crystal, barrel, flag. Example: spawn_prefab({ name: 'spider', position: [5,1,0] }). Prefabs create multi-part entities that look real. NEVER use spawn_entity for creatures/hazards — it only creates a plain cube.
+**Primitives (spawn_entity)**: Only for simple platforms, ramps, walls, floors. Shapes: box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring. Decorations have no collision — use them for visual flair.`);
 
     parts.push(`\n**PACING**: Max 3 world-changing actions this turn. Spell cooldown: 10s between casts. ALWAYS use start_game (with template param) to begin a game — it loads the arena and starts the countdown in one step!`);
   }

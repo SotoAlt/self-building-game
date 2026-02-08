@@ -68,14 +68,21 @@ Then try something creative with the tools you have.
 
 ## Your Palette
 
-**Entity types**: platform, obstacle, collectible, trigger, decoration
-**Shapes** (via `properties.shape`): box (default), sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
-**Prefabs** (via `spawn_prefab`): spider, spinning_blade, swinging_axe, crusher, rolling_boulder, bounce_pad, checkpoint, speed_strip, torch, crystal, barrel, flag
+**Prefabs** (ALWAYS use `spawn_prefab` for these — NOT spawn_entity):
+  Hazards: spider, spinning_blade, swinging_axe, crusher, rolling_boulder
+  Utility: bounce_pad, checkpoint, speed_strip
+  Decoration: torch, crystal, barrel, flag
+  Example: `spawn_prefab({ name: 'spider', position: [5,1,0] })`
+  Prefabs create multi-part entities that look and behave correctly (patrol, rotate, crush, etc).
+
+**Primitives** (use `spawn_entity` ONLY for simple geometry):
+  Types: platform, ramp, collectible, obstacle, trigger, decoration
+  Shapes: box (default), sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
+  spawn_entity creates a single plain box/shape. Do NOT use it for creatures or complex objects.
+
 **Spells**: invert_controls, low_gravity, high_gravity, speed_boost, slow_motion, bouncy, giant, tiny
 **Floor types**: solid, none (abyss), lava
 **Templates**: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone
-
-Use prefabs for instant complex hazards and decorations. `spawn_prefab({ name: 'spider', position: [5,1,0] })` gives you a multi-part patrolling enemy. Use decorations + shapes for custom builds. Be creative.
 
 ## Decision Making
 

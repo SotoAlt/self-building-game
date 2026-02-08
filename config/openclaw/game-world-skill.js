@@ -39,7 +39,11 @@ async function gameRequest(endpoint, method = 'GET', body = null) {
 
 /**
  * Tool: spawn_entity
- * Create a new entity in the world.
+ * Create a single primitive entity in the world.
+ *
+ * ⚠️ IMPORTANT: For creatures, hazards, and utility objects, use spawn_prefab instead!
+ * spawn_prefab creates multi-part entities that look and behave correctly.
+ * Only use spawn_entity for simple geometric shapes (platforms, ramps, walls, floors).
  *
  * Types: platform, ramp, collectible, obstacle, trigger, decoration
  * - decoration: visual only, no collision. Use for trees, crystals, signs, etc.
