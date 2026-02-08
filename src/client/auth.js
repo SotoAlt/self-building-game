@@ -9,6 +9,18 @@ import Privy, { LocalStorage, getUserEmbeddedEthereumWallet } from '@privy-io/js
 import { Buffer } from 'buffer';
 globalThis.Buffer = Buffer;
 
+// Privy JS SDK Core fires analytics_events via fetch, but the endpoint
+// lacks CORS headers for custom domains. The retry loop blocks transactions.
+// Suppress these silently so embedded wallet operations complete.
+const _fetch = window.fetch;
+window.fetch = function(...args) {
+  const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+  if (url?.includes('/analytics_events')) {
+    return _fetch.apply(this, args).catch(() => new Response('{}', { status: 200 }));
+  }
+  return _fetch.apply(this, args);
+};
+
 const isLocalhost = window.location.hostname === 'localhost';
 const API_URL = isLocalhost
   ? 'http://localhost:3000'
