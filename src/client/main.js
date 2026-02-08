@@ -8,8 +8,7 @@ import { Client } from 'colyseus.js';
 import {
   initPrivy, handleOAuthCallback, exchangeForBackendToken, ensureEmbeddedWallet,
   loginAsGuest, loginWithTwitter, getPrivyUser, getToken, debugAuth, logout,
-  getEmbeddedWalletProvider, getEmbeddedWalletAddress,
-  showWalletUI, hideWalletUI
+  getEmbeddedWalletProvider, getEmbeddedWalletAddress
 } from './auth.js';
 
 const TREASURY_ADDRESS = import.meta.env.VITE_TREASURY_ADDRESS || '';
@@ -2552,30 +2551,29 @@ function setupBribeUI() {
       return null;
     }
 
-    // Send transaction — show Privy iframe for approval
+    // Send transaction
     try {
-      showWalletUI();
-      const txHash = await provider.request({
+      showToast('Sending transaction...', 'warning');
+      console.log('[Bribe] Calling eth_sendTransaction...', { from: address, to: TREASURY_ADDRESS, value: option.costWei });
+      const result = await provider.request({
         method: 'eth_sendTransaction',
         params: [{
           from: address,
           to: TREASURY_ADDRESS,
-          value: '0x' + BigInt(option.costWei).toString(16),
-          chainId: '0x8f' // Monad mainnet (143)
+          value: '0x' + BigInt(option.costWei).toString(16)
         }]
       });
-      hideWalletUI();
-      return txHash;
-    } catch (err) {
-      hideWalletUI();
-      const isUserRejection = err.code === 4001
-        || err.message?.includes('rejected')
-        || err.message?.includes('denied');
-      if (isUserRejection) {
-        showToast('Transaction cancelled', 'warning');
-      } else {
-        showToast('Transaction failed: ' + (err.message || 'Unknown error'), 'error');
+      console.log('[Bribe] Transaction result:', typeof result, String(result).slice(0, 100));
+      if (typeof result === 'string' && result.startsWith('0x') && result.length === 66) {
+        showToast('Transaction sent!', 'success');
+        return result;
       }
+      console.warn('[Bribe] Unexpected result format:', result);
+      showToast('Transaction may have failed — check console', 'error');
+      return null;
+    } catch (err) {
+      console.error('[Bribe] eth_sendTransaction error:', err);
+      showToast('Transaction failed: ' + (err.message || 'Unknown error'), 'error');
       return null;
     }
   }
