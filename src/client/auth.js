@@ -5,7 +5,7 @@
  * Falls back to guest-only when Privy credentials aren't configured.
  */
 
-import Privy, { LocalStorage, getUserEmbeddedEthereumWallet } from '@privy-io/js-sdk-core';
+import Privy, { LocalStorage, getUserEmbeddedEthereumWallet, getEntropyDetailsFromUser } from '@privy-io/js-sdk-core';
 import { Buffer } from 'buffer';
 globalThis.Buffer = Buffer;
 
@@ -68,7 +68,7 @@ async function setupEmbeddedWalletProxy() {
   privy.setMessagePoster(iframe.contentWindow);
 
   window.addEventListener('message', (e) => {
-    if (e.source === iframe.contentWindow) {
+    if (e.source === iframe.contentWindow && typeof e.data === 'object' && e.data !== null) {
       privy.embeddedWallet.onMessage(e.data);
     }
   });
@@ -206,7 +206,10 @@ export async function getEmbeddedWalletProvider() {
       }
     }
 
-    const provider = await privy.embeddedWallet.getProvider(wallet);
+    const { entropyId, entropyIdVerifier } = getEntropyDetailsFromUser(user);
+    const provider = await privy.embeddedWallet.getEthereumProvider({
+      wallet, entropyId, entropyIdVerifier
+    });
     return { provider, address: wallet.address };
   } catch (e) {
     console.error('[Auth] getEmbeddedWalletProvider failed:', e);
