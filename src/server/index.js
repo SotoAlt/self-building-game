@@ -1548,6 +1548,12 @@ setInterval(() => {
     broadcastToRoom('entity_modified', entity);
   }
 
+  // Update chasing entities (spiders, ghosts, etc.)
+  const chasedEntities = worldState.updateChasingEntities(delta);
+  for (const entity of chasedEntities) {
+    broadcastToRoom('entity_modified', entity);
+  }
+
   // Process breaking platforms
   worldState.processBreakingPlatforms(broadcastToRoom);
 

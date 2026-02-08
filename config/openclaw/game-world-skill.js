@@ -498,9 +498,9 @@ async function honor_bribe({ bribeId, response }) {
  * Spawn a named prefab (multi-entity group) in the world.
  *
  * Available prefabs:
- *   HAZARDS: spider, spinning_blade, swinging_axe, crusher, rolling_boulder
+ *   HAZARDS: spider, shark, ghost, ufo, car, spinning_blade, swinging_axe, crusher, rolling_boulder, cactus
  *   UTILITY: bounce_pad, checkpoint, speed_strip
- *   DECORATION: torch, crystal, barrel, flag
+ *   DECORATION: torch, crystal, barrel, flag, tree, snowman, fish, mushroom, rocket, trashcan
  *
  * Examples:
  *   spawn_prefab({ name: 'spider', position: [5, 1, 0] })

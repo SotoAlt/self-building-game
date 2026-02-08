@@ -769,6 +769,68 @@ export class WorldState {
   }
 
   // ============================================
+  // Chase Entities
+  // ============================================
+
+  updateChasingEntities(delta) {
+    const moved = [];
+    // Collect alive player positions
+    const playerPositions = [];
+    for (const p of this.players.values()) {
+      if (p.state === 'alive' && p.position) playerPositions.push(p.position);
+    }
+    if (playerPositions.length === 0) return moved;
+
+    // Find all entities in a chase group
+    const chaseGroups = new Map(); // groupId -> [entities]
+    for (const entity of this.entities.values()) {
+      if (!entity.properties?.chase || !entity.properties?.groupId) continue;
+      const gid = entity.properties.groupId;
+      if (!chaseGroups.has(gid)) chaseGroups.set(gid, []);
+      chaseGroups.get(gid).push(entity);
+    }
+
+    for (const [, entities] of chaseGroups) {
+      // Use the first entity (body) as the leader
+      const leader = entities[0];
+      const speed = (leader.properties.speed || 2) * delta;
+      const radius = leader.properties.chaseRadius || 20;
+
+      // Find nearest player to leader
+      let nearest = null;
+      let nearestDist = Infinity;
+      for (const pos of playerPositions) {
+        const dx = pos[0] - leader.position[0];
+        const dz = pos[2] - leader.position[2];
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < nearestDist) { nearestDist = dist; nearest = pos; }
+      }
+
+      if (!nearest || nearestDist > radius) continue;
+
+      // Move leader toward player (XZ only, keep Y)
+      const dx = nearest[0] - leader.position[0];
+      const dz = nearest[2] - leader.position[2];
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < 0.3) continue; // close enough
+
+      const moveX = (dx / dist) * speed;
+      const moveZ = (dz / dist) * speed;
+
+      // Move all entities in the group by the same offset
+      for (const entity of entities) {
+        entity.position = [
+          entity.position[0] + moveX,
+          entity.position[1],
+          entity.position[2] + moveZ,
+        ];
+        moved.push(entity);
+      }
+    }
+    return moved;
+  }
+
+  // ============================================
   // Spells / World Effects
   // ============================================
 

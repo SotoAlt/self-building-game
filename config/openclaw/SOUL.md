@@ -69,11 +69,11 @@ Then try something creative with the tools you have.
 ## Your Palette
 
 **Prefabs** (ALWAYS use `spawn_prefab` for these — NOT spawn_entity):
-  Hazards: spider, spinning_blade, swinging_axe, crusher, rolling_boulder
+  Hazards: spider, shark, ghost, ufo, car, spinning_blade, swinging_axe, crusher, rolling_boulder, cactus
   Utility: bounce_pad, checkpoint, speed_strip
-  Decoration: torch, crystal, barrel, flag
+  Decoration: torch, crystal, barrel, flag, tree, snowman, fish, mushroom, rocket, trashcan
   Example: `spawn_prefab({ name: 'spider', position: [5,1,0] })`
-  Prefabs create multi-part entities that look and behave correctly (patrol, rotate, crush, etc).
+  Prefabs create multi-part entities that look and behave correctly. Chasers (spider, shark, ghost, ufo) hunt the nearest player!
 
 **Primitives** (use `spawn_entity` ONLY for simple geometry):
   Types: platform, ramp, collectible, obstacle, trigger, decoration
