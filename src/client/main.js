@@ -8,7 +8,8 @@ import { Client } from 'colyseus.js';
 import {
   initPrivy, handleOAuthCallback, exchangeForBackendToken, ensureEmbeddedWallet,
   loginAsGuest, loginWithTwitter, getPrivyUser, getToken, debugAuth, logout,
-  getEmbeddedWalletProvider, getEmbeddedWalletAddress
+  getEmbeddedWalletProvider, getEmbeddedWalletAddress,
+  showWalletUI, hideWalletUI
 } from './auth.js';
 
 const TREASURY_ADDRESS = import.meta.env.VITE_TREASURY_ADDRESS || '';
@@ -2551,10 +2552,10 @@ function setupBribeUI() {
       return null;
     }
 
-    // Send transaction
+    // Send transaction — show Privy iframe for approval
     try {
-      showToast('Confirm transaction in your wallet...', 'warning');
-      return await provider.request({
+      showWalletUI();
+      const txHash = await provider.request({
         method: 'eth_sendTransaction',
         params: [{
           from: address,
@@ -2563,7 +2564,10 @@ function setupBribeUI() {
           chainId: '0x8f' // Monad mainnet (143)
         }]
       });
+      hideWalletUI();
+      return txHash;
     } catch (err) {
+      hideWalletUI();
       const isUserRejection = err.code === 4001
         || err.message?.includes('rejected')
         || err.message?.includes('denied');

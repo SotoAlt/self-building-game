@@ -57,8 +57,13 @@ async function setupEmbeddedWalletProxy() {
   const iframeUrl = privy.embeddedWallet.getURL();
   const iframe = document.createElement('iframe');
   iframe.src = iframeUrl;
-  iframe.style.display = 'none';
   iframe.id = 'privy-embedded-wallet-iframe';
+  Object.assign(iframe.style, {
+    display: 'none', position: 'fixed', top: '50%', left: '50%',
+    transform: 'translate(-50%, -50%)', width: '400px', height: '600px',
+    maxWidth: '95vw', maxHeight: '90vh', border: 'none', borderRadius: '16px',
+    zIndex: '100000', boxShadow: '0 20px 60px rgba(0,0,0,0.5)'
+  });
   document.body.appendChild(iframe);
 
   await new Promise((resolve) => {
@@ -74,6 +79,28 @@ async function setupEmbeddedWalletProxy() {
   });
 
   console.log('[Auth] Embedded wallet proxy set up');
+}
+
+let backdrop = null;
+
+export function showWalletUI() {
+  const iframe = document.getElementById('privy-embedded-wallet-iframe');
+  if (!iframe) return;
+  if (!backdrop) {
+    backdrop = document.createElement('div');
+    Object.assign(backdrop.style, {
+      position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+      background: 'rgba(0,0,0,0.7)', zIndex: '99999'
+    });
+  }
+  document.body.appendChild(backdrop);
+  iframe.style.display = 'block';
+}
+
+export function hideWalletUI() {
+  const iframe = document.getElementById('privy-embedded-wallet-iframe');
+  if (iframe) iframe.style.display = 'none';
+  if (backdrop?.parentNode) backdrop.parentNode.removeChild(backdrop);
 }
 
 export async function getPrivyUser() {
