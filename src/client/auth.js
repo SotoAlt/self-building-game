@@ -11,12 +11,12 @@ globalThis.Buffer = Buffer;
 
 // Privy JS SDK Core fires analytics_events via fetch, but the endpoint
 // lacks CORS headers for custom domains. The retry loop blocks transactions.
-// Suppress these silently so embedded wallet operations complete.
+// Skip the real fetch entirely for analytics — return fake 200 immediately.
 const _fetch = window.fetch;
 window.fetch = function(...args) {
   const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
   if (url?.includes('/analytics_events')) {
-    return _fetch.apply(this, args).catch(() => new Response('{}', { status: 200 }));
+    return Promise.resolve(new Response('{}', { status: 200 }));
   }
   return _fetch.apply(this, args);
 };
