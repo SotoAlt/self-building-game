@@ -2,6 +2,57 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.30.0] - 2026-02-09
+
+### Added
+- **Bribe transaction security** — server-side sender verification, 5-minute tx age check, DB-persisted replay protection (survives restarts)
+- **Transactions table** (`src/server/db.js`) — `saveTransaction`, `getTransactionsByUser`, `findTransactionByTxHash`, `updateTransactionStatus`, `loadVerifiedTxHashes` with in-memory fallback
+- **`GET /api/transactions`** — authenticated endpoint returns paginated transaction history per user
+- **Session-to-user mapping** — `userId` stored on player records, bribe endpoint derives `playerId` from JWT (no longer client-supplied)
+- **`requireAuth` on bribe endpoint** — unauthenticated requests return 401
+- **Export Private Key button** — calls Privy's `useExportWallet` modal (hidden for guests)
+- **Tabbed wallet panel** — Overview (address + balance), History (transaction list with status badges), Fund (wallet address + instructions)
+- **Transaction history UI** — scrollable list with bribe type, relative date, MON amount, status badge (pending/honored/rejected), and Monadscan tx hash links
+
+### Changed
+- **Wallet panel width** — 280px → 360px to accommodate tabs and history
+- **All amounts display as MON** — removed mock token system entirely; bribes always require real on-chain transactions
+- **Bribe endpoint** — always requires `txHash`, removed mock balance check path
+- **Honor endpoint** — updates transaction status to `'honored'` in DB
+
+### Removed
+- **Mock token faucet** — removed "Get Test Tokens" button, faucet CSS, and `bribeIsRealChain` client toggle
+- **`playerId` in bribe request body** — server derives it from JWT auth token
+
+## [0.28.0] - 2026-02-09
+
+### Added
+- **Player rotation** — capsule smoothly rotates to face movement direction using `atan2` + shortest-path lerp (~66ms to face new direction)
+- **Remote player rotation** — other players' capsules rotate based on position delta interpolation
+- **Hemisphere light** — natural sky/ground color fill (`HemisphereLight 0xb0d0ff/0x404030`)
+- **ACES tone mapping** — `ACESFilmicToneMapping` at 1.3 exposure for perceived brightness and contrast
+- **`shortAngleDist()` helper** — shared angle-wrapping utility for rotation code
+
+### Changed
+- **Scene brightness overhaul** — ambient light `0x404040→0x8090a0` (intensity 0.5→0.8), directional 1→1.2, background/fog `0x1a1a2e→0x2a2a4e`
+- **Sky dome defaults** — top `0x0d1b2a→0x1a3050`, bottom `0x1a1a2e→0x2a3a5e` (dark blue instead of near-black)
+- **Toon material emissive** — default self-illumination 0.05→0.12, emissive entities 0.4→0.5
+- **Ground material** — lighter color `0x2d3436→0x3d4446` with 0.08 emissive self-illumination
+- **Outline visibility** — edge color `#000000→#1a1a1a` (dark gray), glow 0→0.2, strength 3→4, thickness 1.5→1.0
+- **Outline update interval** — 500ms→200ms for snappier outline tracking
+- **deploy.sh** — prune Docker builder cache before build to prevent disk exhaustion
+
+## [0.26.0] - 2026-02-09
+
+### Added
+- **Ice surfaces** — `isIce: true` on platforms reduces ground decel to ~8%, accel to ~15%
+- **Conveyor belts** — `isConveyor: true` + `conveyorDir` + `conveyorSpeed` pushes players directionally
+- **Wind zones** — `isWind: true` + `windForce: [x,y,z]` on trigger entities applies force while inside AABB
+- **Rising hazard plane** — server-authoritative lava/water plane that rises during `playing` phase
+- **New prefabs** — `conveyor_belt`, `wind_zone`
+- **New arena templates** — `slime_climb` (vertical + rising lava), `wind_tunnel` (horizontal + wind zones)
+- **Frame-rate independent mechanics** — `frameDelta` pattern for conveyor/wind forces
+
 ## [0.24.0] - 2026-02-09
 
 ### Added
