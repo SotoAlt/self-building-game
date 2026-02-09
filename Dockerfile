@@ -2,7 +2,7 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 COPY package*.json .npmrc ./
-RUN npm ci
+RUN npm ci && npm rebuild rollup
 COPY . .
 
 # Vite needs these at build time for client bundle
