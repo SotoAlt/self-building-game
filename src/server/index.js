@@ -915,8 +915,13 @@ async function executeAutoBribe(bribeType, bribeId) {
     case 'random_spell': {
       const spellTypes = Object.keys(WorldState.SPELL_TYPES);
       const randomType = spellTypes[Math.floor(Math.random() * spellTypes.length)];
-      const spell = worldState.castSpell(randomType);
-      broadcastToRoom('spell_cast', spell);
+      try {
+        const spell = worldState.castSpell(randomType);
+        broadcastToRoom('spell_cast', spell);
+      } catch (e) {
+        broadcastToRoom('announcement', worldState.announce('The magic fizzles... try again soon!', 'agent', 3000));
+        return false;
+      }
       break;
     }
 
