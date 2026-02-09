@@ -21,8 +21,9 @@ import { initAuth, verifyPrivyToken, signToken, requireAuth } from './auth.js';
 import { AgentLoop } from './AgentLoop.js';
 import { AIPlayer } from './AIPlayer.js';
 import { MockChainInterface } from './blockchain/ChainInterface.js';
-import { spawnPrefab, getPrefabInfo } from './Prefabs.js';
 import { MonadChainInterface } from './blockchain/MonadChainInterface.js';
+import { spawnPrefab, getPrefabInfo } from './Prefabs.js';
+import { compose, loadCacheFromDisk, getComposerStats } from './Composer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -213,6 +214,7 @@ app.get('/api/agent/context', (req, res) => {
       groupId: e.properties?.groupId || null
     })),
     availablePrefabs: getPrefabInfo(),
+    composerCache: getComposerStats(),
     entityCount: worldState.entities.size,
     physics: { ...worldState.physics },
     activeEffects: worldState.getActiveEffects(),
@@ -321,6 +323,24 @@ app.post('/api/world/spawn-prefab', (req, res) => {
   } catch (error) {
     res.status(400).json({ success: false, error: error.message });
   }
+});
+
+// Compose (spawn from description + optional recipe)
+app.post('/api/world/compose', (req, res) => {
+  if (rejectIfLobbyTimer(res)) return;
+
+  const { description, position, recipe, properties } = req.body;
+  if (!description || !position) {
+    return res.status(400).json({ error: 'Missing required: description, position' });
+  }
+
+  const result = compose(description, position, recipe, properties, worldState, broadcastToRoom);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  agentLoop.notifyAgentAction();
+  res.json(result);
 });
 
 // Destroy prefab group
@@ -1450,6 +1470,8 @@ initDB().then(async (connected) => {
     await worldState.loadLeaderboardFromDB();
   }
 });
+
+loadCacheFromDisk();
 
 // Start agent loop
 agentLoop.start();

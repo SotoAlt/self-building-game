@@ -29,6 +29,8 @@ services:
       - AI_PLAYERS=${AI_PLAYERS:-true}
       - TREASURY_ADDRESS=${TREASURY_ADDRESS}
       - MONAD_RPC_URL=${MONAD_RPC_URL:-https://rpc.monad.xyz}
+    volumes:
+      - gamedata:/app/data
     depends_on:
       - db
 
@@ -56,6 +58,7 @@ services:
 
 volumes:
   pgdata:
+  gamedata:
   certbot-etc:
   certbot-var:
   webroot:

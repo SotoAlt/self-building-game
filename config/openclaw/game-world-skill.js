@@ -489,24 +489,64 @@ async function honor_bribe({ bribeId, response }) {
   return gameRequest(`/api/bribe/${bribeId}/honor`, 'POST', body);
 }
 
-// ============================================
-// Prefabs
-// ============================================
-
 /**
- * Tool: spawn_prefab
- * Spawn a named prefab (multi-entity group) in the world.
+ * Tool: compose
+ * Main spawning tool. Spawn anything — known prefabs OR custom creations.
  *
- * Available prefabs:
+ * Known prefabs (no recipe needed — instant spawn):
  *   HAZARDS: spider, shark, ghost, ufo, car, spinning_blade, swinging_axe, crusher, rolling_boulder, cactus
  *   UTILITY: bounce_pad, checkpoint, speed_strip
  *   DECORATION: torch, crystal, barrel, flag, tree, snowman, fish, mushroom, rocket, trashcan
  *
+ * Custom creations (provide a recipe — YOU design the shapes!):
+ *   Describe what you want and provide a recipe with children shapes.
+ *   Once created, it's cached forever — next time just use the description.
+ *
+ * Recipe format:
+ *   { name: "my_thing", category: "decoration", behavior: "static",
+ *     defaultProperties: {},
+ *     children: [{ type: "decoration", offset: [0,1,0], size: [2,1,1], props: { shape: "sphere", color: "#ff0000" } }] }
+ *
+ * Shapes: box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
+ * Behaviors: static, patrol, rotate, chase, pendulum, crush
+ * Categories: hazard, decoration, utility
+ * Max 6 children per recipe.
+ *
  * Examples:
- *   spawn_prefab({ name: 'spider', position: [5, 1, 0] })
- *   spawn_prefab({ name: 'bounce_pad', position: [0, 0.5, -10] })
- *   spawn_prefab({ name: 'torch', position: [8, 0, 3] })
- *   spawn_prefab({ name: 'spider', position: [5, 1, 0], properties: { patrolRadius: 10, speed: 2 } })
+ *   compose({ description: "spider", position: [5,1,0] })  — known prefab, instant
+ *   compose({ description: "pirate ship", position: [0,2,0], recipe: {
+ *     name: "pirate_ship", category: "decoration", behavior: "static", defaultProperties: {},
+ *     children: [
+ *       { type: "decoration", offset: [0,1,0], size: [4,1,2], props: { color: "#5d4037" } },
+ *       { type: "decoration", offset: [0,3,0], size: [0.1,3,0.1], props: { shape: "cylinder", color: "#8b4513" } },
+ *       { type: "decoration", offset: [0.5,4,0], size: [1.5,1,0.05], props: { color: "#ecf0f1" } }
+ *     ]
+ *   }})
+ *   compose({ description: "fire dragon", position: [10,3,0], recipe: {
+ *     name: "fire_dragon", category: "hazard", behavior: "chase", defaultProperties: { speed: 3, chaseRadius: 25 },
+ *     children: [
+ *       { type: "obstacle", offset: [0,1,0], size: [2.5,1.2,1.2], props: { shape: "sphere", color: "#c0392b" } },
+ *       { type: "obstacle", offset: [1.5,1.5,0], size: [0.8,0.8,0.8], props: { shape: "sphere", color: "#e74c3c" } },
+ *       { type: "obstacle", offset: [-1.5,0.8,0], size: [1,0.5,0.1], props: { shape: "cone", color: "#c0392b" } },
+ *       { type: "decoration", offset: [2,1.5,0], size: [0.5,0.3,0.3], props: { shape: "cone", color: "#f39c12", emissive: true } }
+ *     ]
+ *   }})
+ */
+async function compose({ description, position, recipe, properties = {} }) {
+  if (!description || !position) {
+    return { success: false, error: 'Missing required: description, position' };
+  }
+
+  const body = { description, position, properties };
+  if (recipe) body.recipe = recipe;
+
+  return gameRequest('/api/world/compose', 'POST', body);
+}
+
+/**
+ * Tool: spawn_prefab
+ * DEPRECATED — Use compose() instead. compose handles known prefabs AND custom creations.
+ * compose({ description: "spider", position: [5,1,0] }) replaces spawn_prefab({ name: "spider", ... })
  */
 async function spawn_prefab({ name, position, properties = {} }) {
   if (!name || !position) {
@@ -518,10 +558,11 @@ async function spawn_prefab({ name, position, properties = {} }) {
 
 /**
  * Tool: destroy_prefab
- * Destroy all entities in a prefab group by groupId.
+ * Destroy all entities in a prefab/composed group by groupId.
  * Use get_context to find groupId values on entities.
  *
  * Example: destroy_prefab({ groupId: 'prefab-spider-a1b2c3d4' })
+ *          destroy_prefab({ groupId: 'compose-pirate_ship-a1b2c3d4' })
  */
 async function destroy_prefab({ groupId }) {
   if (!groupId) {
@@ -568,7 +609,8 @@ export {
   get_drama_score,
   check_bribes,
   honor_bribe,
-  // Prefabs
+  // Compose + Prefabs
+  compose,
   spawn_prefab,
   destroy_prefab
 };

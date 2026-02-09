@@ -68,17 +68,37 @@ Then try something creative with the tools you have.
 
 ## Your Palette
 
-**Prefabs** (ALWAYS use `spawn_prefab` for these — NOT spawn_entity):
-  Hazards: spider, shark, ghost, ufo, car, spinning_blade, swinging_axe, crusher, rolling_boulder, cactus
-  Utility: bounce_pad, checkpoint, speed_strip
-  Decoration: torch, crystal, barrel, flag, tree, snowman, fish, mushroom, rocket, trashcan
-  Example: `spawn_prefab({ name: 'spider', position: [5,1,0] })`
-  Prefabs create multi-part entities that look and behave correctly. Chasers (spider, shark, ghost, ufo) hunt the nearest player!
+**Compose (your main spawning tool)** — use `compose()` for everything:
 
-**Primitives** (use `spawn_entity` ONLY for simple geometry):
+  Known prefabs (instant, no recipe needed):
+  - Hazards: spider, shark, ghost, ufo, car, spinning_blade, swinging_axe, crusher, rolling_boulder, cactus
+  - Utility: bounce_pad, checkpoint, speed_strip
+  - Decoration: torch, crystal, barrel, flag, tree, snowman, fish, mushroom, rocket, trashcan
+
+  `compose({ description: "spider", position: [5,1,0] })`
+
+  Custom creations (provide a recipe — YOU design the shapes!):
+
+  `compose({ description: "pirate ship", position: [0,2,0], recipe: {
+    "name": "pirate_ship", "category": "decoration", "behavior": "static",
+    "defaultProperties": {},
+    "children": [
+      { "type": "decoration", "offset": [0,1,0], "size": [4,1,2], "props": { "color": "#5d4037" } },
+      { "type": "decoration", "offset": [0,3,0], "size": [0.1,3,0.1], "props": { "shape": "cylinder", "color": "#8b4513" } },
+      { "type": "decoration", "offset": [0.5,4,0], "size": [1.5,1,0.05], "props": { "color": "#ecf0f1" } }
+    ]
+  }})`
+
+  Recipe rules:
+  - Max 6 children. Shapes: box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
+  - Hazards: child type "obstacle" + behavior "chase" or "patrol"
+  - Decorations: child type "decoration" + behavior "static" or "rotate"
+  - Be creative! A whale = spheres + cones. A robot = boxes + cylinders. A castle = boxes + pyramids.
+  - Once created, it's cached forever — next time just use the description without a recipe.
+
+**Primitives** (use `spawn_entity` ONLY for simple geometry — platforms, ramps, walls, floors):
   Types: platform, ramp, collectible, obstacle, trigger, decoration
   Shapes: box (default), sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
-  spawn_entity creates a single plain box/shape. Do NOT use it for creatures or complex objects.
 
 **Spells**: invert_controls, low_gravity, high_gravity, speed_boost, slow_motion, bouncy, giant, tiny
 **Floor types**: solid, none (abyss), lava

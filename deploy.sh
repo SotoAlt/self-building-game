@@ -8,7 +8,7 @@ DOMAIN="chaos.waweapps.win"
 echo "=== Self-Building Game Deployment ==="
 
 # Step 1: Install Docker if not present
-echo "[1/7] Checking Docker..."
+echo "[1/8] Checking Docker..."
 ssh $SERVER 'command -v docker >/dev/null 2>&1 || {
   echo "Installing Docker..."
   apt-get update -qq
@@ -24,16 +24,16 @@ ssh $SERVER 'command -v docker >/dev/null 2>&1 || {
 }'
 
 # Step 2: Create app directory
-echo "[2/7] Setting up app directory..."
+echo "[2/8] Setting up app directory..."
 ssh $SERVER "mkdir -p $APP_DIR"
 
 # Step 3: Sync project files
-echo "[3/7] Syncing project files..."
+echo "[3/8] Syncing project files..."
 rsync -avz --exclude node_modules --exclude dist --exclude .git --exclude .env \
   /Users/rodrigosoto/repos/self-building-game/ $SERVER:$APP_DIR/
 
 # Step 4: Create production .env on server (preserving secrets across deploys)
-echo "[4/7] Setting up production .env..."
+echo "[4/8] Setting up production .env..."
 ssh $SERVER "
   if [ -f $APP_DIR/.env ]; then
     echo 'Existing .env found — preserving secrets'
@@ -62,7 +62,7 @@ ENVEOF
 "
 
 # Step 5: Get SSL cert (first time: use HTTP-only nginx, get cert, then restart with HTTPS)
-echo "[5/7] Setting up SSL..."
+echo "[5/8] Setting up SSL..."
 ssh $SERVER "cd $APP_DIR && {
   # Check if cert already exists
   if [ ! -f /etc/letsencrypt/live/$DOMAIN/fullchain.pem ]; then
@@ -108,12 +108,16 @@ NGEOF
   fi
 }"
 
-# Step 6: Start everything
-echo "[6/7] Starting services..."
-ssh $SERVER "cd $APP_DIR && docker compose up -d --build"
+# Step 6: Create data directory for compose cache
+echo "[6/8] Creating data directory..."
+ssh $SERVER "mkdir -p $APP_DIR/data"
 
-# Step 7: Setup agent-runner as host-side systemd service
-echo "[7/7] Setting up Chaos Agent (agent-runner)..."
+# Step 7: Start everything
+echo "[7/8] Starting services..."
+ssh $SERVER "cd $APP_DIR && docker compose build --no-cache && docker compose up -d"
+
+# Step 8: Setup agent-runner as host-side systemd service
+echo "[8/8] Setting up Chaos Agent (agent-runner)..."
 
 # Read Anthropic API key from local OpenClaw config
 ANTHROPIC_KEY=$(python3 -c "import json; d=json.load(open('$HOME/.openclaw/openclaw.json')); print(d['models']['providers']['anthropic']['apiKey'])" 2>/dev/null || echo "")
