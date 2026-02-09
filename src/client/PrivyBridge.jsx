@@ -7,7 +7,7 @@
  */
 import React, { useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { PrivyProvider, usePrivy, useWallets, useLoginWithOAuth } from '@privy-io/react-auth';
+import { PrivyProvider, usePrivy, useWallets, useLoginWithOAuth, useExportWallet } from '@privy-io/react-auth';
 
 const MONAD_CHAIN = {
   id: 143,
@@ -27,6 +27,7 @@ function BridgeInner({ onBridgeReady }) {
   const { ready, authenticated, user, getAccessToken, logout } = usePrivy();
   const { wallets } = useWallets();
   const { initOAuth } = useLoginWithOAuth();
+  const { exportWallet } = useExportWallet();
 
   // Refs keep the latest hook values accessible from the stable bridge object
   const userRef = useRef(null);
@@ -46,6 +47,7 @@ function BridgeInner({ onBridgeReady }) {
       getAccessToken,
       logout,
       initOAuth,
+      exportWallet,
       getEmbeddedWallet() {
         return walletsRef.current.find(
           w => w.walletClientType === 'privy' && w.type === 'ethereum'
@@ -67,6 +69,7 @@ function BridgeInner({ onBridgeReady }) {
   bridgeRef.current.getAccessToken = getAccessToken;
   bridgeRef.current.logout = logout;
   bridgeRef.current.initOAuth = initOAuth;
+  bridgeRef.current.exportWallet = exportWallet;
 
   useEffect(() => {
     if (ready) onBridgeReady(bridgeRef.current);

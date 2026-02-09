@@ -156,6 +156,14 @@ export async function getEmbeddedWalletAddress() {
   return await pollFor(() => bridge.getEmbeddedWalletAddress(), 2000, 200);
 }
 
+export async function exportWallet() {
+  if (!bridge) {
+    console.warn('[Auth] exportWallet: bridge not initialized');
+    return;
+  }
+  return bridge.exportWallet();
+}
+
 export async function debugAuth() {
   const privyAccessToken = bridge
     ? !!(await bridge.getAccessToken().catch(() => null))

@@ -14,7 +14,7 @@ import { Client } from 'colyseus.js';
 import {
   initPrivy, handleOAuthCallback, exchangeForBackendToken, ensureEmbeddedWallet,
   loginAsGuest, loginWithTwitter, getPrivyUser, getToken, debugAuth, logout,
-  getEmbeddedWalletProvider, getEmbeddedWalletAddress
+  getEmbeddedWalletProvider, getEmbeddedWalletAddress, exportWallet
 } from './auth.js';
 
 const TREASURY_ADDRESS = import.meta.env.VITE_TREASURY_ADDRESS || '';
@@ -2779,7 +2779,6 @@ function setupBribeUI() {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          playerId: state.room.sessionId,
           bribeType,
           request,
           ...(txHash ? { txHash } : {})
@@ -2945,6 +2944,17 @@ function setupProfileButton() {
   populateWalletPanel(user);
 }
 
+function formatRelativeDate(date) {
+  const diffMs = Date.now() - date.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 function populateWalletPanel(user) {
   const isAuthenticated = user.type === 'authenticated';
   const twitter = getTwitterFields(user);
@@ -2957,9 +2967,10 @@ function populateWalletPanel(user) {
     : user.type === 'guest' ? 'Guest' : '';
   document.getElementById('wp-username').textContent = usernameLabel;
 
-  const walletSection = document.getElementById('wp-wallet-section');
   const guestMsg = document.getElementById('wp-guest-msg');
+  const tabsContainer = document.getElementById('wp-tabs-container');
   const faucetBtn = document.getElementById('wp-faucet');
+  const exportBtn = document.getElementById('wp-export');
 
   // Logout is available for all user types
   document.getElementById('wp-logout').addEventListener('click', async () => {
@@ -2967,19 +2978,40 @@ function populateWalletPanel(user) {
     window.location.reload();
   });
 
-  // Guest users see a login prompt instead of wallet details
+  // Guest users see a login prompt instead of wallet/tabs
   if (!isAuthenticated) {
-    walletSection.style.display = 'none';
-    faucetBtn.style.display = 'none';
+    tabsContainer.style.display = 'none';
+    exportBtn.style.display = 'none';
     guestMsg.style.display = 'block';
     return;
   }
 
-  // Authenticated user — show wallet section
+  // Authenticated user — show tabs, hide guest msg
   guestMsg.style.display = 'none';
-  walletSection.style.display = 'block';
-  faucetBtn.style.display = 'block';
+  tabsContainer.style.display = 'block';
+  exportBtn.style.display = 'block';
 
+  // --- Tab switching ---
+  const tabs = tabsContainer.querySelectorAll('.wp-tab');
+  const tabContents = tabsContainer.querySelectorAll('.wp-tab-content');
+  let historyLoaded = false;
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      tabContents.forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      const target = tab.dataset.tab;
+      document.getElementById(`wp-tab-${target}`).classList.add('active');
+      // Lazy-load history on first visit
+      if (target === 'history' && !historyLoaded) {
+        historyLoaded = true;
+        loadTransactionHistory();
+      }
+    });
+  });
+
+  // --- Overview tab ---
   const userId = user.id;
   const addressEl = document.getElementById('wp-address');
   const balanceEl = document.getElementById('wp-balance');
@@ -2990,6 +3022,9 @@ function populateWalletPanel(user) {
   function displayAddress(addr) {
     addressEl.textContent = addr.slice(0, 6) + '...' + addr.slice(-4);
     addressEl.dataset.full = addr;
+    // Also update fund tab address
+    const fundAddr = document.getElementById('wp-fund-address');
+    if (fundAddr) fundAddr.textContent = addr;
   }
 
   const existingAddr = user.walletAddress || user.wallet_address;
@@ -2998,13 +3033,11 @@ function populateWalletPanel(user) {
   }
 
   async function refreshWallet() {
-    // Try client-side Privy embedded wallet first
     const clientAddr = await getEmbeddedWalletAddress();
     if (clientAddr) {
       displayAddress(clientAddr);
       return;
     }
-    // Fall back to server lookup
     try {
       const res = await fetch(`${API_URL}/api/wallet/${userId}`);
       if (!res.ok) return;
@@ -3054,25 +3087,66 @@ function populateWalletPanel(user) {
     if (full) window.open(`${explorerBase}/${full}`, '_blank');
   });
 
-  // Update faucet button label based on chain mode
-  if (bribeIsRealChain) {
-    faucetBtn.textContent = 'Receive MON';
+  // --- History tab ---
+  async function loadTransactionHistory() {
+    const listEl = document.getElementById('wp-tx-list');
+    try {
+      const token = getToken();
+      const res = await fetch(`${API_URL}/api/transactions`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!res.ok) {
+        listEl.innerHTML = '<div class="wp-tx-empty">Could not load history</div>';
+        return;
+      }
+      const { transactions } = await res.json();
+      if (!transactions.length) {
+        listEl.innerHTML = '<div class="wp-tx-empty">No transactions yet</div>';
+        return;
+      }
+      listEl.innerHTML = transactions.map(tx => {
+        const date = new Date(tx.createdAt);
+        const relative = formatRelativeDate(date);
+        const statusClass = tx.status || 'pending';
+        const amountLabel = bribeIsRealChain ? `${tx.amount} MON` : `${tx.amount} tokens`;
+        const hashLink = tx.txHash
+          ? `<a class="wp-tx-hash" href="https://monadscan.com/tx/${tx.txHash}" target="_blank">${tx.txHash.slice(0, 8)}...</a>`
+          : '';
+        return `<div class="wp-tx-item">
+          <div class="wp-tx-info">
+            <div class="wp-tx-label">${tx.description || tx.txType}</div>
+            <div class="wp-tx-date">${relative} ${hashLink}</div>
+          </div>
+          <div class="wp-tx-right">
+            <div class="wp-tx-amount">${amountLabel}</div>
+            <span class="wp-tx-status ${statusClass}">${statusClass}</span>
+          </div>
+        </div>`;
+      }).join('');
+    } catch {
+      listEl.innerHTML = '<div class="wp-tx-empty">Failed to load</div>';
+    }
   }
 
-  faucetBtn.addEventListener('click', async () => {
-    // Real chain: copy wallet address so user can send MON from MetaMask
-    if (bribeIsRealChain) {
-      const full = addressEl.dataset.full;
-      if (full) {
-        navigator.clipboard.writeText(full).then(() => {
-          showToast('Wallet address copied! Send MON from MetaMask or an exchange.', 'success');
-        });
-      } else {
-        showToast('Wallet address not available', 'error');
-      }
-      return;
-    }
+  // --- Fund tab ---
+  const fundHint = document.getElementById('wp-fund-hint');
+  if (bribeIsRealChain) {
+    fundHint.textContent = 'Send MON to this address from MetaMask or an exchange.';
+    faucetBtn.style.display = 'none';
+  } else {
+    fundHint.textContent = 'Get free test tokens to try bribes.';
+    faucetBtn.style.display = 'block';
+  }
 
+  const fundAddrEl = document.getElementById('wp-fund-address');
+  fundAddrEl.addEventListener('click', () => {
+    const full = addressEl.dataset.full;
+    if (full) {
+      navigator.clipboard.writeText(full).then(() => showToast('Address copied!'));
+    }
+  });
+
+  faucetBtn.addEventListener('click', async () => {
     faucetBtn.disabled = true;
     faucetBtn.textContent = 'Requesting...';
     try {
@@ -3093,6 +3167,16 @@ function populateWalletPanel(user) {
     }
     faucetBtn.disabled = false;
     faucetBtn.textContent = 'Get Test Tokens';
+  });
+
+  // --- Export wallet button ---
+  exportBtn.addEventListener('click', async () => {
+    try {
+      await exportWallet();
+    } catch (e) {
+      console.error('[Wallet] Export failed:', e);
+      showToast('Could not export wallet', 'error');
+    }
   });
 }
 

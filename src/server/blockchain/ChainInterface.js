@@ -8,7 +8,7 @@ export class ChainInterface {
   async submitBribe(playerId, amount, request, txHash) {
     throw new Error('Not implemented');
   }
-  async verifyBribeTransaction(txHash, expectedAmountWei) {
+  async verifyBribeTransaction(txHash, expectedAmountWei, expectedSender = null) {
     throw new Error('Not implemented');
   }
   async acknowledgeBribe(bribeId, honored) {
@@ -36,7 +36,7 @@ export class MockChainInterface extends ChainInterface {
     this._nextId = 1;
   }
 
-  async verifyBribeTransaction(txHash, expectedAmountWei) {
+  async verifyBribeTransaction(txHash, expectedAmountWei, expectedSender = null) {
     return { valid: true, txHash };
   }
 

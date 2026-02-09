@@ -372,11 +372,12 @@ export class WorldState {
   // Player Management
   // ============================================
 
-  addPlayer(id, name, type = 'human', initialState = 'alive') {
+  addPlayer(id, name, type = 'human', initialState = 'alive', userId = null) {
     const player = {
       id,
       name,
       type, // 'human' or 'ai'
+      userId: userId || id,
       position: [...this.respawnPoint],
       velocity: [0, 0, 0],
       state: initialState,

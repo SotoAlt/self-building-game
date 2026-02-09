@@ -21,6 +21,8 @@ const monad = {
   }
 };
 
+const MAX_TX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+
 export class MonadChainInterface extends ChainInterface {
   constructor({ rpcUrl, treasuryAddress }) {
     super();
@@ -51,7 +53,7 @@ export class MonadChainInterface extends ChainInterface {
     }
   }
 
-  async verifyBribeTransaction(txHash, expectedAmountWei) {
+  async verifyBribeTransaction(txHash, expectedAmountWei, expectedSender = null) {
     // Replay check
     if (this._verifiedTxHashes.has(txHash)) {
       return { valid: false, error: 'Transaction already used for a bribe' };
@@ -64,6 +66,12 @@ export class MonadChainInterface extends ChainInterface {
       }
 
       const tx = await this.publicClient.getTransaction({ hash: txHash });
+
+      // Sender verification
+      if (expectedSender && tx.from.toLowerCase() !== expectedSender.toLowerCase()) {
+        return { valid: false, error: 'Transaction sender does not match' };
+      }
+
       if (tx.to?.toLowerCase() !== this.treasuryAddress) {
         return { valid: false, error: 'Transaction not sent to treasury address' };
       }
@@ -71,6 +79,13 @@ export class MonadChainInterface extends ChainInterface {
       const expected = BigInt(expectedAmountWei);
       if (tx.value < expected) {
         return { valid: false, error: `Insufficient amount: sent ${tx.value}, expected ${expected}` };
+      }
+
+      // Reject stale transactions to prevent replay with old receipts
+      const block = await this.publicClient.getBlock({ blockNumber: receipt.blockNumber });
+      const txAgeMs = Date.now() - Number(block.timestamp) * 1000;
+      if (txAgeMs > MAX_TX_AGE_MS) {
+        return { valid: false, error: 'Transaction too old (>5 minutes)' };
       }
 
       this._verifiedTxHashes.add(txHash);

@@ -43,6 +43,18 @@ CREATE TABLE IF NOT EXISTS game_history (
   player_count  INTEGER,
   scores        JSONB DEFAULT '{}'
 );
+
+CREATE TABLE IF NOT EXISTS transactions (
+  id             TEXT PRIMARY KEY,
+  user_id        TEXT NOT NULL,
+  wallet_address TEXT,
+  tx_hash        TEXT UNIQUE,
+  tx_type        TEXT NOT NULL,
+  amount         TEXT NOT NULL,
+  description    TEXT,
+  status         TEXT DEFAULT 'pending',
+  created_at     TIMESTAMPTZ DEFAULT NOW()
+);
 `;
 
 export async function initDB() {
@@ -195,6 +207,94 @@ export async function getStats() {
   } catch (err) {
     console.error('[DB] getStats error:', err.message);
     return { totalGames: 0, totalPlayers: 0, dbConnected: false };
+  }
+}
+
+// --- Transactions ---
+
+// In-memory fallback for when DB is unavailable
+const memTransactions = [];
+
+export async function saveTransaction({ id, userId, walletAddress, txHash, txType, amount, description, status = 'pending' }) {
+  if (!dbAvailable) {
+    memTransactions.push({
+      id, userId, walletAddress, txHash, txType, amount, description, status,
+      createdAt: new Date().toISOString()
+    });
+    return;
+  }
+  try {
+    await pool.query(
+      `INSERT INTO transactions (id, user_id, wallet_address, tx_hash, tx_type, amount, description, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [id, userId, walletAddress || null, txHash || null, txType, amount, description || null, status]
+    );
+  } catch (err) {
+    console.error('[DB] saveTransaction error:', err.message);
+  }
+}
+
+export async function getTransactionsByUser(userId, limit = 20, offset = 0) {
+  if (!dbAvailable) {
+    return memTransactions
+      .filter(t => t.userId === userId)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(offset, offset + limit);
+  }
+  try {
+    const result = await pool.query(
+      `SELECT id, user_id AS "userId", wallet_address AS "walletAddress", tx_hash AS "txHash",
+              tx_type AS "txType", amount, description, status, created_at AS "createdAt"
+       FROM transactions WHERE user_id = $1
+       ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      [userId, limit, offset]
+    );
+    return result.rows;
+  } catch (err) {
+    console.error('[DB] getTransactionsByUser error:', err.message);
+    return [];
+  }
+}
+
+export async function findTransactionByTxHash(txHash) {
+  if (!dbAvailable) {
+    return memTransactions.find(t => t.txHash === txHash) || null;
+  }
+  try {
+    const result = await pool.query(
+      'SELECT id, user_id AS "userId", tx_hash AS "txHash", status FROM transactions WHERE tx_hash = $1',
+      [txHash]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    console.error('[DB] findTransactionByTxHash error:', err.message);
+    return null;
+  }
+}
+
+export async function updateTransactionStatus(id, status) {
+  if (!dbAvailable) {
+    const tx = memTransactions.find(t => t.id === id);
+    if (tx) tx.status = status;
+    return;
+  }
+  try {
+    await pool.query('UPDATE transactions SET status = $1 WHERE id = $2', [status, id]);
+  } catch (err) {
+    console.error('[DB] updateTransactionStatus error:', err.message);
+  }
+}
+
+export async function loadVerifiedTxHashes() {
+  if (!dbAvailable) {
+    return memTransactions.filter(t => t.txHash).map(t => t.txHash);
+  }
+  try {
+    const result = await pool.query('SELECT tx_hash FROM transactions WHERE tx_hash IS NOT NULL');
+    return result.rows.map(r => r.tx_hash);
+  } catch (err) {
+    console.error('[DB] loadVerifiedTxHashes error:', err.message);
+    return [];
   }
 }
 

@@ -16,7 +16,7 @@ import { createServer } from 'http';
 import { GameRoom } from './GameRoom.js';
 import { WorldState } from './WorldState.js';
 import { createGameSync, GAME_TYPES } from './games/index.js';
-import { initDB, getStats, isDBAvailable, upsertUser, findUser } from './db.js';
+import { initDB, getStats, isDBAvailable, upsertUser, findUser, saveTransaction, getTransactionsByUser, findTransactionByTxHash, updateTransactionStatus, loadVerifiedTxHashes } from './db.js';
 import { initAuth, verifyPrivyToken, signToken, requireAuth } from './auth.js';
 import { AgentLoop } from './AgentLoop.js';
 import { AIPlayer } from './AIPlayer.js';
@@ -948,11 +948,19 @@ app.get('/api/bribe/options', (req, res) => {
   res.json({ options: BRIBE_OPTIONS, isRealChain });
 });
 
-app.post('/api/bribe', async (req, res) => {
-  const { playerId, bribeType, request, txHash } = req.body;
-  if (!playerId || !bribeType) {
-    return res.status(400).json({ error: 'Missing required: playerId, bribeType' });
+app.post('/api/bribe', requireAuth, async (req, res) => {
+  const { bribeType, request, txHash } = req.body;
+  if (!bribeType) {
+    return res.status(400).json({ error: 'Missing required: bribeType' });
   }
+
+  // Derive playerId from JWT — find active session for this user
+  const userId = req.user.id;
+  const sessionPlayer = Array.from(worldState.players.values()).find(p => p.userId === userId);
+  if (!sessionPlayer) {
+    return res.status(400).json({ error: 'No active game session' });
+  }
+  const playerId = sessionPlayer.id;
 
   const option = BRIBE_OPTIONS[bribeType];
   if (!option) {
@@ -963,12 +971,22 @@ app.post('/api/bribe', async (req, res) => {
     return res.status(400).json({ error: 'Custom bribe requires a request text' });
   }
 
+  const dbUser = await findUser(userId);
+
   // Real chain: verify on-chain transaction
   if (isRealChain) {
     if (!txHash) {
       return res.status(400).json({ error: 'Missing txHash for on-chain bribe' });
     }
-    const verification = await chain.verifyBribeTransaction(txHash, option.costWei);
+
+    // DB replay check
+    const existingTx = await findTransactionByTxHash(txHash);
+    if (existingTx) {
+      return res.status(400).json({ error: 'Transaction already used' });
+    }
+
+    // Pass sender address for verification
+    const verification = await chain.verifyBribeTransaction(txHash, option.costWei, dbUser?.wallet_address);
     if (!verification.valid) {
       return res.status(400).json({ error: verification.error });
     }
@@ -984,6 +1002,17 @@ app.post('/api/bribe', async (req, res) => {
   const costLabel = isRealChain ? `${option.costMON} MON` : `${option.cost} tokens`;
   const description = bribeType === 'custom' ? request : option.label;
   const bribe = await chain.submitBribe(playerId, amount, description, txHash);
+
+  // Persist transaction to DB
+  await saveTransaction({
+    id: bribe.id,
+    userId,
+    walletAddress: dbUser?.wallet_address,
+    txHash: txHash || null,
+    txType: bribeType,
+    amount: String(amount),
+    description
+  });
 
   const player = worldState.players.get(playerId);
   const name = player?.name || playerId.slice(0, 8);
@@ -1022,6 +1051,9 @@ app.post('/api/bribe/:id/honor', async (req, res) => {
     return res.status(404).json({ error: `Bribe not found: ${id}` });
   }
 
+  // Update transaction status in DB
+  await updateTransactionStatus(id, 'honored');
+
   const player = worldState.players.get(bribe.playerId);
   const name = player?.name || bribe.playerId.slice(0, 8);
 
@@ -1043,6 +1075,14 @@ app.get('/api/bribe/honored', async (req, res) => {
   const limit = parseInt(req.query.limit) || 5;
   const honored = await chain.getHonoredBribes(limit);
   res.json({ bribes: honored });
+});
+
+// Transaction history for authenticated user
+app.get('/api/transactions', requireAuth, async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const offset = parseInt(req.query.offset) || 0;
+  const transactions = await getTransactionsByUser(req.user.id, limit, offset);
+  res.json({ transactions });
 });
 
 app.get('/api/balance/:addressOrId', async (req, res) => {
@@ -1489,6 +1529,12 @@ initAuth();
 initDB().then(async (connected) => {
   if (connected) {
     await worldState.loadLeaderboardFromDB();
+    // Rebuild replay-protection set from persisted transactions
+    if (isRealChain) {
+      const hashes = await loadVerifiedTxHashes();
+      for (const h of hashes) chain._verifiedTxHashes.add(h);
+      if (hashes.length) console.log(`[Chain] Loaded ${hashes.length} verified tx hashes from DB`);
+    }
   }
 });
 

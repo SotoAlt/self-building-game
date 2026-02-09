@@ -253,7 +253,7 @@ export class GameRoom extends Room {
     const isHuman = type !== 'ai';
     const initialState = (isGameActive && isHuman) ? 'spectating' : 'alive';
 
-    const player = this.worldState.addPlayer(client.sessionId, name, type, initialState);
+    const player = this.worldState.addPlayer(client.sessionId, name, type, initialState, userId);
 
     const initState = this.worldState.getState();
     initState.environment = { ...this.worldState.environment };
