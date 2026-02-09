@@ -2536,7 +2536,32 @@ function setupBribeUI() {
     try {
       await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x8f' }] });
     } catch (switchErr) {
-      console.warn('[Bribe] Chain switch failed:', switchErr.message);
+      try {
+        await provider.request({
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: '0x8f',
+            chainName: 'Monad',
+            nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
+            rpcUrls: ['https://rpc.monad.xyz'],
+            blockExplorerUrls: ['https://monadscan.com']
+          }]
+        });
+      } catch (addErr) {
+        console.warn('[Bribe] Could not add Monad chain:', addErr.message);
+      }
+    }
+
+    // Verify we're on the right chain
+    try {
+      const chainId = await provider.request({ method: 'eth_chainId' });
+      console.log('[Bribe] Current chain:', chainId);
+      if (chainId !== '0x8f') {
+        showToast('Wrong network. Expected Monad (chain 143).', 'error');
+        return null;
+      }
+    } catch (e) {
+      console.warn('[Bribe] eth_chainId failed:', e.message);
     }
 
     // Pre-check balance
@@ -2572,8 +2597,9 @@ function setupBribeUI() {
       showToast('Transaction may have failed — check console', 'error');
       return null;
     } catch (err) {
-      console.error('[Bribe] eth_sendTransaction error:', err);
-      showToast('Transaction failed: ' + (err.message || 'Unknown error'), 'error');
+      console.error('[Bribe] Full tx error:', err);
+      const errMsg = (err.message || 'Unknown error').slice(0, 80);
+      showToast('Transaction failed: ' + errMsg, 'error');
       return null;
     }
   }

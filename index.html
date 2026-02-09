@@ -785,7 +785,23 @@
     </div>
     <div id="kill-feed"></div>
   </div>
+  <div id="privy-root" style="display:none"></div>
   <div id="game"></div>
+  <script>
+    // Must run BEFORE ES modules load so Privy SDK sees patched fetch.
+    // Privy fires analytics_events via fetch — the endpoint lacks CORS headers
+    // for custom domains. The retry loop blocks transactions.
+    (function() {
+      var _fetch = window.fetch;
+      window.fetch = function() {
+        var url = typeof arguments[0] === 'string' ? arguments[0] : (arguments[0] && arguments[0].url);
+        if (url && url.indexOf('/analytics_events') !== -1) {
+          return Promise.resolve(new Response('{}', { status: 200 }));
+        }
+        return _fetch.apply(this, arguments);
+      };
+    })();
+  </script>
   <script type="module" src="/src/client/main.js"></script>
 </body>
 </html>

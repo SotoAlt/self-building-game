@@ -1,96 +1,45 @@
 /**
- * Client Auth Module - Privy OAuth + Guest login
+ * Client Auth Module — Privy OAuth + Guest login.
  *
- * Wraps @privy-io/js-sdk-core for vanilla JS usage.
- * Falls back to guest-only when Privy credentials aren't configured.
+ * Uses @privy-io/react-auth via a hidden React island (PrivyBridge.jsx).
+ * Exposes a flat async API consumed by main.js.
  */
 
-import Privy, { LocalStorage, getUserEmbeddedEthereumWallet, getEntropyDetailsFromUser } from '@privy-io/js-sdk-core';
+import { mountPrivyBridge } from './PrivyBridge.jsx';
 import { Buffer } from 'buffer';
 globalThis.Buffer = Buffer;
 
-// Privy JS SDK Core fires analytics_events via fetch, but the endpoint
-// lacks CORS headers for custom domains. The retry loop blocks transactions.
-// Skip the real fetch entirely for analytics — return fake 200 immediately.
-const _fetch = window.fetch;
-window.fetch = function(...args) {
-  const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
-  if (url?.includes('/analytics_events')) {
-    return Promise.resolve(new Response('{}', { status: 200 }));
-  }
-  return _fetch.apply(this, args);
-};
-
-const isLocalhost = window.location.hostname === 'localhost';
-const API_URL = isLocalhost
+const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3000'
   : `${window.location.protocol}//${window.location.host}`;
 
-const monad = {
-  id: 143,
-  name: 'Monad',
-  network: 'monad',
-  nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://rpc.monad.xyz'] },
-    public: { http: ['https://rpc.monad.xyz'] }
-  },
-  blockExplorers: {
-    default: { name: 'Monadscan', url: 'https://monadscan.com' }
-  }
-};
-
-let privy = null;
+let bridge = null;
 
 export async function initPrivy(appId, clientId) {
-  privy = new Privy({ appId, clientId, storage: new LocalStorage(), supportedChains: [monad] });
+  if (!appId) {
+    console.warn('[Auth] No Privy appId — Twitter login disabled');
+    return;
+  }
   try {
-    await privy.initialize();
-    console.log('[Auth] Privy initialized');
-    await setupEmbeddedWalletProxy();
+    bridge = await mountPrivyBridge(appId, clientId);
+    if (bridge) {
+      console.log('[Auth] Privy bridge ready, authenticated:', bridge.authenticated);
+    } else {
+      console.warn('[Auth] Privy bridge failed to mount');
+    }
   } catch (e) {
     console.error('[Auth] Privy initialization failed:', e);
   }
 }
 
-async function setupEmbeddedWalletProxy() {
-  const iframeUrl = privy.embeddedWallet.getURL();
-  const iframe = document.createElement('iframe');
-  iframe.src = iframeUrl;
-  iframe.id = 'privy-embedded-wallet-iframe';
-  iframe.style.display = 'none';
-  document.body.appendChild(iframe);
-
-  await new Promise((resolve) => {
-    iframe.addEventListener('load', resolve, { once: true });
-  });
-
-  privy.setMessagePoster(iframe.contentWindow);
-
-  window.addEventListener('message', (e) => {
-    if (e.source === iframe.contentWindow && typeof e.data === 'object' && e.data !== null && typeof e.data.type === 'string') {
-      privy.embeddedWallet.onMessage(e.data);
-    }
-  });
-
-  console.log('[Auth] Embedded wallet proxy set up');
-}
-
 export async function getPrivyUser() {
-  if (!privy) return null;
-  try {
-    const result = await privy.user.get();
-    return result.user;
-  } catch {
-    return null;
-  }
+  return bridge?.user ?? null;
 }
 
 export async function loginWithTwitter() {
-  if (!privy) throw new Error('Privy not initialized — check VITE_PRIVY_APP_ID and VITE_PRIVY_CLIENT_ID');
+  if (!bridge) throw new Error('Privy not initialized — check VITE_PRIVY_APP_ID and VITE_PRIVY_CLIENT_ID');
   try {
-    const { url } = await privy.auth.oauth.generateURL('twitter', window.location.origin);
-    window.location.href = url;
+    bridge.initOAuth({ provider: 'twitter' });
   } catch (e) {
     console.error('[Auth] Twitter OAuth failed:', e);
     throw new Error('Failed to start Twitter login. Check Privy dashboard settings.');
@@ -98,44 +47,34 @@ export async function loginWithTwitter() {
 }
 
 export async function handleOAuthCallback() {
-  if (!privy) return null;
+  if (!bridge) return null;
+
   const params = new URLSearchParams(window.location.search);
-  const code = params.get('privy_oauth_code');
-  const state = params.get('privy_oauth_state');
-  const provider = params.get('privy_oauth_provider');
-  if (!code || !state) return null;
+  const hasOAuthParams = params.has('privy_oauth_code') || params.has('privy_oauth_state');
 
-  try {
-    const session = await privy.auth.oauth.loginWithCode(code, state, provider);
-    return session.user;
-  } catch (e) {
-    console.error('[Auth] OAuth callback login failed:', e);
-    throw e;
-  } finally {
-    window.history.replaceState({}, '', window.location.pathname);
+  // PrivyProvider processes OAuth params on mount. If already authenticated, just clean up.
+  if (bridge.authenticated && bridge.user) {
+    if (hasOAuthParams) cleanOAuthParams();
+    return bridge.user;
   }
-}
 
-function findEvmWallet(user) {
-  return getUserEmbeddedEthereumWallet(user);
-}
-
-export async function ensureEmbeddedWallet() {
-  if (!privy) return;
-  try {
-    await privy.embeddedWallet.create({});
-    console.log('[Auth] Embedded wallet provisioned on device');
-  } catch (e) {
-    // Expected if wallet already provisioned on this device
-    console.log('[Auth] Embedded wallet create:', e.message);
+  // OAuth params present but SDK hasn't finished processing -- poll briefly
+  if (hasOAuthParams) {
+    const user = await pollFor(() => bridge.authenticated ? bridge.user : null, 5000, 200);
+    cleanOAuthParams();
+    return user;
   }
+
+  return null;
 }
+
+// No-op: React SDK auto-creates embedded wallets via createOnLogin: 'all-users'
+export async function ensureEmbeddedWallet() {}
 
 export async function exchangeForBackendToken() {
-  if (!privy) return null;
-  await ensureEmbeddedWallet();
+  if (!bridge) return null;
 
-  const privyToken = await privy.getAccessToken();
+  const privyToken = await bridge.getAccessToken();
   if (!privyToken) {
     console.warn('[Auth] No Privy access token available');
     return null;
@@ -144,16 +83,14 @@ export async function exchangeForBackendToken() {
   const res = await fetch(`${API_URL}/api/auth/privy`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ accessToken: privyToken })
+    body: JSON.stringify({ accessToken: privyToken }),
   });
   if (!res.ok) {
     console.error('[Auth] Backend token exchange failed:', res.status);
     return null;
   }
 
-  const data = await res.json();
-  localStorage.setItem('game:token', data.token);
-  return data;
+  return storeToken(await res.json());
 }
 
 export async function loginAsGuest() {
@@ -161,13 +98,11 @@ export async function loginAsGuest() {
   const res = await fetch(`${API_URL}/api/auth/guest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name })
+    body: JSON.stringify({ name }),
   });
   if (!res.ok) return null;
 
-  const data = await res.json();
-  localStorage.setItem('game:token', data.token);
-  return data;
+  return storeToken(await res.json());
 }
 
 export function getToken() {
@@ -175,6 +110,15 @@ export function getToken() {
 }
 
 export function getTwitterProfile(user) {
+  // React SDK format
+  if (user?.twitter) {
+    return {
+      username: user.twitter.username,
+      name: user.twitter.name,
+      avatar: user.twitter.profilePictureUrl,
+    };
+  }
+  // Server format (linked_accounts array)
   const tw = user?.linked_accounts?.find(a => a.type === 'twitter_oauth');
   if (!tw) return null;
   return { username: tw.username, name: tw.name, avatar: tw.profile_picture_url };
@@ -182,67 +126,74 @@ export function getTwitterProfile(user) {
 
 export async function logout() {
   localStorage.removeItem('game:token');
-  if (privy) await privy.auth.logout();
+  if (bridge) await bridge.logout();
 }
 
 export async function getEmbeddedWalletProvider() {
-  if (!privy) {
-    console.warn('[Auth] getProvider: privy not initialized');
+  if (!bridge) {
+    console.warn('[Auth] getProvider: bridge not initialized');
     return null;
   }
+
+  // Wallet may not be immediately available after login
+  const wallet = await pollFor(() => bridge.getEmbeddedWallet(), 5000, 200);
+  if (!wallet) {
+    console.warn('[Auth] No embedded wallet available after timeout');
+    return null;
+  }
+
   try {
-    let user = (await privy.user.get()).user;
-    let wallet = findEvmWallet(user);
-
-    // If no wallet linked yet, provision one and re-fetch
-    if (!wallet) {
-      console.log('[Auth] No embedded wallet found, creating...');
-      const result = await privy.embeddedWallet.create({});
-      user = result.user;
-      wallet = findEvmWallet(user);
-      if (!wallet) {
-        console.warn('[Auth] Still no embedded wallet after create');
-        return null;
-      }
-    }
-
-    const { entropyId, entropyIdVerifier } = getEntropyDetailsFromUser(user);
-    const provider = await privy.embeddedWallet.getEthereumProvider({
-      wallet, entropyId, entropyIdVerifier
-    });
+    const provider = await wallet.getEthereumProvider();
     return { provider, address: wallet.address };
   } catch (e) {
-    console.error('[Auth] getEmbeddedWalletProvider failed:', e);
+    console.error('[Auth] getEthereumProvider failed:', e);
     return null;
   }
 }
 
 export async function getEmbeddedWalletAddress() {
-  if (!privy) return null;
-  try {
-    const { user } = await privy.user.get();
-    return findEvmWallet(user)?.address || null;
-  } catch {
-    return null;
-  }
+  if (!bridge) return null;
+  return await pollFor(() => bridge.getEmbeddedWalletAddress(), 2000, 200);
 }
 
 export async function debugAuth() {
-  let privyAccessToken = false;
-  let privyUser = null;
-
-  if (privy) {
-    privyAccessToken = !!(await privy.getAccessToken().catch(() => null));
-    privyUser = await privy.user.get().then(r => r.user).catch(() => null);
-  }
+  const privyAccessToken = bridge
+    ? !!(await bridge.getAccessToken().catch(() => null))
+    : false;
 
   const info = {
-    privyInitialized: !!privy,
+    bridgeReady: !!bridge,
+    authenticated: bridge?.authenticated ?? false,
     gameToken: !!localStorage.getItem('game:token'),
     privyAccessToken,
-    privyUser,
-    urlParams: Object.fromEntries(new URLSearchParams(window.location.search))
+    privyUser: bridge?.user ?? null,
+    embeddedWallet: bridge?.getEmbeddedWalletAddress() ?? null,
+    urlParams: Object.fromEntries(new URLSearchParams(window.location.search)),
   };
   console.table(info);
   return info;
+}
+
+// --- Helpers ---
+
+function cleanOAuthParams() {
+  window.history.replaceState({}, '', window.location.pathname);
+}
+
+function storeToken(data) {
+  localStorage.setItem('game:token', data.token);
+  return data;
+}
+
+function pollFor(fn, timeoutMs, intervalMs) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    function check() {
+      const result = fn();
+      if (result) return resolve(result);
+      if (Date.now() - start >= timeoutMs) return resolve(null);
+      setTimeout(check, intervalMs);
+    }
+    check();
+  });
 }
