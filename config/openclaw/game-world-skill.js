@@ -38,40 +38,10 @@ async function gameRequest(endpoint, method = 'GET', body = null) {
 }
 
 /**
- * Tool: spawn_entity
- * Create a single primitive entity in the world.
- *
- * ⚠️ IMPORTANT: For creatures, hazards, and utility objects, use spawn_prefab instead!
- * spawn_prefab creates multi-part entities that look and behave correctly.
- * Only use spawn_entity for simple geometric shapes (platforms, ramps, walls, floors).
- *
- * Types: platform, ramp, collectible, obstacle, trigger, decoration
- * - decoration: visual only, no collision. Use for trees, crystals, signs, etc.
- *
- * Shape property (optional, in properties.shape):
- *   box (default), sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
- *
- * Examples:
- *   spawn_entity({ type: 'decoration', position: [0,5,0], size: [2,2,2], properties: { shape: 'dodecahedron', color: '#9b59b6' } })
- *   spawn_entity({ type: 'obstacle', position: [5,1,-10], size: [1,3,1], properties: { shape: 'cone' } })
- *   spawn_entity({ type: 'platform', position: [0,3,0], size: [8,0.5,8], properties: { shape: 'cylinder' } })
+ * Tool: spawn_entity — DEPRECATED, use compose() instead.
  */
-async function spawn_entity({ type, position, size = [1, 1, 1], properties = {} }) {
-  if (!type || !position) {
-    return { success: false, error: 'Missing required parameters: type, position' };
-  }
-
-  const validTypes = ['platform', 'ramp', 'collectible', 'obstacle', 'trigger', 'decoration'];
-  if (!validTypes.includes(type)) {
-    return { success: false, error: `Spell fizzled! '${type}' isn't a real entity type. Use: ${validTypes.join(', ')}. For visual variety, set properties.shape (sphere, cylinder, cone, etc).` };
-  }
-
-  return gameRequest('/api/world/spawn', 'POST', {
-    type,
-    position,
-    size,
-    properties
-  });
+async function spawn_entity() {
+  return { success: false, error: 'DEPRECATED — use compose() instead. Example: compose({ description: "spider", position: [5,1,0] })' };
 }
 
 /**
@@ -224,7 +194,7 @@ async function start_game({ type, template, timeLimit, goalPosition, collectible
   }
 
   if (type) {
-    const validTypes = ['reach', 'collect', 'survival'];
+    const validTypes = ['reach', 'collect', 'survival', 'king', 'hot_potato', 'race'];
     if (!validTypes.includes(type)) {
       return { success: false, error: `Invalid type. Must be one of: ${validTypes.join(', ')}` };
     }
@@ -544,16 +514,10 @@ async function compose({ description, position, recipe, properties = {} }) {
 }
 
 /**
- * Tool: spawn_prefab
- * DEPRECATED — Use compose() instead. compose handles known prefabs AND custom creations.
- * compose({ description: "spider", position: [5,1,0] }) replaces spawn_prefab({ name: "spider", ... })
+ * Tool: spawn_prefab — DEPRECATED, use compose() instead.
  */
-async function spawn_prefab({ name, position, properties = {} }) {
-  if (!name || !position) {
-    return { success: false, error: 'Missing required: name, position' };
-  }
-
-  return gameRequest('/api/world/spawn-prefab', 'POST', { name, position, properties });
+async function spawn_prefab() {
+  return { success: false, error: 'DEPRECATED — use compose() instead. Example: compose({ description: "spider", position: [5,1,0] })' };
 }
 
 /**

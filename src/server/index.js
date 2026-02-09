@@ -94,6 +94,14 @@ function scheduleAutoStart() {
   }, AUTO_START_DELAY);
 }
 
+// Schedule auto-start when first human player joins during lobby
+worldState.onPlayerJoin = function onPlayerJoin(player) {
+  if (player.type === 'ai') return;
+  if (worldState.gameState.phase === 'lobby' && !worldState.autoStartTargetTime) {
+    scheduleAutoStart();
+  }
+};
+
 // Broadcast game state changes from internal transitions (countdown -> playing)
 worldState.onPhaseChange = function onPhaseChange(gameState) {
   broadcastToRoom('game_state_changed', gameState);
@@ -309,20 +317,10 @@ app.post('/api/world/clear', (req, res) => {
 
 // Spawn prefab (grouped entity)
 app.post('/api/world/spawn-prefab', (req, res) => {
-  if (rejectIfLobbyTimer(res)) return;
-
-  const { name, position, properties } = req.body;
-  if (!name || !position) {
-    return res.status(400).json({ error: 'Missing required: name, position' });
-  }
-
-  try {
-    const result = spawnPrefab(name, position, properties || {}, worldState, broadcastToRoom);
-    agentLoop.notifyAgentAction();
-    res.json({ success: true, ...result });
-  } catch (error) {
-    res.status(400).json({ success: false, error: error.message });
-  }
+  return res.status(400).json({
+    error: 'DEPRECATED — use POST /api/world/compose instead. Example: POST /api/world/compose {"description":"spider","position":[5,1,0]}',
+    hint: 'compose auto-resolves prefabs by name — spider, ghost, bounce_pad, etc.'
+  });
 });
 
 // Compose (spawn from description + optional recipe)

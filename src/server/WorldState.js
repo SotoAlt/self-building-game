@@ -406,6 +406,7 @@ export class WorldState {
 
     this.players.set(id, player);
     console.log(`[WorldState] Player joined: ${name} (${type}, ${initialState})`);
+    if (typeof this.onPlayerJoin === 'function') this.onPlayerJoin(player);
     return player;
   }
 
