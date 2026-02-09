@@ -263,8 +263,36 @@
     }
     /* Game status phase variants */
     #game-status.building { border: 2px solid #9b59b6; }
-    #game-status.lobby { border: 2px solid #95a5a6; opacity: 0.7; }
+    #game-status.lobby { border: 2px solid #95a5a6; opacity: 0.9; }
     #game-status.ended { border: 2px solid #e74c3c; }
+    /* Portrait rotation overlay — mobile only */
+    #rotate-overlay {
+      display: none;
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 9999;
+      background: rgba(0,0,0,0.95);
+      color: white;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      font-family: system-ui, sans-serif;
+    }
+    #rotate-overlay .rotate-icon {
+      font-size: 64px;
+      animation: rotateHint 2s ease-in-out infinite;
+    }
+    #rotate-overlay p {
+      font-size: 18px;
+      opacity: 0.8;
+    }
+    @keyframes rotateHint {
+      0%, 100% { transform: rotate(0deg); }
+      50% { transform: rotate(90deg); }
+    }
+    @media (orientation: portrait) and (max-width: 768px) {
+      #rotate-overlay { display: flex; }
+    }
     /* Spectator overlay */
     #spectator-overlay {
       display: none;
@@ -908,6 +936,10 @@
       <div class="drama-label"><span>Calm</span><span id="drama-value">0</span><span>CHAOS</span></div>
     </div>
     <div id="kill-feed"></div>
+  </div>
+  <div id="rotate-overlay">
+    <div class="rotate-icon">📱</div>
+    <p>Rotate to landscape</p>
   </div>
   <div id="privy-root" style="display:none"></div>
   <div id="game"></div>

@@ -52,7 +52,8 @@ const state = {
   chatFocused: false,
   activeEffects: [],
   respawnPoint: [0, 2, 0],
-  isSpectating: false
+  isSpectating: false,
+  lobbyCountdownTarget: null
 };
 
 // Auth state
@@ -273,10 +274,11 @@ const MAX_PITCH = Math.PI / 3;    // 60 degrees
 const MIN_DISTANCE = 8;
 const MAX_DISTANCE = 40;
 
-// Desktop: pointer lock for camera
+// Desktop: pointer lock for camera (players only)
+let spectatorDragging = false;
 if (!isMobile) {
   renderer.domElement.addEventListener('click', () => {
-    if (!state.chatFocused) {
+    if (!state.chatFocused && !isInSpectatorMode()) {
       renderer.domElement.requestPointerLock();
     }
   });
@@ -288,10 +290,25 @@ if (!isMobile) {
   });
 
   document.addEventListener('mousemove', (e) => {
-    if (!pointerLocked) return;
-    cameraYaw -= e.movementX * 0.003;
-    cameraPitch -= e.movementY * 0.003;
-    cameraPitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, cameraPitch));
+    if (pointerLocked) {
+      cameraYaw -= e.movementX * 0.003;
+      cameraPitch -= e.movementY * 0.003;
+      cameraPitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, cameraPitch));
+    } else if (spectatorDragging && isInSpectatorMode()) {
+      cameraYaw -= e.movementX * 0.003;
+      cameraPitch -= e.movementY * 0.003;
+      cameraPitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, cameraPitch));
+    }
+  });
+
+  // Mouse drag for spectator camera
+  renderer.domElement.addEventListener('mousedown', (e) => {
+    if (isInSpectatorMode() && e.button === 0) {
+      spectatorDragging = true;
+    }
+  });
+  document.addEventListener('mouseup', () => {
+    spectatorDragging = false;
   });
 }
 
@@ -385,6 +402,7 @@ function setupMobileControls() {
     .jump-btn { background: rgba(46, 204, 113, 0.4); border-color: #2ecc71; }
     .sprint-btn { background: rgba(52, 152, 219, 0.4); border-color: #3498db; }
     .ready-btn { background: rgba(241, 196, 15, 0.4); border-color: #f1c40f; }
+    #chat-toggle-btn { display: none; }
     /* Mobile responsive adjustments */
     @media (max-width: 768px) {
       #ui { max-width: 200px; padding: 8px; font-size: 11px; }
@@ -401,6 +419,43 @@ function setupMobileControls() {
       #ready-indicator { bottom: 45px; right: 10px; font-size: 11px; padding: 5px 8px; }
       .announcement { font-size: 14px; padding: 10px 20px; }
       #announcements { top: 40px; }
+      #chat-toggle-btn {
+        display: block;
+        position: fixed; bottom: 10px; left: 10px;
+        width: 44px; height: 44px;
+        border-radius: 50%;
+        background: rgba(0,0,0,0.6);
+        border: 2px solid rgba(255,255,255,0.3);
+        color: white; font-size: 10px; font-weight: bold;
+        z-index: 350; touch-action: manipulation;
+        -webkit-user-select: none; user-select: none;
+      }
+    }
+    /* Landscape mobile layout */
+    @media (orientation: landscape) and (max-height: 500px) {
+      #joystick-zone { width: 35vw; height: 70vh; }
+      #mobile-buttons {
+        flex-direction: row !important;
+        bottom: 15px !important;
+        right: 15px !important;
+      }
+      .mobile-btn { width: 60px !important; height: 60px !important; font-size: 10px !important; }
+      #game-status { padding: 6px 12px !important; min-width: 80px !important; top: 8px !important; }
+      #game-timer { font-size: 18px !important; }
+      #game-phase { font-size: 10px !important; }
+      #leaderboard-panel { width: 140px !important; top: 8px !important; font-size: 10px !important; }
+      #ui { max-width: 150px !important; padding: 6px !important; font-size: 10px !important; }
+      #ui h1 { font-size: 12px !important; }
+      #chat-panel {
+        width: 240px !important; max-height: 150px !important;
+        bottom: 80px !important; left: 10px !important;
+      }
+      #chat-messages { max-height: 100px !important; }
+      #announcements { top: 8px !important; }
+      .announcement { font-size: 12px !important; padding: 6px 14px !important; }
+      #bribe-panel { bottom: 80px !important; }
+      #ready-indicator { bottom: 80px !important; }
+      #chat-toggle-btn { bottom: 80px !important; left: 10px !important; }
     }
   `;
   document.head.appendChild(style);
@@ -532,9 +587,47 @@ function setupMobileControls() {
     updateReadyUI();
     readyBtn.classList.toggle('pressed', state.isReady);
   }, { passive: false });
+
+  // Attempt orientation lock
+  if (screen.orientation?.lock) {
+    screen.orientation.lock('landscape').catch(() => {});
+  }
+
+  // Collapsible chat toggle
+  const chatToggle = document.createElement('button');
+  chatToggle.id = 'chat-toggle-btn';
+  chatToggle.textContent = 'CHAT';
+  document.body.appendChild(chatToggle);
+  const chatPanel = document.getElementById('chat-panel');
+  let chatVisible = true;
+  chatToggle.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    chatVisible = !chatVisible;
+    if (chatPanel) chatPanel.style.display = chatVisible ? 'flex' : 'none';
+    chatToggle.style.borderColor = chatVisible ? '#2ecc71' : 'rgba(255,255,255,0.3)';
+  }, { passive: false });
+
+  // Virtual keyboard handling — move chat up when input focused in landscape
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput && chatPanel) {
+    chatInput.addEventListener('focus', () => {
+      if (window.innerHeight < 500) {
+        chatPanel.style.bottom = '50%';
+      }
+    });
+    chatInput.addEventListener('blur', () => {
+      chatPanel.style.bottom = '';
+    });
+  }
 }
 
-// Spectator state helpers
+// ============================================
+// Spectator Camera
+// ============================================
+function isInSpectatorMode() {
+  return isSpectator || state.isSpectating;
+}
+
 function clearSpectating() {
   state.isSpectating = false;
   const banner = document.getElementById('spectator-banner');
@@ -542,9 +635,13 @@ function clearSpectating() {
 }
 
 let spectatorFollowIndex = -1; // -1 = auto, 0+ = specific player
+let spectatorFreeMode = false;
+const spectatorPos = new THREE.Vector3(0, 20, 0);
+const SPEC_FLY_SPEED = 30;
+const SPEC_FAST_SPEED = 60;
 
 function updateCamera() {
-  if (isSpectator) {
+  if (isInSpectatorMode()) {
     updateSpectatorCamera();
     return;
   }
@@ -568,6 +665,18 @@ function updateCamera() {
 }
 
 function updateSpectatorCamera() {
+  // Free-fly mode: camera at spectatorPos, looking in yaw/pitch direction
+  if (spectatorFreeMode) {
+    camera.position.copy(spectatorPos);
+    const lookTarget = new THREE.Vector3(
+      spectatorPos.x - Math.sin(cameraYaw) * Math.cos(cameraPitch),
+      spectatorPos.y - Math.sin(cameraPitch),
+      spectatorPos.z - Math.cos(cameraYaw) * Math.cos(cameraPitch)
+    );
+    camera.lookAt(lookTarget);
+    return;
+  }
+
   // Follow target player using mouse-controlled yaw/pitch (no auto-rotation)
   const allPlayers = Array.from(remotePlayers.entries());
 
@@ -617,6 +726,29 @@ function getCameraDirections() {
   const forward = new THREE.Vector3(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw)).normalize();
   const right = new THREE.Vector3(-forward.z, 0, forward.x);
   return { forward, right };
+}
+
+function updateSpectatorMovement(delta) {
+  if (!spectatorFreeMode) return;
+  const speed = keys.shift ? SPEC_FAST_SPEED : SPEC_FLY_SPEED;
+  // Pitch-aware forward (fly in look direction)
+  const forward = new THREE.Vector3(
+    -Math.sin(cameraYaw) * Math.cos(cameraPitch),
+    -Math.sin(cameraPitch),
+    -Math.cos(cameraYaw) * Math.cos(cameraPitch)
+  ).normalize();
+  const right = new THREE.Vector3(-forward.z, 0, forward.x).normalize();
+  const move = new THREE.Vector3();
+  if (keys.w) move.add(forward);
+  if (keys.s) move.sub(forward);
+  if (keys.a) move.sub(right);
+  if (keys.d) move.add(right);
+  if (keys.space) move.y += 1;
+  if (keys.shift && !keys.w && !keys.s && !keys.a && !keys.d) move.y -= 1;
+  if (move.lengthSq() > 0) {
+    move.normalize().multiplyScalar(speed * delta);
+    spectatorPos.add(move);
+  }
 }
 
 // ============================================
@@ -1563,8 +1695,15 @@ document.addEventListener('keydown', (e) => {
     }
   }
 
-  // Number keys to follow specific players (spectator mode)
-  if (isSpectator && key >= '0' && key <= '9') {
+  // Spectator: WASD activates free-fly mode, number keys return to follow mode
+  if (isInSpectatorMode() && (key === 'w' || key === 'a' || key === 's' || key === 'd')) {
+    if (!spectatorFreeMode) {
+      spectatorFreeMode = true;
+      spectatorPos.copy(camera.position);
+    }
+  }
+  if (isInSpectatorMode() && key >= '0' && key <= '9') {
+    spectatorFreeMode = false;
     spectatorFollowIndex = key === '0' ? -1 : parseInt(key) - 1;
   }
 
@@ -1773,23 +1912,9 @@ function createRemotePlayerMesh(player) {
   const mesh = createRemotePlayerCharacter(color);
 
   // Add name label
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.fillRect(0, 0, 256, 64);
-  ctx.fillStyle = 'white';
-  ctx.font = 'bold 24px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(player.name || 'Player', 128, 40);
+  mesh.add(createNameSprite(player.name));
 
-  const texture = new THREE.CanvasTexture(canvas);
-  const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-  const sprite = new THREE.Sprite(spriteMaterial);
-  sprite.scale.set(3, 0.75, 1);
-  sprite.position.y = 2;
-  mesh.add(sprite);
+  mesh.userData.playerName = player.name || 'Player';
 
   // Initialize interpolation target
   mesh.userData.targetPosition = new THREE.Vector3();
@@ -1801,6 +1926,38 @@ function createRemotePlayerMesh(player) {
   return mesh;
 }
 
+function createNameSprite(name) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, 256, 64);
+  ctx.fillStyle = 'white';
+  ctx.font = 'bold 24px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(name || 'Player', 128, 40);
+  const texture = new THREE.CanvasTexture(canvas);
+  const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+  const sprite = new THREE.Sprite(spriteMaterial);
+  sprite.scale.set(3, 0.75, 1);
+  sprite.position.y = 2;
+  sprite.userData.isNameSprite = true;
+  return sprite;
+}
+
+function rebuildNameSprite(mesh, name) {
+  // Remove old name sprite
+  const old = mesh.children.find(c => c.userData.isNameSprite);
+  if (old) {
+    if (old.material?.map) old.material.map.dispose();
+    if (old.material) old.material.dispose();
+    mesh.remove(old);
+  }
+  mesh.add(createNameSprite(name));
+  mesh.userData.playerName = name;
+}
+
 function updateRemotePlayer(player) {
   let mesh = remotePlayers.get(player.id);
 
@@ -1809,6 +1966,8 @@ function updateRemotePlayer(player) {
     remotePlayers.set(player.id, mesh);
     scene.add(mesh);
     console.log(`[Remote] Added player: ${player.name || player.id}`);
+  } else if (player.name && mesh.userData.playerName !== player.name) {
+    rebuildNameSprite(mesh, player.name);
   }
 
   if (player.position) {
@@ -1925,6 +2084,7 @@ function showSpellEffect(spell) {
 
 // Tracked so we can clear it if a new countdown starts or the phase changes
 let countdownIntervalId = null;
+let lastLobbyCountdownTick = 0;
 
 function clearCountdownInterval() {
   if (countdownIntervalId !== null) {
@@ -1943,8 +2103,15 @@ function updateGameStateUI() {
     statusEl.style.display = 'block';
     statusEl.className = 'lobby';
     phaseEl.textContent = 'LOBBY';
-    typeEl.textContent = 'Waiting for game...';
-    timerEl.textContent = '';
+    if (state.lobbyCountdownTarget) {
+      const remaining = Math.max(0, Math.ceil((state.lobbyCountdownTarget - Date.now()) / 1000));
+      typeEl.textContent = remaining > 0 ? 'Get ready!' : 'Starting...';
+      timerEl.textContent = remaining > 0 ? `Next game in ${remaining}s` : '';
+      timerEl.style.color = remaining <= 10 ? '#f39c12' : '#95a5a6';
+    } else {
+      typeEl.textContent = 'Waiting for game...';
+      timerEl.textContent = '';
+    }
     return;
   }
 
@@ -2015,6 +2182,13 @@ function applyWorldState(worldData) {
     hazardPlaneMesh.visible = hazardPlaneState.active;
     hazardPlaneMesh.position.y = hazardPlaneState.height;
     updateHazardPlaneMaterial(hazardPlaneState.type);
+  }
+  if (worldData.players) {
+    for (const player of worldData.players) {
+      if (state.room && player.id === state.room.sessionId) continue;
+      state.players.set(player.id, player);
+      updateRemotePlayer(player);
+    }
   }
   for (const entity of worldData.entities || []) {
     addEntity(entity);
@@ -2124,7 +2298,11 @@ async function connectToServer() {
 
     room.onMessage('player_moved', ({ id, position, velocity }) => {
       if (id === room.sessionId) return;
-      const player = state.players.get(id) || { id, position };
+      let player = state.players.get(id);
+      if (!player) {
+        player = { id, position };
+        state.players.set(id, player);
+      }
       player.position = position;
       updateRemotePlayer(player);
     });
@@ -2268,6 +2446,11 @@ async function connectToServer() {
       state.gameState = gameState;
       updateGameStateUI();
 
+      // Clear lobby countdown when leaving lobby
+      if (gameState.phase !== 'lobby') {
+        state.lobbyCountdownTarget = null;
+      }
+
       // Auto-clear spectating when returning to lobby
       if (gameState.phase === 'lobby' && state.isSpectating) {
         clearSpectating();
@@ -2327,10 +2510,17 @@ async function connectToServer() {
       }
     });
 
+    // Lobby countdown
+    room.onMessage('lobby_countdown', (data) => {
+      state.lobbyCountdownTarget = data.targetTime || null;
+      updateGameStateUI();
+    });
+
     // Init (authoritative state from room)
     room.onMessage('init', (data) => {
       console.log('[Init] Received initial state from room');
       applyWorldState(data.worldState);
+      state.lobbyCountdownTarget = data.lobbyCountdown || null;
       updateUI();
 
       // Handle mid-game spectator mode
@@ -2339,7 +2529,7 @@ async function connectToServer() {
         const banner = document.createElement('div');
         banner.id = 'spectator-banner';
         banner.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:#f39c12;padding:10px 24px;border-radius:8px;font-size:16px;z-index:999;pointer-events:none;';
-        banner.textContent = 'Game in progress — watching until next round...';
+        banner.textContent = 'Spectating — WASD to fly, drag to look, 0-9 to follow players';
         document.body.appendChild(banner);
       }
     });
@@ -2363,10 +2553,14 @@ function animate() {
   const delta = clock.getDelta();
   const time = performance.now() / 1000;
 
-  if (!isSpectator && !state.isSpectating) updatePlayer(delta);
-  if (!isSpectator && !state.isSpectating) checkCollisions();
+  if (isInSpectatorMode()) {
+    updateSpectatorMovement(delta);
+  } else {
+    updatePlayer(delta);
+    checkCollisions();
+  }
 
-  if (playerMesh && !isSpectator && !state.isSpectating) {
+  if (playerMesh && !isInSpectatorMode()) {
     updateSquashStretch(playerMesh, playerVelocity.y, isGrounded);
   }
 
@@ -2436,7 +2630,15 @@ function animate() {
   updateParticles();
   updateOutlineObjects(entityMeshes, groupParents, playerMesh, remotePlayers);
 
-  if (isSpectator) updateCamera();
+  if (isInSpectatorMode()) updateCamera();
+
+  // Tick lobby countdown display (~1Hz)
+  if (state.gameState.phase === 'lobby' && state.lobbyCountdownTarget) {
+    if (time - lastLobbyCountdownTick > 1) {
+      lastLobbyCountdownTick = time;
+      updateGameStateUI();
+    }
+  }
 
   renderFrame();
 }
@@ -2449,6 +2651,9 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
   resizePostProcessing(window.innerWidth, window.innerHeight);
+  if (isMobile) {
+    cameraDistance = (window.innerWidth > window.innerHeight) ? 22 : 25;
+  }
 });
 
 // ============================================

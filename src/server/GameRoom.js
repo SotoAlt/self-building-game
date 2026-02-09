@@ -260,7 +260,8 @@ export class GameRoom extends Room {
     client.send('init', {
       playerId: client.sessionId,
       worldState: initState,
-      spectating: initialState === 'spectating'
+      spectating: initialState === 'spectating',
+      lobbyCountdown: this.worldState.autoStartTargetTime || null
     });
 
     this.broadcast('player_joined', player, { except: client });

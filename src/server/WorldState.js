@@ -71,6 +71,9 @@ export class WorldState {
     // Lobby pacing — minimum time before games/templates allowed
     this.lobbyEnteredAt = Date.now();
 
+    // Auto-start countdown target (absolute timestamp, null = not scheduled)
+    this.autoStartTargetTime = null;
+
     // Game state machine
     this.gameState = {
       phase: 'lobby', // lobby, building, countdown, playing, ended
@@ -951,6 +954,9 @@ export class WorldState {
     return {
       physics: { ...this.physics },
       entities: Array.from(this.entities.values()),
+      players: Array.from(this.players.values()).map(p => ({
+        id: p.id, name: p.name, type: p.type, position: p.position, state: p.state
+      })),
       challenges: {
         active: this.getChallenges(),
         completed: Array.from(this.challenges.values()).filter(c => !c.active)
