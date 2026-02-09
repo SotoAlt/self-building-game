@@ -208,6 +208,7 @@ rm -f "$SVCFILE"
 ssh $SERVER "
   mkdir -p /root/.openclaw/workspace/skills/game-world
   cp $APP_DIR/config/openclaw/game-world-skill.js /root/.openclaw/workspace/skills/game-world/index.js
+  cp $APP_DIR/config/openclaw/game-world-skill.md /root/.openclaw/workspace/skills/game-world/SKILL.md
   cp $APP_DIR/config/openclaw/SOUL.md /root/.openclaw/workspace/SOUL.md
   echo 'OpenClaw skill files synced'
 "

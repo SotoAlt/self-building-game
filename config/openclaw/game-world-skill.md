@@ -1,182 +1,152 @@
 ---
 name: game-world
-description: Control the 3D game world - spawn entities, modify physics, track players
-version: 0.1.0
+description: Control the 3D game world — spawn creatures and objects with compose, run mini-games, cast spells
+version: 0.22.0
 author: self-building-game
 ---
 
 # Game World Control Skill
 
-This skill allows AI agents to manipulate the 3D game world running on the game server.
+Controls the 3D multiplayer game world via HTTP API.
 
 ## Configuration
 
-Set the game server URL in your environment:
 ```
 GAME_SERVER_URL=http://localhost:3000
 ```
 
 ## Tools
 
-### spawn_entity
+### compose ⭐ MAIN SPAWNING TOOL
 
-Create a new entity in the world.
+Spawn anything — known prefabs OR custom creations you design with shape recipes.
 
 **Parameters:**
-- `type` (required): "platform" | "ramp" | "collectible" | "obstacle" | "trigger"
-- `position` (required): [x, y, z] coordinates
-- `size`: [width, height, depth] - default [1, 1, 1]
-- `properties`: Object with type-specific properties
-  - `color`: Hex color string
-  - `kinematic`: boolean - can it move?
-  - `rotating`: boolean - does it spin?
-  - `speed`: number - rotation/movement speed
+- `description` (required): What to spawn — "spider", "dragon", "pirate ship"
+- `position` (required): [x, y, z]
+- `recipe` (optional): Shape recipe for NEW custom creations
+- `properties` (optional): Override speed, chaseRadius, etc.
 
-**Returns:** `{ id: string, success: boolean }`
+**Known prefabs (no recipe needed — just use description):**
+- Hazards: spider, shark, ghost, ufo, car, spinning_blade, swinging_axe, crusher, rolling_boulder, cactus
+- Utility: bounce_pad, checkpoint, speed_strip
+- Decoration: torch, crystal, barrel, flag, tree, snowman, fish, mushroom, rocket, trashcan
 
-**Example:**
-```json
-{
-  "type": "platform",
-  "position": [0, 5, 0],
-  "size": [10, 1, 10],
-  "properties": {
-    "color": "#3498db",
-    "kinematic": true,
-    "rotating": true,
-    "speed": 2
-  }
-}
+**Examples:**
+```js
+// Known prefab
+compose({ description: "spider", position: [5, 1, 0] })
+compose({ description: "tree", position: [3, 0, -5] })
+
+// Custom creation with recipe
+compose({ description: "dragon", position: [5, 3, 0], recipe: {
+  name: "dragon", category: "hazard", behavior: "chase",
+  defaultProperties: { speed: 3, chaseRadius: 25 },
+  children: [
+    { type: "obstacle", offset: [0,1,0], size: [2.5,1.2,1.2], props: { shape: "sphere", color: "#c0392b" } },
+    { type: "obstacle", offset: [1.5,1.5,0], size: [0.8,0.8,0.8], props: { shape: "sphere", color: "#e74c3c" } },
+    { type: "decoration", offset: [-1.5,0.8,0], size: [1,0.5,0.1], props: { shape: "cone", color: "#c0392b" } },
+    { type: "decoration", offset: [2,1.5,0], size: [0.5,0.3,0.3], props: { shape: "cone", color: "#f39c12", emissive: true } }
+  ]
+}})
 ```
+
+**Recipe rules:**
+- Max 6 children per recipe
+- Shapes: box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
+- Behaviors: static, patrol, rotate, chase, pendulum, crush
+- Categories: hazard, decoration, utility
+- Hazards use child type "obstacle", decorations use "decoration"
+- Cached after first creation — same description = instant spawn next time
+
+### spawn_entity
+
+Create a single primitive shape. **Use compose for creatures/objects.** Only for platforms, ramps, walls, floors.
+
+**Parameters:**
+- `type` (required): "platform" | "ramp" | "collectible" | "obstacle" | "trigger" | "decoration"
+- `position` (required): [x, y, z]
+- `size`: [w, h, d] default [1,1,1]
+- `properties`: { color, shape, kinematic, rotating, speed }
+
+Shapes: box (default), sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
 
 ### modify_entity
 
-Update an existing entity.
-
-**Parameters:**
-- `id` (required): Entity ID to modify
-- `changes`: Object with properties to change
-  - `position`: [x, y, z]
-  - `size`: [width, height, depth]
-  - `properties`: Partial properties object
-
-**Returns:** `{ success: boolean }`
+Update position, size, or properties of an entity. `{ id, changes }`
 
 ### destroy_entity
 
-Remove an entity from the world.
+Remove a single entity. `{ id }`
 
-**Parameters:**
-- `id` (required): Entity ID to remove
+### destroy_prefab
 
-**Returns:** `{ success: boolean }`
+Remove all entities in a composed/prefab group. `{ groupId }`
 
 ### set_physics
 
-Modify global physics parameters.
+`{ gravity: -20..0, friction: 0..1, bounce: 0..2 }`
 
-**Parameters:**
-- `gravity`: number (-20 to 0)
-- `friction`: number (0 to 1)
-- `bounce`: number (0 to 2)
+### set_floor
 
-**Returns:** `{ success: boolean, physics: { gravity, friction, bounce } }`
+`{ type: "solid" | "none" | "lava" }`
 
-### get_world_state
+### set_environment
 
-Get the current state of the entire world.
+`{ skyColor, fogColor, fogNear, fogFar, ambientColor, ambientIntensity, sunColor, sunIntensity, sunPosition }`
 
-**Parameters:** None
+### set_respawn
 
-**Returns:**
-```json
-{
-  "physics": { "gravity": -9.8, "friction": 0.3, "bounce": 0.5 },
-  "entities": [
-    { "id": "...", "type": "...", "position": [...], "size": [...], "properties": {...} }
-  ],
-  "challenges": {
-    "active": [...],
-    "completed": [...]
-  },
-  "statistics": {
-    "totalEntities": 0,
-    "playersOnline": 0
-  }
-}
-```
+`{ position: [x, y, z] }`
 
-### get_player_positions
+### clear_world
 
-Get all connected player positions and states.
+Remove all entities and reset physics. Only outside active games.
 
-**Parameters:** None
+### start_game
 
-**Returns:**
-```json
-{
-  "players": [
-    {
-      "id": "player-001",
-      "name": "speedrunner42",
-      "type": "human",
-      "position": [0, 1, 0],
-      "velocity": [0, 0, 0],
-      "state": "alive"
-    }
-  ]
-}
-```
+Start a mini-game, optionally with a template.
 
-### create_challenge
+`{ template?, type?, timeLimit?, goalPosition?, collectibleCount? }`
 
-Create a new challenge objective.
+Templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone
 
-**Parameters:**
-- `type` (required): "reach" | "collect" | "survive" | "time_trial"
-- `target`: Entity ID or position to reach
-- `description`: Human-readable challenge description
-- `reward`: Points or effect on completion
+### end_game
 
-**Returns:** `{ id: string, success: boolean }`
+End active game. `{ result, winnerId }`
 
-### get_challenge_status
+### get_game_state / get_context / get_world_state / get_player_positions
 
-Get status of all active challenges.
+Query game state. `get_context` is the main polling tool.
 
-**Parameters:** None
+### cast_spell
 
-**Returns:**
-```json
-{
-  "challenges": [
-    {
-      "id": "challenge-001",
-      "type": "reach",
-      "target": "platform-001",
-      "description": "Reach the floating platform",
-      "attempts": 15,
-      "successes": 3,
-      "completionRate": 0.2
-    }
-  ]
-}
-```
+`{ type, duration }` — Types: invert_controls, low_gravity, high_gravity, speed_boost, slow_motion, bouncy, giant, tiny. 10s cooldown.
 
-## Error Codes
+### clear_spells
 
-| Code | Meaning |
-|------|---------|
-| 400 | Invalid parameters |
-| 404 | Entity not found |
-| 500 | Server error |
-| 503 | Game server unavailable |
+Remove all active spells.
 
-## Events
+### add_trick
 
-The game server sends events via WebSocket that trigger agent actions:
-- `player_joined`: New player connected
-- `player_left`: Player disconnected
-- `challenge_completed`: Player finished a challenge
-- `player_died`: Player fell or hit obstacle
-- `entity_collision`: Player touched an entity
+Add timed event to current game. `{ trigger, action, params }`
+
+### announce
+
+`{ text, type: "agent"|"system"|"challenge", duration }`
+
+### send_chat_message
+
+`{ text }` — Send chat as agent.
+
+### check_bribes / honor_bribe
+
+Check and honor player bribes.
+
+### start_building / get_drama_score / get_game_types / get_chat_messages / create_challenge / get_challenge_status
+
+Utility tools for game management.
+
+### spawn_prefab (DEPRECATED)
+
+Use `compose` instead.
