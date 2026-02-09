@@ -252,22 +252,11 @@ app.get('/api/world/state', (req, res) => {
 
 // Spawn entity
 app.post('/api/world/spawn', (req, res) => {
-  if (rejectIfLobbyTimer(res)) return;
-
-  const { type, position, size, properties } = req.body;
-
-  if (!type || !position) {
-    return res.status(400).json({ error: 'Missing required: type, position' });
-  }
-
-  try {
-    const entity = worldState.spawnEntity(type, position, size, properties);
-    broadcastToRoom('entity_spawned', entity);
-    agentLoop.notifyAgentAction();
-    res.json({ success: true, id: entity.id, entity });
-  } catch (error) {
-    res.status(400).json({ success: false, error: error.message });
-  }
+  // Redirect agent to use compose instead
+  return res.status(400).json({
+    error: 'DEPRECATED — use POST /api/world/compose instead. Example: POST /api/world/compose {"description":"spider","position":[5,1,0]}',
+    hint: 'compose handles ALL spawning — prefabs like spider, ghost, shark AND custom creations'
+  });
 });
 
 // Modify entity
