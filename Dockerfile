@@ -2,7 +2,7 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 COPY package*.json .npmrc ./
-RUN npm ci && npm rebuild rollup
+RUN npm ci && npm install @rollup/rollup-linux-x64-musl --no-save
 COPY . .
 
 # Vite needs these at build time for client bundle
