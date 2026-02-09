@@ -188,6 +188,8 @@ const DRAGON_EXAMPLE = JSON.stringify({
 
 function buildPalettePrompt() {
   return [
+    `\n**TALK TO PLAYERS** — You MUST chat every turn! POST /api/chat/send {"text":"your message"}`,
+    `**Announce** — POST /api/announce {"text":"...","type":"agent","duration":4}`,
     `\n**Your palette**: Use start_game({ template: '...' }) to load arenas. Templates: ${ARENA_TEMPLATES}.`,
     `**POST /api/world/compose — YOUR ONLY SPAWNING TOOL.**`,
     `  Known prefabs (no recipe needed): ${KNOWN_PREFABS}.`,
@@ -200,6 +202,7 @@ function buildPalettePrompt() {
     `  Cached after first creation — same description = instant spawn next time.`,
     `  DO NOT use /api/world/spawn. ALWAYS use /api/world/compose.`,
     `  Entity props: isIce (slippery), isConveyor + conveyorDir:[x,0,z] + conveyorSpeed:1-20, isWind + windForce:[x,y,z].`,
+    `**VISUAL TIPS**: Game is cel-shaded toon style. Contrasting colors + emissive eyes/highlights. Overlapping shapes create depth. Organic shapes (horn, dome, tentacle) for creatures, geometric (box, column, cylinder) for structures. Player is 1.8 units tall. Emissive parts glow with bloom.`,
     `**POST /api/world/hazard-plane** — Rising lava/water plane.`,
     `  { active: true, type: "lava"|"water", startHeight: -5, riseSpeed: 0.5, maxHeight: 35 }`,
     `  Rises during "playing" phase, kills players below its height. Deactivates on game end.`,
@@ -210,7 +213,7 @@ function buildPrompt(phase, context, drama) {
   const parts = [];
 
   const phasePrompts = {
-    welcome: `**Phase: WELCOME** — A player just joined! Greet them as the Chaos Magician. Be dramatic and introduce yourself. Tease the chaos to come. DO NOT load templates, spawn entities, or start games. ONLY use send_chat_message.`,
+    welcome: `**Phase: WELCOME** — A player just joined! Greet them as the Chaos Magician. Be dramatic and introduce yourself. Tease the chaos to come. DO NOT load templates, spawn entities, or start games. ONLY use POST /api/chat/send {"text":"..."}.`,
     lobby: `**Phase: LOBBY** — Players are hanging out in an empty lobby.
   If the lobby timer is still active (shown below): ONLY chat. Tell jokes, react to messages. Do NOT build anything.
   If the lobby timer has expired: use start_game with a template to begin! This loads the arena AND starts the game in one step.
@@ -219,7 +222,7 @@ function buildPrompt(phase, context, drama) {
   DO NOT use load_template — it's been merged into start_game.
   IMPORTANT: If you don't start a game, one will auto-start in 45s!`,
     gaming: `**Phase: GAMING** — A game is active! Commentate, cast spells, add tricks. Do NOT use clear_world or load_template.`,
-    intermission: `**Phase: INTERMISSION** — Game just ended! Announce results, congratulate winners, roast losers. Chat about what happened. Do NOT build or start anything yet — cooldown and lobby timer must expire first.`,
+    intermission: `**Phase: INTERMISSION** — Game just ended! Use POST /api/chat/send to announce results, congratulate winners, roast losers. Chat about what happened. Do NOT build or start anything yet — cooldown and lobby timer must expire first.`,
     escalation: `**Phase: ESCALATION** — ${gamesPlayed} games deep! Ramp up difficulty. Harder templates, more spells, shorter time limits. Use start_game({ template: '...', type: '...' }) to begin!`,
     finale: `**Phase: FINALE** — Grand finale! Maximum chaos. Epic commentary. Make it memorable! Use start_game({ template: '...', type: '...' }) for the final showdown!`
   };
@@ -229,7 +232,7 @@ function buildPrompt(phase, context, drama) {
   const bridgeOnly = humanCount === 0 && getNewAudienceMessages(context).length > 0;
 
   if (bridgeOnly) {
-    parts.push(`**CHAT-ONLY MODE** — People are chatting from Twitch/Discord/Telegram but nobody is playing the game yet. ONLY use send_chat_message to chat with them. Do NOT spawn entities, start games, or cast spells — there's no one in the world to see them. Be friendly, tease the game, invite them to join at https://chaos.waweapps.win`);
+    parts.push(`**CHAT-ONLY MODE** — People are chatting from Twitch/Discord/Telegram but nobody is playing the game yet. ONLY use POST /api/chat/send {"text":"..."} to chat with them. Do NOT spawn entities, start games, or cast spells — there's no one in the world to see them. Be friendly, tease the game, invite them to join at https://chaos.waweapps.win`);
   } else {
     parts.push(phasePrompts[phase] || `**Phase: ${phase}** — Keep the game entertaining.`);
 
@@ -295,11 +298,15 @@ function buildPrompt(phase, context, drama) {
     const suggested = (context.suggestedGameTypes || []).join(', ');
     parts.push(`\n**Variety**: Last game was "${context.lastGameType}". Try: ${suggested}`);
   }
+  // Nudge toward new templates
+  if (gamesPlayed < 5 || Math.random() < 0.4) {
+    parts.push(`\n**TRY THESE NEW TEMPLATES**: slime_climb (rising lava + conveyors + ice!), wind_tunnel (crosswind bridges!). During games, compose ice platforms (isIce:true), conveyor_belt prefabs, wind_zone prefabs, or activate the hazard plane!`);
+  }
 
   // Pending welcomes — new players to greet
   const newWelcomes = getNewWelcomes(context);
   if (newWelcomes.length > 0) {
-    parts.push(`\n**NEW PLAYERS — GREET THESE** (use send_chat_message):`);
+    parts.push(`\n**NEW PLAYERS — GREET THESE** (use POST /api/chat/send):`);
     for (const w of newWelcomes) {
       parts.push(`  - ${w.name} just joined!`);
     }
@@ -351,21 +358,20 @@ function buildPrompt(phase, context, drama) {
 
 function invokeAgent(message) {
   return new Promise((resolve, reject) => {
-    const tmpFile = `/tmp/agent-msg-${Date.now()}.txt`;
-    writeFileSync(tmpFile, message);
-
-    execFile('sh', ['-c', `openclaw agent --session-id "${SESSION_ID}" --message "$(cat ${tmpFile})" --timeout 30 2>&1`], {
+    // Pass message directly as argument to avoid shell expansion issues
+    const args = ['agent', '--session-id', SESSION_ID, '--message', message, '--timeout', '30'];
+    execFile('openclaw', args, {
       timeout: 35000,
       encoding: 'utf-8',
       maxBuffer: 1024 * 1024
-    }, (err, stdout) => {
-      try { unlinkSync(tmpFile); } catch {}
+    }, (err, stdout, stderr) => {
+      const output = stdout + (stderr || '');
       if (err) {
         console.error(`[Agent] Invoke failed: ${err.message?.slice(0, 200)}`);
         reject(err);
       } else {
-        console.log(`[Agent] Response received (${stdout.length} chars)`);
-        resolve(stdout);
+        console.log(`[Agent] Response received (${output.length} chars)`);
+        resolve(output);
       }
     });
   });

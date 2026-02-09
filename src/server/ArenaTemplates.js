@@ -67,7 +67,11 @@ export const TEMPLATES = {
       { type: 'trigger', position: [0, 29, 0], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } },
       // Obstacles on some platforms
       { type: 'obstacle', position: [-5, 17, -4], size: [1, 2, 1], properties: { color: '#e74c3c', rotating: true, speed: 3 } },
-      { type: 'obstacle', position: [4, 23, -4], size: [1, 2, 1], properties: { color: '#e74c3c', rotating: true, speed: 2 } }
+      { type: 'obstacle', position: [4, 23, -4], size: [1, 2, 1], properties: { color: '#e74c3c', rotating: true, speed: 2 } },
+      // Decorations
+      { type: 'decoration', position: [5, 5, 2], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
+      { type: 'decoration', position: [-6, 14, 3], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
+      { type: 'decoration', position: [1, 28, 1], size: [0.8, 1.2, 0.8], properties: { shape: 'dodecahedron', color: '#9b59b6', emissive: true } },
     ]
   },
 
@@ -106,7 +110,13 @@ export const TEMPLATES = {
       // Center bonus collectible (risky)
       { type: 'collectible', position: [0, 12, 0], size: [1, 1, 1], properties: { color: '#e67e22' } },
       // Moving platform to reach center bonus
-      { type: 'platform', position: [0, 8, 0], size: [2, 0.5, 2], properties: { color: '#9b59b6', kinematic: true, path: [[0, 8, 0], [0, 11, 0]], speed: 0.5 } }
+      { type: 'platform', position: [0, 8, 0], size: [2, 0.5, 2], properties: { color: '#9b59b6', kinematic: true, path: [[0, 8, 0], [0, 11, 0]], speed: 0.5 } },
+      // Decorations — trees and mushrooms on islands
+      { type: 'decoration', position: [2, 6.5, -17], size: [0.3, 2, 0.3], properties: { shape: 'cylinder', color: '#5d4037' } },
+      { type: 'decoration', position: [2, 8, -17], size: [1.5, 1.5, 1.5], properties: { shape: 'sphere', color: '#27ae60' } },
+      { type: 'decoration', position: [-17, 8.5, -1], size: [0.3, 0.8, 0.3], properties: { shape: 'cylinder', color: '#f5f5dc' } },
+      { type: 'decoration', position: [-17, 9.2, -1], size: [0.8, 0.4, 0.8], properties: { shape: 'sphere', color: '#e74c3c' } },
+      { type: 'decoration', position: [16, 9.5, 2], size: [0.6, 0.9, 0.6], properties: { shape: 'dodecahedron', color: '#9b59b6', emissive: true } },
     ]
   },
 
@@ -139,7 +149,15 @@ export const TEMPLATES = {
       // Goal platform
       { type: 'platform', position: [0, 4, -40], size: [5, 1, 5], properties: { color: '#f1c40f' } },
       // Goal trigger
-      { type: 'trigger', position: [0, 6, -40], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } }
+      { type: 'trigger', position: [0, 6, -40], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } },
+      // Decorations — fire braziers along the gauntlet
+      { type: 'decoration', position: [4, 1.5, 20], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
+      { type: 'decoration', position: [-4, 1.5, 20], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
+      { type: 'decoration', position: [3, 1.5, -18], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff4400', emissive: true } },
+      { type: 'decoration', position: [-3, 1.5, -18], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff4400', emissive: true } },
+      // Warning flag at goal
+      { type: 'decoration', position: [3, 6.5, -40], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
+      { type: 'decoration', position: [3.4, 7.2, -40], size: [0.6, 0.4, 0.05], properties: { color: '#e74c3c' } },
     ]
   },
 
@@ -205,7 +223,13 @@ export const TEMPLATES = {
     environment: { skyColor: '#120326', fogColor: '#120326', fogNear: 20, fogFar: 80, ambientColor: '#553388', ambientIntensity: 0.5, sunColor: '#aa77ff', sunIntensity: 0.7 },
     respawnPoint: [0, 12, 0],
     goalPosition: null,
-    entities: generateHexAGoneEntities(),
+    entities: [
+      ...generateHexAGoneEntities(),
+      // Floating crystals above arena
+      { type: 'decoration', position: [0, 15, 0], size: [1.2, 1.8, 1.2], properties: { shape: 'dodecahedron', color: '#9b59b6', emissive: true, rotating: true, speed: 0.5 } },
+      { type: 'decoration', position: [6, 14, 4], size: [0.8, 1.2, 0.8], properties: { shape: 'dodecahedron', color: '#8e44ad', emissive: true, rotating: true, speed: 0.8 } },
+      { type: 'decoration', position: [-5, 13, -5], size: [0.8, 1.2, 0.8], properties: { shape: 'dodecahedron', color: '#a569bd', emissive: true, rotating: true, speed: 0.7 } },
+    ],
   },
 
   slime_climb: {
@@ -242,6 +266,11 @@ export const TEMPLATES = {
       // Goal platform
       { type: 'platform', position: [0, 39, -30], size: [4, 1, 4], properties: { color: '#f1c40f' } },
       { type: 'trigger', position: [0, 41, -30], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } },
+      // Decorations — warning flags
+      { type: 'decoration', position: [4, 1.5, 15], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
+      { type: 'decoration', position: [4.4, 2.2, 15], size: [0.6, 0.4, 0.05], properties: { color: '#ff6600' } },
+      { type: 'decoration', position: [-3, 19.5, -22], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
+      { type: 'decoration', position: [-2.6, 20.2, -22], size: [0.6, 0.4, 0.05], properties: { color: '#ff6600' } },
     ]
   },
 
@@ -279,6 +308,11 @@ export const TEMPLATES = {
       // Goal platform
       { type: 'platform', position: [0, 7, -40], size: [5, 1, 5], properties: { color: '#f1c40f' } },
       { type: 'trigger', position: [0, 9, -40], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } },
+      // Decorations — directional banners and wind streamers
+      { type: 'decoration', position: [4, 4.5, 30], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
+      { type: 'decoration', position: [4.4, 5.2, 30], size: [0.6, 0.4, 0.05], properties: { color: '#3498db' } },
+      { type: 'decoration', position: [-2, 5, 8], size: [0.1, 1.5, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
+      { type: 'decoration', position: [-1.6, 5.7, 8], size: [0.5, 0.3, 0.05], properties: { color: '#87ceeb' } },
     ]
   },
 

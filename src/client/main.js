@@ -5,6 +5,11 @@
 
 import * as THREE from 'three';
 import { GEOMETRY_TEMPLATES } from './GeometryTemplates.js';
+import { createEntityToonMaterial, createGroundToonMaterial, getEntityColor } from './ToonMaterials.js';
+import { initPostProcessing, renderFrame, resizePostProcessing, updateOutlineObjects } from './PostProcessing.js';
+import { createLavaShaderMaterial, createWaterShaderMaterial, createWindShaderMaterial, registerShaderMaterial, updateShaderTime, registerConveyorMaterial, updateConveyorScrolls } from './SurfaceShaders.js';
+import { createPlayerCharacter, createRemotePlayerCharacter, updateSquashStretch } from './PlayerVisuals.js';
+import { createSkyDome, updateSkyColors, initParticles, updateEnvironmentEffects, selectParticleType } from './EnvironmentEffects.js';
 import { Client } from 'colyseus.js';
 import {
   initPrivy, handleOAuthCallback, exchangeForBackendToken, ensureEmbeddedWallet,
@@ -153,11 +158,7 @@ scene.add(directionalLight);
 
 // Ground plane
 const groundGeometry = new THREE.PlaneGeometry(200, 200, 50, 50);
-const groundMaterial = new THREE.MeshStandardMaterial({
-  color: 0x2d3436,
-  wireframe: false,
-  roughness: 0.8
-});
+const groundMaterial = createGroundToonMaterial();
 const ground = new THREE.Mesh(groundGeometry, groundMaterial);
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
@@ -167,29 +168,26 @@ scene.add(ground);
 const gridHelper = new THREE.GridHelper(200, 50, 0x444444, 0x333333);
 scene.add(gridHelper);
 
-// Lava floor plane (hidden by default)
-const lavaGeometry = new THREE.PlaneGeometry(200, 200, 20, 20);
-const lavaMaterial = new THREE.MeshStandardMaterial({
-  color: 0xe74c3c,
-  emissive: 0xff4500,
-  emissiveIntensity: 0.6,
-  roughness: 0.3,
-  metalness: 0.1,
-  transparent: true,
-  opacity: 0.9
-});
+// Sky gradient dome
+createSkyDome(scene);
+
+// Post-processing pipeline (outlines, bloom, FXAA)
+initPostProcessing(renderer, scene, camera);
+
+// Lava floor plane (hidden by default) — uses animated shader
+const lavaGeometry = new THREE.PlaneGeometry(200, 200, 40, 40);
+const lavaMaterial = createLavaShaderMaterial();
+registerShaderMaterial(lavaMaterial);
 const lavaFloor = new THREE.Mesh(lavaGeometry, lavaMaterial);
 lavaFloor.rotation.x = -Math.PI / 2;
 lavaFloor.position.y = -0.5;
 lavaFloor.visible = false;
 scene.add(lavaFloor);
 
-// Rising hazard plane (lava/water that rises during gameplay)
-const hazardPlaneGeom = new THREE.PlaneGeometry(400, 400);
-const hazardPlaneMat = new THREE.MeshStandardMaterial({
-  color: 0xe74c3c, emissive: 0xff4500, emissiveIntensity: 0.6,
-  roughness: 0.3, transparent: true, opacity: 0.85,
-});
+// Rising hazard plane (lava/water that rises during gameplay) — animated shaders
+const hazardPlaneGeom = new THREE.PlaneGeometry(400, 400, 40, 40);
+let hazardPlaneMat = createLavaShaderMaterial();
+registerShaderMaterial(hazardPlaneMat);
 const hazardPlaneMesh = new THREE.Mesh(hazardPlaneGeom, hazardPlaneMat);
 hazardPlaneMesh.rotation.x = -Math.PI / 2;
 hazardPlaneMesh.visible = false;
@@ -197,17 +195,10 @@ scene.add(hazardPlaneMesh);
 let hazardPlaneState = { active: false, type: 'lava', height: -10 };
 
 function updateHazardPlaneMaterial(type) {
-  if (type === 'water') {
-    hazardPlaneMat.color.set(0x2980b9);
-    hazardPlaneMat.emissive.set(0x3498db);
-    hazardPlaneMat.emissiveIntensity = 0.3;
-    hazardPlaneMat.opacity = 0.7;
-  } else {
-    hazardPlaneMat.color.set(0xe74c3c);
-    hazardPlaneMat.emissive.set(0xff4500);
-    hazardPlaneMat.emissiveIntensity = 0.6;
-    hazardPlaneMat.opacity = 0.85;
-  }
+  const newMat = type === 'water' ? createWaterShaderMaterial() : createLavaShaderMaterial();
+  registerShaderMaterial(newMat);
+  hazardPlaneMesh.material = newMat;
+  hazardPlaneMat = newMat;
 }
 
 // Current floor type tracked on client
@@ -218,11 +209,19 @@ function setFloorType(type) {
   ground.visible = type === 'solid';
   gridHelper.visible = type === 'solid';
   lavaFloor.visible = type === 'lava';
+
+  // Update ambient particles based on floor type
+  const pType = selectParticleType(type, null);
+  initParticles(scene, pType);
+
   console.log(`[Floor] Type changed to: ${type}`);
 }
 
 function applyEnvironment(env) {
-  if (env.skyColor) scene.background = new THREE.Color(env.skyColor);
+  if (env.skyColor) {
+    scene.background = new THREE.Color(env.skyColor);
+    updateSkyColors(env.skyColor, env.fogColor || env.skyColor);
+  }
   if (env.fogColor || env.fogNear != null || env.fogFar != null) {
     scene.fog = new THREE.Fog(
       env.fogColor ? new THREE.Color(env.fogColor) : scene.fog.color,
@@ -235,6 +234,11 @@ function applyEnvironment(env) {
   if (env.sunColor) directionalLight.color.set(env.sunColor);
   if (env.sunIntensity != null) directionalLight.intensity = env.sunIntensity;
   if (env.sunPosition) directionalLight.position.set(...env.sunPosition);
+
+  // Update ambient particles based on environment
+  const pType = selectParticleType(currentFloorType, env);
+  initParticles(scene, pType);
+
   console.log('[Environment] Updated');
 }
 
@@ -662,20 +666,6 @@ function scheduleGroupAssembly(groupId) {
   }, DEBOUNCE_MS));
 }
 
-function getEntityColor(type, customColor) {
-  if (customColor) return new THREE.Color(customColor);
-
-  const colors = {
-    platform: 0x3498db,
-    ramp: 0x2ecc71,
-    collectible: 0xf1c40f,
-    obstacle: 0xe74c3c,
-    trigger: 0x9b59b6,
-    decoration: 0x95a5a6
-  };
-  return new THREE.Color(colors[type] || 0x95a5a6);
-}
-
 function getGeometry(entity) {
   const shape = entity.properties?.shape;
   const [sx, sy, sz] = entity.size || [1, 1, 1];
@@ -704,34 +694,21 @@ function getGeometry(entity) {
 
 function createEntityMesh(entity) {
   const geometry = getGeometry(entity);
-  const color = getEntityColor(entity.type, entity.properties?.color);
-
   const props = entity.properties || {};
-  const isTransparent = props.opacity != null && props.opacity < 1;
-  const material = new THREE.MeshStandardMaterial({
-    color,
-    roughness: props.roughness ?? 0.5,
-    metalness: props.metalness ?? 0.1,
-    emissive: color,
-    emissiveIntensity: props.emissive ? 0.5 : 0.1,
-    transparent: isTransparent,
-    opacity: props.opacity ?? 1,
-  });
+  const color = getEntityColor(entity.type, props.color);
 
-  // Ice surface visual
-  if (props.isIce) {
-    material.roughness = 0.05;
-    material.metalness = 0.6;
-    material.opacity = 0.85;
-    material.transparent = true;
-    material.color.set('#b3e5fc');
-    material.emissive.set('#b3e5fc');
-    material.emissiveIntensity = 0.15;
+  // Wind zones use a special shader material
+  let material;
+  if (props.isWind) {
+    material = createWindShaderMaterial(props.windForce || [1, 0, 0]);
+    registerShaderMaterial(material);
+  } else {
+    material = createEntityToonMaterial(entity);
   }
-  // Conveyor belt visual
-  if (props.isConveyor) {
-    material.emissive.set('#e67e22');
-    material.emissiveIntensity = 0.3;
+
+  // Register conveyor materials for UV scroll animation
+  if (props.isConveyor && material.map) {
+    registerConveyorMaterial(material, props.conveyorSpeed || 6, props.conveyorDir || [1, 0, 0]);
   }
 
   const mesh = new THREE.Mesh(geometry, material);
@@ -1373,37 +1350,8 @@ let jumpBufferTimer = 0;
 let isJumping = false;
 let jumpHeld = false;
 
-function addPlayerDecorations(mesh, color) {
-  // Eyes
-  const eyeGeo = new THREE.SphereGeometry(0.1, 8, 8);
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const pupilGeo = new THREE.SphereGeometry(0.05, 8, 8);
-  const pupilMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-  for (const side of [-0.15, 0.15]) {
-    const eye = new THREE.Mesh(eyeGeo, eyeMat);
-    eye.position.set(side, 0.35, 0.42);
-    const pupil = new THREE.Mesh(pupilGeo, pupilMat);
-    pupil.position.set(0, 0, 0.06);
-    eye.add(pupil);
-    mesh.add(eye);
-  }
-
-  // Glow ring at base
-  const ringGeo = new THREE.TorusGeometry(0.6, 0.08, 8, 24);
-  const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.3 });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = -0.75;
-  mesh.add(ring);
-}
-
 function createPlayer() {
-  const geometry = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
-  const material = new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 0.4 });
-  playerMesh = new THREE.Mesh(geometry, material);
-  playerMesh.position.set(0, 2, 0);
-  playerMesh.castShadow = true;
-  addPlayerDecorations(playerMesh, 0x00ff88);
+  playerMesh = createPlayerCharacter();
   scene.add(playerMesh);
 }
 
@@ -1800,17 +1748,9 @@ function updateReadyUI() {
 // ============================================
 
 function createRemotePlayerMesh(player) {
-  const geometry = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
   const hue = Math.random();
   const color = new THREE.Color().setHSL(hue, 0.7, 0.5);
-  const material = new THREE.MeshStandardMaterial({
-    color,
-    emissive: color,
-    emissiveIntensity: 0.4
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.castShadow = true;
-  addPlayerDecorations(mesh, color);
+  const mesh = createRemotePlayerCharacter(color);
 
   // Add name label
   const canvas = document.createElement('canvas');
@@ -2401,9 +2341,14 @@ function animate() {
   requestAnimationFrame(animate);
 
   const delta = clock.getDelta();
+  const time = performance.now() / 1000;
 
   if (!isSpectator && !state.isSpectating) updatePlayer(delta);
   if (!isSpectator && !state.isSpectating) checkCollisions();
+
+  if (playerMesh && !isSpectator && !state.isSpectating) {
+    updateSquashStretch(playerMesh, playerVelocity.y, isGrounded);
+  }
 
   for (const [, mesh] of remotePlayers) {
     if (mesh.userData.targetPosition) {
@@ -2451,22 +2396,22 @@ function animate() {
   }
 
   if (lavaFloor.visible) {
-    lavaMaterial.emissiveIntensity = 0.5 + Math.sin(Date.now() * 0.002) * 0.2;
-    lavaFloor.position.y = -0.5 + Math.sin(Date.now() * 0.001) * 0.1;
+    lavaFloor.position.y = -0.5 + Math.sin(time * 1.0) * 0.1;
   }
 
-  // Rising hazard plane animation
   if (hazardPlaneMesh.visible) {
-    hazardPlaneMat.emissiveIntensity = (hazardPlaneState.type === 'lava' ? 0.5 : 0.2) + Math.sin(Date.now() * 0.003) * 0.15;
-    // Gentle wave offset on top of server height
-    hazardPlaneMesh.position.y = hazardPlaneState.height + Math.sin(Date.now() * 0.0015) * 0.15;
+    hazardPlaneMesh.position.y = hazardPlaneState.height + Math.sin(time * 1.5) * 0.15;
   }
 
+  updateShaderTime(time);
+  updateConveyorScrolls(delta);
+  updateEnvironmentEffects(delta, camera.position);
   updateParticles();
+  updateOutlineObjects(entityMeshes, groupParents, playerMesh, remotePlayers);
 
   if (isSpectator) updateCamera();
 
-  renderer.render(scene, camera);
+  renderFrame();
 }
 
 // ============================================
@@ -2476,6 +2421,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  resizePostProcessing(window.innerWidth, window.innerHeight);
 });
 
 // ============================================
@@ -3192,6 +3138,9 @@ async function init() {
 
   // Profile button & wallet panel
   setupProfileButton();
+
+  // Start default ambient particles
+  initParticles(scene, 'dust');
 
   animate();
 

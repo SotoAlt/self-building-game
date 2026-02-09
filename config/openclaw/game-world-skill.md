@@ -162,3 +162,17 @@ Utility tools for game management.
 ### spawn_prefab (DEPRECATED)
 
 Use `compose` instead. spawn_prefab is superseded by compose.
+
+---
+
+## Visual Style Guide
+
+The game uses **cel-shaded toon rendering** with cartoon outlines and bloom glow. Design your compositions to look great in this style:
+
+- **Contrasting colors**: Use bold, saturated colors. Light parts next to dark parts pop.
+- **Emissive highlights**: Set `emissive: true` on eyes, flames, crystals, magical effects — they glow with bloom.
+- **Overlapping shapes**: Layer shapes with slightly different colors to create depth (e.g. multiple sphere layers for foliage).
+- **Organic shapes for creatures**: horn, tentacle, wing, dome, teardrop — these look alive.
+- **Geometric shapes for structures**: box, column, cylinder, arch — these look built.
+- **Scale reference**: A player is 1.8 units tall. A tree is ~5 units. A small decoration is ~1 unit.
+- **Textures are auto-applied**: Platforms get checkerboards, breakable platforms get hex grids, conveyors get animated stripes. You don't need to worry about this.

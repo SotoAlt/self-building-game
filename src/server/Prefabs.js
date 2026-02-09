@@ -14,10 +14,19 @@ const PREFABS = {
     defaultProperties: { speed: 2, chaseRadius: 20 },
     children: [
       { type: 'obstacle', offset: [0, 0.5, 0], size: [1, 0.8, 1], props: { shape: 'sphere', color: '#1a1a1a', roughness: 0.9 } },
-      { type: 'obstacle', offset: [-0.6, 0.2, 0.4], size: [0.15, 0.15, 0.8], rotation: [0.3, 0, -0.4], props: { shape: 'cylinder', color: '#333333' } },
+      // Eyes (white + red pupils)
+      { type: 'decoration', offset: [-0.2, 0.75, 0.4], size: [0.15, 0.15, 0.15], props: { shape: 'sphere', color: '#ffffff' } },
+      { type: 'decoration', offset: [0.2, 0.75, 0.4], size: [0.15, 0.15, 0.15], props: { shape: 'sphere', color: '#ffffff' } },
+      { type: 'decoration', offset: [-0.2, 0.75, 0.48], size: [0.07, 0.07, 0.07], props: { shape: 'sphere', color: '#cc0000', emissive: true } },
+      { type: 'decoration', offset: [0.2, 0.75, 0.48], size: [0.07, 0.07, 0.07], props: { shape: 'sphere', color: '#cc0000', emissive: true } },
+      // Fangs
+      { type: 'decoration', offset: [-0.1, 0.3, 0.45], size: [0.06, 0.15, 0.06], props: { shape: 'cone', color: '#f5f5dc' } },
+      { type: 'decoration', offset: [0.1, 0.3, 0.45], size: [0.06, 0.15, 0.06], props: { shape: 'cone', color: '#f5f5dc' } },
+      // Legs (4 pairs, varied color)
+      { type: 'obstacle', offset: [-0.6, 0.2, 0.4], size: [0.15, 0.15, 0.8], rotation: [0.3, 0, -0.4], props: { shape: 'cylinder', color: '#2a2a2a' } },
       { type: 'obstacle', offset: [0.6, 0.2, 0.4], size: [0.15, 0.15, 0.8], rotation: [0.3, 0, 0.4], props: { shape: 'cylinder', color: '#333333' } },
       { type: 'obstacle', offset: [-0.6, 0.2, -0.4], size: [0.15, 0.15, 0.8], rotation: [-0.3, 0, -0.4], props: { shape: 'cylinder', color: '#333333' } },
-      { type: 'obstacle', offset: [0.6, 0.2, -0.4], size: [0.15, 0.15, 0.8], rotation: [-0.3, 0, 0.4], props: { shape: 'cylinder', color: '#333333' } },
+      { type: 'obstacle', offset: [0.6, 0.2, -0.4], size: [0.15, 0.15, 0.8], rotation: [-0.3, 0, 0.4], props: { shape: 'cylinder', color: '#2a2a2a' } },
     ],
     behavior: 'chase',
   },
@@ -99,8 +108,14 @@ const PREFABS = {
     description: 'Glowing flame on a stick — visual decoration',
     defaultProperties: {},
     children: [
+      // Stick
       { type: 'decoration', offset: [0, 1, 0], size: [0.15, 2, 0.15], props: { shape: 'cylinder', color: '#8b4513' } },
-      { type: 'decoration', offset: [0, 2.3, 0], size: [0.3, 0.5, 0.3], props: { shape: 'cone', color: '#ff6600', emissive: true } },
+      // Layered flame (outer → inner, brighter)
+      { type: 'decoration', offset: [0, 2.2, 0], size: [0.35, 0.6, 0.35], props: { shape: 'cone', color: '#cc3300', emissive: true, opacity: 0.7 } },
+      { type: 'decoration', offset: [0, 2.3, 0], size: [0.25, 0.5, 0.25], props: { shape: 'cone', color: '#ff6600', emissive: true, opacity: 0.8 } },
+      { type: 'decoration', offset: [0, 2.4, 0], size: [0.15, 0.35, 0.15], props: { shape: 'cone', color: '#ffcc00', emissive: true } },
+      // Embers at tip
+      { type: 'decoration', offset: [0, 2.65, 0], size: [0.06, 0.08, 0.06], props: { shape: 'sphere', color: '#ffffff', emissive: true } },
     ],
     behavior: 'static',
   },
@@ -153,10 +168,21 @@ const PREFABS = {
     description: 'Grey shark that chases players — kills on contact',
     defaultProperties: { speed: 3, chaseRadius: 25 },
     children: [
+      // Body
       { type: 'obstacle', offset: [0, 0, 0], size: [2, 0.8, 0.8], props: { shape: 'sphere', color: '#5a6672', roughness: 0.3, metalness: 0.2 } },
+      // Belly highlight
+      { type: 'decoration', offset: [0, -0.2, 0], size: [1.4, 0.3, 0.6], props: { shape: 'sphere', color: '#bdc3c7' } },
+      // Tail
       { type: 'obstacle', offset: [-1.2, 0, 0], size: [0.6, 0.8, 0.1], props: { shape: 'cone', color: '#5a6672' } },
+      // Dorsal fin
       { type: 'obstacle', offset: [0, 0.6, 0], size: [0.3, 0.8, 0.1], rotation: [0, 0, 0.1], props: { shape: 'cone', color: '#4a5662' } },
-      { type: 'obstacle', offset: [0.7, 0.1, 0], size: [0.15, 0.15, 0.15], props: { shape: 'sphere', color: '#111111' } },
+      // Eyes
+      { type: 'obstacle', offset: [0.7, 0.1, 0.3], size: [0.15, 0.15, 0.15], props: { shape: 'sphere', color: '#111111' } },
+      { type: 'obstacle', offset: [0.7, 0.1, -0.3], size: [0.15, 0.15, 0.15], props: { shape: 'sphere', color: '#111111' } },
+      // Teeth (small white cones)
+      { type: 'decoration', offset: [0.9, -0.15, 0.15], size: [0.06, 0.1, 0.06], props: { shape: 'cone', color: '#ffffff' } },
+      { type: 'decoration', offset: [0.9, -0.15, -0.15], size: [0.06, 0.1, 0.06], props: { shape: 'cone', color: '#ffffff' } },
+      { type: 'decoration', offset: [0.85, -0.15, 0], size: [0.06, 0.1, 0.06], props: { shape: 'cone', color: '#ffffff' } },
     ],
     behavior: 'chase',
   },
@@ -181,9 +207,15 @@ const PREFABS = {
     description: 'Green tree with brown trunk — visual decoration',
     defaultProperties: {},
     children: [
+      // Trunk with rings
       { type: 'decoration', offset: [0, 1.5, 0], size: [0.4, 3, 0.4], props: { shape: 'cylinder', color: '#5d4037' } },
-      { type: 'decoration', offset: [0, 3.5, 0], size: [2, 2, 2], props: { shape: 'sphere', color: '#27ae60' } },
-      { type: 'decoration', offset: [0, 4.8, 0], size: [1.2, 1.2, 1.2], props: { shape: 'sphere', color: '#2ecc71' } },
+      { type: 'decoration', offset: [0, 0.3, 0], size: [0.55, 0.15, 0.55], props: { shape: 'cylinder', color: '#4e342e' } },
+      // Layered foliage (3 tiers, varied greens)
+      { type: 'decoration', offset: [0, 3.2, 0], size: [2.2, 1.8, 2.2], props: { shape: 'sphere', color: '#1b8a3d' } },
+      { type: 'decoration', offset: [0.3, 3.8, 0.2], size: [1.6, 1.5, 1.6], props: { shape: 'sphere', color: '#27ae60' } },
+      { type: 'decoration', offset: [-0.2, 4.5, -0.1], size: [1.2, 1.2, 1.2], props: { shape: 'sphere', color: '#2ecc71' } },
+      // Small fruit
+      { type: 'decoration', offset: [0.7, 3.0, 0.5], size: [0.2, 0.2, 0.2], props: { shape: 'sphere', color: '#e74c3c' } },
     ],
     behavior: 'static',
   },
@@ -193,10 +225,24 @@ const PREFABS = {
     description: 'Classic snowman — three white spheres stacked',
     defaultProperties: {},
     children: [
+      // Body (3 balls)
       { type: 'decoration', offset: [0, 0.8, 0], size: [1.6, 1.6, 1.6], props: { shape: 'sphere', color: '#ecf0f1' } },
       { type: 'decoration', offset: [0, 2.0, 0], size: [1.2, 1.2, 1.2], props: { shape: 'sphere', color: '#f0f0f0' } },
       { type: 'decoration', offset: [0, 3.0, 0], size: [0.8, 0.8, 0.8], props: { shape: 'sphere', color: '#f5f5f5' } },
-      { type: 'decoration', offset: [0, 3.0, 0.4], size: [0.15, 0.3, 0.15], props: { shape: 'cone', color: '#e67e22' } },
+      // Carrot nose
+      { type: 'decoration', offset: [0, 3.0, 0.4], size: [0.1, 0.25, 0.1], props: { shape: 'cone', color: '#e67e22' } },
+      // Coal buttons
+      { type: 'decoration', offset: [0, 1.8, 0.55], size: [0.1, 0.1, 0.1], props: { shape: 'sphere', color: '#1a1a1a' } },
+      { type: 'decoration', offset: [0, 1.5, 0.6], size: [0.1, 0.1, 0.1], props: { shape: 'sphere', color: '#1a1a1a' } },
+      { type: 'decoration', offset: [0, 1.2, 0.55], size: [0.1, 0.1, 0.1], props: { shape: 'sphere', color: '#1a1a1a' } },
+      // Eyes
+      { type: 'decoration', offset: [-0.15, 3.15, 0.35], size: [0.1, 0.1, 0.1], props: { shape: 'sphere', color: '#1a1a1a' } },
+      { type: 'decoration', offset: [0.15, 3.15, 0.35], size: [0.1, 0.1, 0.1], props: { shape: 'sphere', color: '#1a1a1a' } },
+      // Stick arms
+      { type: 'decoration', offset: [-0.8, 2.0, 0], size: [0.08, 0.08, 0.8], rotation: [0, 0, -0.5], props: { shape: 'cylinder', color: '#5d4037' } },
+      { type: 'decoration', offset: [0.8, 2.0, 0], size: [0.08, 0.08, 0.8], rotation: [0, 0, 0.5], props: { shape: 'cylinder', color: '#5d4037' } },
+      // Scarf
+      { type: 'decoration', offset: [0, 2.5, 0.1], size: [0.5, 0.12, 0.15], props: { color: '#e74c3c' } },
     ],
     behavior: 'static',
   },
@@ -206,9 +252,16 @@ const PREFABS = {
     description: 'Floating white ghost that chases players — kills on contact',
     defaultProperties: { speed: 1.8, chaseRadius: 18 },
     children: [
-      { type: 'obstacle', offset: [0, 1, 0], size: [1.2, 1.5, 1.2], props: { shape: 'sphere', color: '#ecf0f1' } },
-      { type: 'obstacle', offset: [-0.25, 1.2, 0.5], size: [0.2, 0.2, 0.2], props: { shape: 'sphere', color: '#111111' } },
-      { type: 'obstacle', offset: [0.25, 1.2, 0.5], size: [0.2, 0.2, 0.2], props: { shape: 'sphere', color: '#111111' } },
+      // Body
+      { type: 'obstacle', offset: [0, 1, 0], size: [1.2, 1.5, 1.2], props: { shape: 'sphere', color: '#ecf0f1', opacity: 0.85 } },
+      // Sheet tail
+      { type: 'obstacle', offset: [0, 0, 0], size: [0.8, 0.8, 0.8], props: { shape: 'cone', color: '#dcdde1', opacity: 0.7 } },
+      // Eyes (dark, wide)
+      { type: 'obstacle', offset: [-0.25, 1.2, 0.5], size: [0.25, 0.3, 0.15], props: { shape: 'sphere', color: '#111111' } },
+      { type: 'obstacle', offset: [0.25, 1.2, 0.5], size: [0.25, 0.3, 0.15], props: { shape: 'sphere', color: '#111111' } },
+      // Rosy cheeks
+      { type: 'decoration', offset: [-0.35, 0.95, 0.45], size: [0.15, 0.1, 0.1], props: { shape: 'sphere', color: '#ffb3b3', opacity: 0.6 } },
+      { type: 'decoration', offset: [0.35, 0.95, 0.45], size: [0.15, 0.1, 0.1], props: { shape: 'sphere', color: '#ffb3b3', opacity: 0.6 } },
     ],
     behavior: 'chase',
   },
@@ -218,10 +271,16 @@ const PREFABS = {
     description: 'Red mushroom with white spots — visual decoration',
     defaultProperties: {},
     children: [
+      // Stem with ring
       { type: 'decoration', offset: [0, 0.5, 0], size: [0.4, 1, 0.4], props: { shape: 'cylinder', color: '#f5f5dc' } },
-      { type: 'decoration', offset: [0, 1.2, 0], size: [1.2, 0.6, 1.2], props: { shape: 'sphere', color: '#e74c3c' } },
+      { type: 'decoration', offset: [0, 0.9, 0], size: [0.5, 0.08, 0.5], props: { shape: 'cylinder', color: '#e8dcc8' } },
+      // Cap (slight overhang)
+      { type: 'decoration', offset: [0, 1.2, 0], size: [1.3, 0.55, 1.3], props: { shape: 'sphere', color: '#e74c3c' } },
+      // White spots
       { type: 'decoration', offset: [0.3, 1.5, 0.2], size: [0.2, 0.2, 0.2], props: { shape: 'sphere', color: '#ffffff' } },
       { type: 'decoration', offset: [-0.2, 1.5, -0.3], size: [0.15, 0.15, 0.15], props: { shape: 'sphere', color: '#ffffff' } },
+      { type: 'decoration', offset: [-0.35, 1.35, 0.25], size: [0.12, 0.12, 0.12], props: { shape: 'sphere', color: '#ffffff' } },
+      { type: 'decoration', offset: [0.15, 1.45, -0.35], size: [0.18, 0.18, 0.18], props: { shape: 'sphere', color: '#ffffff' } },
     ],
     behavior: 'static',
   },
