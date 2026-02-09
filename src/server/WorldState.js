@@ -74,6 +74,10 @@ export class WorldState {
     // Auto-start countdown target (absolute timestamp, null = not scheduled)
     this.autoStartTargetTime = null;
 
+    // Game history for variety enforcement — last 8 { type, template, timestamp }
+    this.gameHistory = [];
+    this.lastTemplate = null;
+
     // Game state machine
     this.gameState = {
       phase: 'lobby', // lobby, building, countdown, playing, ended
@@ -317,6 +321,10 @@ export class WorldState {
     this.hazardPlane.height = this.hazardPlane.startHeight;
   }
 
+  setLastTemplate(name) {
+    this.lastTemplate = name;
+  }
+
   setRespawnPoint(position) {
     this.respawnPoint = [...position];
     console.log(`[WorldState] Respawn point set to [${position.join(', ')}]`);
@@ -540,7 +548,7 @@ export class WorldState {
     // Cancel any pending lobby reset from a previous game
     clearTimeout(this._lobbyResetTimer);
 
-    const validTypes = ['reach', 'collect', 'survival'];
+    const validTypes = ['reach', 'collect', 'survival', 'king', 'hot_potato', 'race'];
     if (!validTypes.includes(gameType)) {
       throw new Error(`Invalid game type: ${gameType}`);
     }
@@ -588,6 +596,14 @@ export class WorldState {
     // Track last game type for variety enforcement
     this.lastGameType = this.gameState.gameType;
     this.lastGameEndTime = Date.now();
+
+    // Push to game history (cap at 8)
+    this.gameHistory.push({
+      type: this.gameState.gameType,
+      template: this.lastTemplate,
+      timestamp: Date.now()
+    });
+    if (this.gameHistory.length > 8) this.gameHistory = this.gameHistory.slice(-8);
 
     this.deactivateHazardPlane();
     this.gameState.phase = 'ended';

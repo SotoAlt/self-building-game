@@ -5,6 +5,9 @@
  * - reach: First to touch target wins
  * - collect: Most collectibles in time wins
  * - survival: Last player standing wins
+ * - king: Control hill zones to earn points
+ * - hot_potato: Pass the curse before it eliminates you
+ * - race: Hit checkpoints in order
  */
 
 import { randomUUID } from 'crypto';
@@ -36,6 +39,27 @@ export const GAME_TYPES = {
     name: 'Survival',
     description: 'Last player standing wins',
     minPlayers: 2,
+    hasTimer: true,
+    defaultTimeLimit: 90000
+  },
+  king: {
+    name: 'King of the Hill',
+    description: 'Control zones to earn points',
+    minPlayers: 2,
+    hasTimer: true,
+    defaultTimeLimit: 90000
+  },
+  hot_potato: {
+    name: 'Hot Potato',
+    description: 'Pass the curse before it eliminates you',
+    minPlayers: 2,
+    hasTimer: true,
+    defaultTimeLimit: 120000
+  },
+  race: {
+    name: 'Checkpoint Race',
+    description: 'Hit all checkpoints in order',
+    minPlayers: 1,
     hasTimer: true,
     defaultTimeLimit: 90000
   }
@@ -394,7 +418,10 @@ export class MiniGame {
     const ranges = {
       reach: [40000, 75000],
       collect: [30000, 60000],
-      survival: [60000, 120000]
+      survival: [60000, 120000],
+      king: [60000, 120000],
+      hot_potato: [90000, 150000],
+      race: [60000, 100000]
     };
     const [min, max] = ranges[type] || [45000, 75000];
     return min + Math.floor(Math.random() * (max - min));

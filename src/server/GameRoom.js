@@ -85,6 +85,11 @@ export class GameRoom extends Room {
       this._systemMessage(`${name} died`);
       this.worldState.addEvent('player_death', { playerId: client.sessionId, name });
 
+      // Notify mini-game of death (for survival, hot_potato, etc.)
+      if (this.currentMiniGame?.isActive && typeof this.currentMiniGame.onPlayerDeath === 'function') {
+        this.currentMiniGame.onPlayerDeath(client.sessionId);
+      }
+
       console.log(`[GameRoom] Player died: ${client.sessionId}`);
     });
 
@@ -156,9 +161,13 @@ export class GameRoom extends Room {
         playerId: client.sessionId
       });
 
-      // Notify mini-game if active
-      if (this.currentMiniGame?.isActive && typeof this.currentMiniGame.onPlayerReachedGoal === 'function') {
-        this.currentMiniGame.onPlayerReachedGoal(client.sessionId);
+      // Notify mini-game if active — pass entityId for checkpoint-based games
+      if (this.currentMiniGame?.isActive) {
+        if (typeof this.currentMiniGame.onTriggerActivated === 'function') {
+          this.currentMiniGame.onTriggerActivated(client.sessionId, data.entityId);
+        } else if (typeof this.currentMiniGame.onPlayerReachedGoal === 'function') {
+          this.currentMiniGame.onPlayerReachedGoal(client.sessionId);
+        }
       }
     });
 

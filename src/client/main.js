@@ -2331,6 +2331,85 @@ async function connectToServer() {
       }
     });
 
+    // === King of the Hill: live scoreboard ===
+    room.onMessage('score_update', (data) => {
+      const overlay = document.getElementById('score-overlay');
+      if (!overlay) return;
+      if (data.gameType !== 'king') { overlay.style.display = 'none'; return; }
+      overlay.style.display = 'block';
+      const target = data.targetScore || 30;
+      const sorted = Object.entries(data.scores).sort((a, b) => b[1].score - a[1].score);
+      overlay.innerHTML = `<div class="score-title">KING OF THE HILL (${target})</div>` +
+        sorted.map(([, info]) => {
+          const pct = Math.min(100, (info.score / target) * 100);
+          return `<div class="score-row"><span>${info.name}</span><span>${info.score}</span></div>` +
+            `<div class="score-bar"><div class="score-bar-fill" style="width:${pct}%"></div></div>`;
+        }).join('');
+    });
+
+    // === Hot Potato: curse tracking ===
+    room.onMessage('curse_changed', (data) => {
+      state._cursedPlayerId = data.cursedPlayerId;
+      state._curseRound = data.round;
+      // Red glow on cursed player mesh
+      for (const [id, mesh] of remotePlayers) {
+        if (mesh.material) {
+          mesh.material.emissive?.setHex(id === data.cursedPlayerId ? 0xff0000 : 0x000000);
+          mesh.material.emissiveIntensity = id === data.cursedPlayerId ? 0.5 : 0;
+        }
+      }
+      // Local player cursed — red vignette
+      if (data.cursedPlayerId === room.sessionId) {
+        triggerCameraShake(0.2, 300);
+        showVignette('#ff0000', 0.3, data.curseDuration || 12000);
+      }
+      // Show/update curse timer
+      const curseEl = document.getElementById('curse-timer');
+      if (curseEl) {
+        curseEl.style.display = 'block';
+        curseEl.textContent = `Round ${data.round} — ${data.playersAlive} alive`;
+      }
+    });
+
+    room.onMessage('curse_timer_update', (data) => {
+      const curseEl = document.getElementById('curse-timer');
+      if (!curseEl) return;
+      curseEl.style.display = 'block';
+      const sec = Math.ceil(data.curseTimer / 1000);
+      const isLocal = data.cursedPlayerId === room.sessionId;
+      curseEl.textContent = isLocal ? `YOU HAVE THE CURSE! ${sec}s` : `Curse: ${sec}s`;
+      curseEl.className = sec <= 3 ? 'pulsing' : '';
+    });
+
+    room.onMessage('curse_eliminated', (data) => {
+      // Clear curse glow from eliminated player
+      const mesh = remotePlayers.get(data.playerId);
+      if (mesh?.material) {
+        mesh.material.emissive?.setHex(0x000000);
+        mesh.material.emissiveIntensity = 0;
+      }
+    });
+
+    // === Race: checkpoint progress ===
+    room.onMessage('checkpoint_reached', (data) => {
+      const cpEl = document.getElementById('checkpoint-display');
+      if (!cpEl) return;
+      cpEl.style.display = 'block';
+      if (data.playerId === room.sessionId) {
+        cpEl.textContent = `Checkpoint ${data.checkpoint}/${data.total}`;
+        cpEl.style.borderColor = '#2ecc71';
+        triggerCameraShake(0.1, 150);
+      } else {
+        // Show other player's progress
+        cpEl.textContent = `${data.playerName}: ${data.checkpoint}/${data.total}`;
+        cpEl.style.borderColor = '#95a5a6';
+      }
+      // Particles at checkpoint
+      const entity = state.entities.get(data.entityId);
+      if (entity) spawnParticles(entity.position, '#2ecc71', 20, 4);
+      playCollectSound();
+    });
+
     // Announcements
     room.onMessage('announcement', showAnnouncement);
 
@@ -2454,6 +2533,24 @@ async function connectToServer() {
       // Auto-clear spectating when returning to lobby
       if (gameState.phase === 'lobby' && state.isSpectating) {
         clearSpectating();
+      }
+
+      // Clear game-specific overlays on lobby/ended
+      if (gameState.phase === 'lobby' || gameState.phase === 'ended') {
+        const scoreOverlay = document.getElementById('score-overlay');
+        const curseTimer = document.getElementById('curse-timer');
+        const checkpointDisplay = document.getElementById('checkpoint-display');
+        if (scoreOverlay) scoreOverlay.style.display = 'none';
+        if (curseTimer) { curseTimer.style.display = 'none'; curseTimer.className = ''; }
+        if (checkpointDisplay) checkpointDisplay.style.display = 'none';
+        state._cursedPlayerId = null;
+        // Clear curse glow from all remote players
+        for (const [, mesh] of remotePlayers) {
+          if (mesh.material) {
+            mesh.material.emissive?.setHex(0x000000);
+            mesh.material.emissiveIntensity = 0;
+          }
+        }
       }
 
       // Phase transition VFX

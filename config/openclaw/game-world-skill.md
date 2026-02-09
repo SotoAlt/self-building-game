@@ -117,11 +117,27 @@ Remove all entities and reset physics. Only outside active games.
 
 ### start_game
 
-Start a mini-game, optionally with a template.
+Start a mini-game, optionally with a template. Each template has a default game type.
 
 `{ template?, type?, timeLimit?, goalPosition?, collectibleCount? }`
 
-Templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone, slime_climb, wind_tunnel
+**6 Game Types:**
+- `reach` — Race to touch the goal trigger
+- `collect` — Collect the most items before time runs out
+- `survival` — Last player standing wins
+- `king` — Control hill zones to earn points (1 pt/sec as sole occupant)
+- `hot_potato` — Pass the curse before the sub-timer eliminates you
+- `race` — Hit all checkpoints in order
+
+**Templates by type:**
+| Type | Templates |
+|------|-----------|
+| reach | spiral_tower, gauntlet, parkour_hell, slime_climb, wind_tunnel |
+| collect | floating_islands, treasure_trove |
+| survival | shrinking_arena, hex_a_gone, ice_rink |
+| king | king_plateau, king_islands |
+| hot_potato | hot_potato_arena, hot_potato_platforms |
+| race | checkpoint_dash, race_circuit |
 
 ### end_game
 

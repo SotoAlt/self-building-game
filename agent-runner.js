@@ -155,7 +155,18 @@ function getNewWelcomes(context) {
   return (context.pendingWelcomes || []).filter(w => !welcomedPlayers.has(w.playerId || w.name));
 }
 
-const ARENA_TEMPLATES = 'spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone, slime_climb, wind_tunnel';
+const ARENA_TEMPLATES = 'spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone, slime_climb, wind_tunnel, treasure_trove, ice_rink, king_plateau, king_islands, hot_potato_arena, hot_potato_platforms, checkpoint_dash, race_circuit';
+
+const TYPE_TO_TEMPLATES = {
+  reach: ['spiral_tower', 'gauntlet', 'parkour_hell', 'slime_climb', 'wind_tunnel'],
+  collect: ['floating_islands', 'treasure_trove'],
+  survival: ['shrinking_arena', 'hex_a_gone', 'ice_rink'],
+  king: ['king_plateau', 'king_islands'],
+  hot_potato: ['hot_potato_arena', 'hot_potato_platforms'],
+  race: ['checkpoint_dash', 'race_circuit'],
+};
+
+const ALL_GAME_TYPES = ['reach', 'collect', 'survival', 'king', 'hot_potato', 'race'];
 
 const KNOWN_PREFABS = [
   'spider', 'shark', 'ghost', 'ufo', 'car', 'spinning_blade', 'swinging_axe',
@@ -185,6 +196,57 @@ const DRAGON_EXAMPLE = JSON.stringify({
     ],
   },
 });
+
+function buildVarietyDirective(context) {
+  const history = context.gameHistory || [];
+  const lastType = context.lastGameType || null;
+  const lastTemplate = context.lastTemplate || null;
+  const recentTypes = history.slice(-3).map(g => g.type);
+  const recentTemplates = history.slice(-3).map(g => g.template).filter(Boolean);
+
+  const lines = [`\n**VARIETY RULES (MANDATORY)**:`];
+
+  // Ban last game's type entirely
+  if (lastType) {
+    lines.push(`- DO NOT start a "${lastType}" game. Pick a DIFFERENT type.`);
+  }
+
+  // Ban recent templates
+  if (recentTemplates.length > 0) {
+    lines.push(`- DO NOT use templates: ${recentTemplates.join(', ')}. They were played recently.`);
+  }
+
+  // Find least recently played type
+  const typeCounts = {};
+  for (const t of ALL_GAME_TYPES) typeCounts[t] = 0;
+  for (const g of history) {
+    if (g.type && typeCounts[g.type] !== undefined) typeCounts[g.type]++;
+  }
+  const sortedTypes = ALL_GAME_TYPES
+    .filter(t => t !== lastType)
+    .sort((a, b) => typeCounts[a] - typeCounts[b]);
+
+  const recommendedType = sortedTypes[0] || 'collect';
+  const recommendedTemplates = (TYPE_TO_TEMPLATES[recommendedType] || [])
+    .filter(t => !recentTemplates.includes(t));
+  const recommendedTemplate = recommendedTemplates[0] || TYPE_TO_TEMPLATES[recommendedType]?.[0] || 'floating_islands';
+
+  lines.push(`- **RECOMMENDED**: start_game({ template: '${recommendedTemplate}' })`);
+  lines.push(`- Available types: ${ALL_GAME_TYPES.join(', ')}`);
+
+  // Type→template reference
+  lines.push(`- Type→Template mapping:`);
+  for (const [type, templates] of Object.entries(TYPE_TO_TEMPLATES)) {
+    lines.push(`  ${type}: ${templates.join(', ')}`);
+  }
+
+  if (history.length > 0) {
+    const historyStr = history.slice(-3).map(g => `${g.type}/${g.template}`).join(' → ');
+    lines.push(`- Recent history: ${historyStr}`);
+  }
+
+  return lines.join('\n');
+}
 
 function buildPalettePrompt() {
   return [
@@ -217,10 +279,12 @@ function buildPrompt(phase, context, drama) {
     lobby: `**Phase: LOBBY** — Players are hanging out in an empty lobby.
   If the lobby timer is still active (shown below): ONLY chat. Tell jokes, react to messages. Do NOT build anything.
   If the lobby timer has expired: use start_game with a template to begin! This loads the arena AND starts the game in one step.
-  Example: start_game({ template: 'parkour_hell' }) or start_game({ template: 'gauntlet', type: 'survival' })
+  Example: start_game({ template: 'king_plateau' }) or start_game({ template: 'checkpoint_dash' })
   Available templates: ${ARENA_TEMPLATES}
+  6 game types: reach, collect, survival, king (control zones), hot_potato (pass the curse), race (checkpoints).
+  Each template has a default type. You can override: start_game({ template: 'shrinking_arena', type: 'survival' })
   DO NOT use load_template — it's been merged into start_game.
-  IMPORTANT: If you don't start a game, one will auto-start in 45s!`,
+  IMPORTANT: Follow the VARIETY RULES below! If you don't start a game, one will auto-start in 45s!`,
     gaming: `**Phase: GAMING** — A game is active! Commentate, cast spells, add tricks. Do NOT use clear_world or load_template.`,
     intermission: `**Phase: INTERMISSION** — Game just ended! Use POST /api/chat/send to announce results, congratulate winners, roast losers. Chat about what happened. Do NOT build or start anything yet — cooldown and lobby timer must expire first.`,
     escalation: `**Phase: ESCALATION** — ${gamesPlayed} games deep! Ramp up difficulty. Harder templates, more spells, shorter time limits. Use start_game({ template: '...', type: '...' }) to begin!`,
@@ -293,15 +357,8 @@ function buildPrompt(phase, context, drama) {
     });
   }
 
-  // Game variety hint
-  if (context.lastGameType) {
-    const suggested = (context.suggestedGameTypes || []).join(', ');
-    parts.push(`\n**Variety**: Last game was "${context.lastGameType}". Try: ${suggested}`);
-  }
-  // Nudge toward new templates
-  if (gamesPlayed < 5 || Math.random() < 0.4) {
-    parts.push(`\n**TRY THESE NEW TEMPLATES**: slime_climb (rising lava + conveyors + ice!), wind_tunnel (crosswind bridges!). During games, compose ice platforms (isIce:true), conveyor_belt prefabs, wind_zone prefabs, or activate the hazard plane!`);
-  }
+  // Hard variety enforcement
+  parts.push(buildVarietyDirective(context));
 
   // Pending welcomes — new players to greet
   const newWelcomes = getNewWelcomes(context);

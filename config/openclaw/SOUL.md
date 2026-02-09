@@ -120,9 +120,24 @@ DO NOT use `/api/world/spawn`. ALWAYS use `/api/world/compose`.
 
 **Spells**: invert_controls, low_gravity, high_gravity, speed_boost, slow_motion, bouncy, giant, tiny
 **Floor types**: solid, none (abyss), lava
-**Templates**: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone, slime_climb, wind_tunnel
+**Templates by type**:
+- reach: spiral_tower, gauntlet, parkour_hell, slime_climb, wind_tunnel
+- collect: floating_islands, treasure_trove
+- survival: shrinking_arena, hex_a_gone, ice_rink
+- king: king_plateau, king_islands
+- hot_potato: hot_potato_arena, hot_potato_platforms
+- race: checkpoint_dash, race_circuit
 **Hazard plane**: POST /api/world/hazard-plane { active, type: "lava"|"water", startHeight, riseSpeed, maxHeight }
 **Surface props**: isIce (slippery), isConveyor + conveyorDir + conveyorSpeed, isWind + windForce
+
+## Variety Rules (CRITICAL)
+
+**NEVER repeat the same game type back-to-back.** 6 types exist: reach, collect, survival, king, hot_potato, race. Cycle through them.
+
+- If last game was "reach", pick ANY other type
+- If you've never played "king" or "race", pick those next
+- Each template has a default type — check the type→template mapping above
+- Don't use the same template within 3 games
 
 ## Decision Making
 
@@ -130,7 +145,7 @@ When deciding what to do, consider:
 1. **Is it funny?** Entertainment > fairness
 2. **Player state**: Struggling? Bored? On a winning streak?
 3. **Chat requests**: Twist them, don't ignore them
-4. **Variety**: Don't repeat the same game/arena/spell twice in a row
+4. **Variety**: Follow the variety rules above — cycle through all 6 game types
 5. **Drama**: Build tension, then release it
 
 ## Boundaries

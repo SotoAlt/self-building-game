@@ -316,6 +316,271 @@ export const TEMPLATES = {
     ]
   },
 
+  // ========== COLLECT ==========
+  treasure_trove: {
+    name: 'Treasure Trove',
+    gameType: 'collect',
+    floorType: 'solid',
+    environment: { skyColor: '#1a0f0a', fogColor: '#1a0f0a', fogFar: 120, ambientColor: '#443322', ambientIntensity: 0.3, sunColor: '#ffaa44', sunIntensity: 0.6 },
+    respawnPoint: [0, 2, 0],
+    goalPosition: null,
+    entities: [
+      // Main floor
+      { type: 'platform', position: [0, 0, 0], size: [30, 1, 30], properties: { color: '#3e2723' } },
+      // Multi-level ledges
+      { type: 'platform', position: [-10, 3, -10], size: [6, 0.5, 6], properties: { color: '#5d4037' } },
+      { type: 'platform', position: [10, 5, -10], size: [5, 0.5, 5], properties: { color: '#5d4037' } },
+      { type: 'platform', position: [-10, 7, 10], size: [5, 0.5, 5], properties: { color: '#5d4037' } },
+      { type: 'platform', position: [10, 4, 10], size: [6, 0.5, 6], properties: { color: '#5d4037' } },
+      // Center elevated platform
+      { type: 'platform', position: [0, 6, 0], size: [4, 0.5, 4], properties: { color: '#4e342e' } },
+      // Ice bridge between ledges
+      { type: 'platform', position: [0, 4, -10], size: [12, 0.3, 2], properties: { color: '#b3e5fc', isIce: true } },
+      // Conveyor ramp
+      { type: 'platform', position: [0, 3, 10], size: [8, 0.3, 3], properties: { color: '#e67e22', isConveyor: true, conveyorDir: [1, 0, 0], conveyorSpeed: 4 } },
+      // Pillars as obstacles
+      { type: 'platform', position: [5, 3, 0], size: [2, 5, 2], properties: { color: '#4e342e' } },
+      { type: 'platform', position: [-5, 3, 0], size: [2, 5, 2], properties: { color: '#4e342e' } },
+      // Collectibles on ledges and hidden spots
+      { type: 'collectible', position: [-10, 5, -10], size: [1, 1, 1], properties: { color: '#f1c40f' } },
+      { type: 'collectible', position: [10, 7, -10], size: [1, 1, 1], properties: { color: '#f1c40f' } },
+      { type: 'collectible', position: [-10, 9, 10], size: [1, 1, 1], properties: { color: '#f1c40f' } },
+      { type: 'collectible', position: [10, 6, 10], size: [1, 1, 1], properties: { color: '#f1c40f' } },
+      { type: 'collectible', position: [0, 8, 0], size: [1, 1, 1], properties: { color: '#e67e22' } },
+      { type: 'collectible', position: [12, 2, 12], size: [1, 1, 1], properties: { color: '#f1c40f' } },
+      { type: 'collectible', position: [-12, 2, -12], size: [1, 1, 1], properties: { color: '#f1c40f' } },
+      { type: 'collectible', position: [0, 2, -12], size: [1, 1, 1], properties: { color: '#f1c40f' } },
+      { type: 'collectible', position: [0, 2, 12], size: [1, 1, 1], properties: { color: '#f1c40f' } },
+      // Moving obstacle
+      { type: 'obstacle', position: [0, 1.5, 5], size: [10, 2, 1], properties: { color: '#e74c3c', kinematic: true, path: [[0, 1.5, 5], [0, 1.5, -5]], speed: 0.4 } },
+      // Decorations — torches
+      { type: 'decoration', position: [14, 2, 14], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
+      { type: 'decoration', position: [-14, 2, -14], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
+    ]
+  },
+
+  // ========== SURVIVAL ==========
+  ice_rink: {
+    name: 'Ice Rink',
+    gameType: 'survival',
+    floorType: 'solid',
+    environment: { skyColor: '#1a2a3a', fogColor: '#1a2a3a', fogFar: 180, ambientIntensity: 0.5, sunColor: '#aaddff', sunIntensity: 0.9 },
+    respawnPoint: [0, 2, 0],
+    goalPosition: null,
+    entities: [
+      // Large ice floor
+      { type: 'platform', position: [0, 0, 0], size: [30, 1, 30], properties: { color: '#b3e5fc', isIce: true } },
+      // Corner safe zones (small, non-ice)
+      { type: 'platform', position: [12, 0.5, 12], size: [4, 0.5, 4], properties: { color: '#2ecc71' } },
+      { type: 'platform', position: [-12, 0.5, 12], size: [4, 0.5, 4], properties: { color: '#2ecc71' } },
+      { type: 'platform', position: [12, 0.5, -12], size: [4, 0.5, 4], properties: { color: '#2ecc71' } },
+      { type: 'platform', position: [-12, 0.5, -12], size: [4, 0.5, 4], properties: { color: '#2ecc71' } },
+      // Sweeping obstacles
+      { type: 'obstacle', position: [0, 1.5, 0], size: [20, 1.5, 1], properties: { color: '#e74c3c', rotating: true, speed: 1.5 } },
+      { type: 'obstacle', position: [0, 1.5, 0], size: [1, 1.5, 20], properties: { color: '#e74c3c', rotating: true, speed: 2 } },
+      // Wind zones near edges pushing players off
+      { type: 'trigger', position: [14, 3, 0], size: [4, 6, 30], properties: { color: '#87ceeb', isWind: true, windForce: [6, 0, 0], opacity: 0.08 } },
+      { type: 'trigger', position: [-14, 3, 0], size: [4, 6, 30], properties: { color: '#87ceeb', isWind: true, windForce: [-6, 0, 0], opacity: 0.08 } },
+      { type: 'trigger', position: [0, 3, 14], size: [30, 6, 4], properties: { color: '#87ceeb', isWind: true, windForce: [0, 0, 6], opacity: 0.08 } },
+      { type: 'trigger', position: [0, 3, -14], size: [30, 6, 4], properties: { color: '#87ceeb', isWind: true, windForce: [0, 0, -6], opacity: 0.08 } },
+      // Decorations
+      { type: 'decoration', position: [0, 8, 0], size: [1.5, 1.5, 1.5], properties: { shape: 'dodecahedron', color: '#aaddff', emissive: true, rotating: true, speed: 0.3 } },
+    ]
+  },
+
+  // ========== KING OF THE HILL ==========
+  king_plateau: {
+    name: 'King\'s Plateau',
+    gameType: 'king',
+    floorType: 'solid',
+    environment: { skyColor: '#1a1a2e', fogColor: '#1a1a2e', fogFar: 200, ambientIntensity: 0.4, sunColor: '#ffdd44', sunIntensity: 1.0 },
+    respawnPoint: [0, 2, 15],
+    goalPosition: null,
+    entities: [
+      // Base floor
+      { type: 'platform', position: [0, 0, 0], size: [35, 1, 35], properties: { color: '#2c3e50' } },
+      // Central elevated hill
+      { type: 'platform', position: [0, 3, 0], size: [8, 2, 8], properties: { color: '#f1c40f' } },
+      // Hill zone trigger
+      { type: 'trigger', position: [0, 5, 0], size: [7, 4, 7], properties: { color: '#f1c40f', isHill: true, opacity: 0.3 } },
+      // 4 ramps leading up
+      { type: 'ramp', position: [0, 1.5, 7], size: [4, 1, 6], properties: { color: '#7f8c8d' } },
+      { type: 'ramp', position: [0, 1.5, -7], size: [4, 1, 6], properties: { color: '#7f8c8d' } },
+      { type: 'ramp', position: [7, 1.5, 0], size: [6, 1, 4], properties: { color: '#7f8c8d' } },
+      { type: 'ramp', position: [-7, 1.5, 0], size: [6, 1, 4], properties: { color: '#7f8c8d' } },
+      // Corner mini-hills
+      { type: 'platform', position: [12, 1.5, 12], size: [5, 1, 5], properties: { color: '#e67e22' } },
+      { type: 'trigger', position: [12, 3, 12], size: [4, 3, 4], properties: { color: '#e67e22', isHill: true, opacity: 0.3 } },
+      { type: 'platform', position: [-12, 1.5, -12], size: [5, 1, 5], properties: { color: '#e67e22' } },
+      { type: 'trigger', position: [-12, 3, -12], size: [4, 3, 4], properties: { color: '#e67e22', isHill: true, opacity: 0.3 } },
+      // Patrolling obstacles on ramps
+      { type: 'obstacle', position: [0, 2.5, 7], size: [2, 1.5, 1], properties: { color: '#e74c3c', kinematic: true, path: [[-3, 2.5, 7], [3, 2.5, 7]], speed: 1.2 } },
+      { type: 'obstacle', position: [7, 2.5, 0], size: [1, 1.5, 2], properties: { color: '#e74c3c', kinematic: true, path: [[7, 2.5, -3], [7, 2.5, 3]], speed: 1 } },
+      // Crown decoration
+      { type: 'decoration', position: [0, 8, 0], size: [1, 1.5, 1], properties: { shape: 'dodecahedron', color: '#f1c40f', emissive: true, rotating: true, speed: 0.5 } },
+    ]
+  },
+
+  king_islands: {
+    name: 'Island Kingdoms',
+    gameType: 'king',
+    floorType: 'none',
+    environment: { skyColor: '#0d1b2a', fogColor: '#0d1b2a', fogFar: 200, ambientIntensity: 0.4, sunColor: '#ffaa00', sunIntensity: 0.9 },
+    respawnPoint: [0, 6, 0],
+    goalPosition: null,
+    entities: [
+      // Center island + hill
+      { type: 'platform', position: [0, 4, 0], size: [8, 2, 8], properties: { color: '#2c3e50' } },
+      { type: 'trigger', position: [0, 6.5, 0], size: [6, 3, 6], properties: { color: '#f1c40f', isHill: true, opacity: 0.3 } },
+      // North island + hill
+      { type: 'platform', position: [0, 4, -20], size: [7, 2, 7], properties: { color: '#27ae60' } },
+      { type: 'trigger', position: [0, 6.5, -20], size: [5, 3, 5], properties: { color: '#e67e22', isHill: true, opacity: 0.3 } },
+      // South island + hill
+      { type: 'platform', position: [0, 4, 20], size: [7, 2, 7], properties: { color: '#27ae60' } },
+      { type: 'trigger', position: [0, 6.5, 20], size: [5, 3, 5], properties: { color: '#e67e22', isHill: true, opacity: 0.3 } },
+      // Bridges (narrow + wind)
+      { type: 'platform', position: [0, 4, -10], size: [2, 0.5, 8], properties: { color: '#8e44ad' } },
+      { type: 'platform', position: [0, 4, 10], size: [2, 0.5, 8], properties: { color: '#8e44ad' } },
+      // Wind on bridges
+      { type: 'trigger', position: [3, 6, -10], size: [4, 5, 8], properties: { color: '#87ceeb', isWind: true, windForce: [5, 0, 0], opacity: 0.08 } },
+      { type: 'trigger', position: [-3, 6, 10], size: [4, 5, 8], properties: { color: '#87ceeb', isWind: true, windForce: [-5, 0, 0], opacity: 0.08 } },
+      // Decorations
+      { type: 'decoration', position: [0, 10, 0], size: [1.2, 1.8, 1.2], properties: { shape: 'dodecahedron', color: '#f1c40f', emissive: true, rotating: true, speed: 0.4 } },
+    ]
+  },
+
+  // ========== HOT POTATO ==========
+  hot_potato_arena: {
+    name: 'Curse Arena',
+    gameType: 'hot_potato',
+    floorType: 'solid',
+    environment: { skyColor: '#1a0a0a', fogColor: '#2a0a0a', fogFar: 150, ambientColor: '#553333', ambientIntensity: 0.4, sunColor: '#ff4444', sunIntensity: 0.7 },
+    respawnPoint: [0, 2, 0],
+    goalPosition: null,
+    entities: [
+      // Circular arena floor
+      { type: 'platform', position: [0, 0, 0], size: [25, 1, 25], properties: { color: '#2c3e50' } },
+      // Pillars for cover
+      { type: 'platform', position: [6, 3, 6], size: [2, 5, 2], properties: { color: '#7f8c8d' } },
+      { type: 'platform', position: [-6, 3, 6], size: [2, 5, 2], properties: { color: '#7f8c8d' } },
+      { type: 'platform', position: [6, 3, -6], size: [2, 5, 2], properties: { color: '#7f8c8d' } },
+      { type: 'platform', position: [-6, 3, -6], size: [2, 5, 2], properties: { color: '#7f8c8d' } },
+      { type: 'platform', position: [0, 3, 9], size: [2, 5, 2], properties: { color: '#7f8c8d' } },
+      { type: 'platform', position: [0, 3, -9], size: [2, 5, 2], properties: { color: '#7f8c8d' } },
+      // Speed boost pads
+      { type: 'trigger', position: [10, 1, 0], size: [3, 1, 3], properties: { color: '#2ecc71', isSpeedBoost: true } },
+      { type: 'trigger', position: [-10, 1, 0], size: [3, 1, 3], properties: { color: '#2ecc71', isSpeedBoost: true } },
+      // Moving obstacles that converge
+      { type: 'obstacle', position: [0, 1.5, 0], size: [16, 1.5, 1], properties: { color: '#e74c3c', rotating: true, speed: 1.5 } },
+      // Decorations — skull-like orbs
+      { type: 'decoration', position: [0, 8, 0], size: [1.5, 1.5, 1.5], properties: { shape: 'sphere', color: '#e74c3c', emissive: true, rotating: true, speed: 1 } },
+    ]
+  },
+
+  hot_potato_platforms: {
+    name: 'Curse Platforms',
+    gameType: 'hot_potato',
+    floorType: 'none',
+    environment: { skyColor: '#0a0a1a', fogColor: '#0a0a1a', fogFar: 120, ambientColor: '#332233', ambientIntensity: 0.35, sunColor: '#ff6666', sunIntensity: 0.7 },
+    respawnPoint: [0, 4, 0],
+    goalPosition: null,
+    entities: [
+      // Central platform
+      { type: 'platform', position: [0, 2, 0], size: [8, 1, 8], properties: { color: '#2c3e50' } },
+      // Surrounding platforms at various heights
+      { type: 'platform', position: [10, 3, 0], size: [5, 0.5, 5], properties: { color: '#3498db' } },
+      { type: 'platform', position: [-10, 4, 0], size: [5, 0.5, 5], properties: { color: '#2980b9' } },
+      { type: 'platform', position: [0, 3, 10], size: [5, 0.5, 5], properties: { color: '#3498db' } },
+      { type: 'platform', position: [0, 5, -10], size: [5, 0.5, 5], properties: { color: '#2980b9' } },
+      { type: 'platform', position: [8, 6, 8], size: [4, 0.5, 4], properties: { color: '#9b59b6' } },
+      { type: 'platform', position: [-8, 5, -8], size: [4, 0.5, 4], properties: { color: '#8e44ad' } },
+      // Connecting bridges
+      { type: 'platform', position: [5, 2.5, 0], size: [4, 0.3, 2], properties: { color: '#7f8c8d' } },
+      { type: 'platform', position: [-5, 3, 0], size: [4, 0.3, 2], properties: { color: '#7f8c8d' } },
+      { type: 'platform', position: [0, 2.5, 5], size: [2, 0.3, 4], properties: { color: '#7f8c8d' } },
+      { type: 'platform', position: [0, 3.5, -5], size: [2, 0.3, 4], properties: { color: '#7f8c8d' } },
+      // Ice on some platforms
+      { type: 'platform', position: [8, 6.3, 8], size: [3.5, 0.2, 3.5], properties: { color: '#b3e5fc', isIce: true } },
+      // Obstacle
+      { type: 'obstacle', position: [0, 3.5, 0], size: [6, 1, 1], properties: { color: '#e74c3c', rotating: true, speed: 2 } },
+    ]
+  },
+
+  // ========== RACE ==========
+  checkpoint_dash: {
+    name: 'Checkpoint Dash',
+    gameType: 'race',
+    floorType: 'none',
+    environment: { skyColor: '#0d1b2a', fogColor: '#0d1b2a', fogFar: 200, ambientIntensity: 0.4, sunIntensity: 1.0 },
+    respawnPoint: [0, 2, 30],
+    goalPosition: null,
+    entities: [
+      // Start platform
+      { type: 'platform', position: [0, 0, 30], size: [8, 1, 6], properties: { color: '#2c3e50' } },
+      // CP0 — simple jump
+      { type: 'platform', position: [0, 0, 20], size: [5, 1, 4], properties: { color: '#3498db' } },
+      { type: 'trigger', position: [0, 2, 20], size: [3, 3, 3], properties: { color: '#2ecc71', isCheckpoint: true, checkpointIndex: 0, rotating: true, speed: 1 } },
+      // CP1 — moving platforms
+      { type: 'platform', position: [0, 1, 12], size: [3, 0.5, 3], properties: { color: '#e67e22', kinematic: true, path: [[-4, 1, 12], [4, 1, 12]], speed: 0.8 } },
+      { type: 'trigger', position: [0, 3, 12], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 1, rotating: true, speed: 1 } },
+      // CP2 — conveyor section
+      { type: 'platform', position: [0, 1, 4], size: [6, 0.3, 4], properties: { color: '#e67e22', isConveyor: true, conveyorDir: [-1, 0, 0], conveyorSpeed: 5 } },
+      { type: 'trigger', position: [0, 3, 4], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 2, rotating: true, speed: 1 } },
+      // CP3 — ice + wind
+      { type: 'platform', position: [0, 2, -4], size: [4, 0.3, 4], properties: { color: '#b3e5fc', isIce: true } },
+      { type: 'trigger', position: [3, 4, -4], size: [4, 5, 4], properties: { color: '#87ceeb', isWind: true, windForce: [6, 0, 0], opacity: 0.08 } },
+      { type: 'trigger', position: [0, 4, -4], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 3, rotating: true, speed: 1 } },
+      // CP4 — obstacle gauntlet
+      { type: 'platform', position: [0, 2, -14], size: [6, 1, 8], properties: { color: '#2c3e50' } },
+      { type: 'obstacle', position: [0, 4, -12], size: [4, 1, 1], properties: { color: '#e74c3c', kinematic: true, path: [[-3, 4, -12], [3, 4, -12]], speed: 1.5 } },
+      { type: 'obstacle', position: [0, 4, -16], size: [4, 1, 1], properties: { color: '#e74c3c', kinematic: true, path: [[3, 4, -16], [-3, 4, -16]], speed: 1.8 } },
+      { type: 'trigger', position: [0, 4, -14], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 4, rotating: true, speed: 1 } },
+      // CP5 — final sprint, narrow ascending platforms
+      { type: 'platform', position: [3, 4, -22], size: [2, 0.5, 2], properties: { color: '#9b59b6' } },
+      { type: 'platform', position: [-2, 6, -26], size: [2, 0.5, 2], properties: { color: '#8e44ad' } },
+      { type: 'platform', position: [0, 8, -30], size: [4, 1, 4], properties: { color: '#f1c40f' } },
+      { type: 'trigger', position: [0, 10, -30], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 5, rotating: true, speed: 1 } },
+      // Decorations
+      { type: 'decoration', position: [4, 1.5, 30], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
+      { type: 'decoration', position: [4.4, 2.2, 30], size: [0.6, 0.4, 0.05], properties: { color: '#2ecc71' } },
+    ]
+  },
+
+  race_circuit: {
+    name: 'Race Circuit',
+    gameType: 'race',
+    floorType: 'solid',
+    environment: { skyColor: '#1a1a2e', fogColor: '#1a1a2e', fogFar: 250, ambientIntensity: 0.5, sunIntensity: 1.1 },
+    respawnPoint: [0, 2, 18],
+    goalPosition: null,
+    entities: [
+      // Circular track floor
+      { type: 'platform', position: [0, 0, 0], size: [45, 1, 45], properties: { color: '#2c3e50' } },
+      // Start zone
+      { type: 'platform', position: [0, 0.5, 18], size: [6, 0.3, 4], properties: { color: '#2ecc71' } },
+      // Checkpoints around the circuit (clockwise)
+      { type: 'trigger', position: [15, 2, 15], size: [3, 3, 3], properties: { color: '#2ecc71', isCheckpoint: true, checkpointIndex: 0, rotating: true, speed: 1 } },
+      { type: 'trigger', position: [18, 2, 0], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 1, rotating: true, speed: 1 } },
+      { type: 'trigger', position: [15, 2, -15], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 2, rotating: true, speed: 1 } },
+      { type: 'trigger', position: [0, 2, -18], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 3, rotating: true, speed: 1 } },
+      { type: 'trigger', position: [-15, 2, -15], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 4, rotating: true, speed: 1 } },
+      { type: 'trigger', position: [-18, 2, 0], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 5, rotating: true, speed: 1 } },
+      { type: 'trigger', position: [-15, 2, 15], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 6, rotating: true, speed: 1 } },
+      { type: 'trigger', position: [0, 2, 18], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 7, rotating: true, speed: 1 } },
+      // Ice section (east side)
+      { type: 'platform', position: [18, 0.5, 0], size: [6, 0.3, 10], properties: { color: '#b3e5fc', isIce: true } },
+      // Conveyor section (west side)
+      { type: 'platform', position: [-18, 0.5, 0], size: [6, 0.3, 10], properties: { color: '#e67e22', isConveyor: true, conveyorDir: [0, 0, -1], conveyorSpeed: 4 } },
+      // Wind zone (north)
+      { type: 'trigger', position: [0, 3, -18], size: [10, 5, 4], properties: { color: '#87ceeb', isWind: true, windForce: [-4, 0, 0], opacity: 0.08 } },
+      // Obstacles
+      { type: 'obstacle', position: [15, 1.5, 0], size: [1, 2, 6], properties: { color: '#e74c3c', kinematic: true, path: [[15, 1.5, -3], [15, 1.5, 3]], speed: 1 } },
+      { type: 'obstacle', position: [-15, 1.5, 0], size: [1, 2, 6], properties: { color: '#e74c3c', kinematic: true, path: [[-15, 1.5, 3], [-15, 1.5, -3]], speed: 1.2 } },
+      // Center decoration
+      { type: 'decoration', position: [0, 5, 0], size: [2, 3, 2], properties: { shape: 'dodecahedron', color: '#9b59b6', emissive: true, rotating: true, speed: 0.3 } },
+    ]
+  },
+
   blank_canvas: {
     name: 'The Void',
     gameType: 'survival',
@@ -329,6 +594,42 @@ export const TEMPLATES = {
     ]
   }
 };
+
+// Deep-clone and randomize a template so it feels different each time
+export function randomizeTemplate(template) {
+  const tmpl = JSON.parse(JSON.stringify(template));
+
+  for (const entity of tmpl.entities) {
+    // Nudge positions ±2 on X/Z for non-checkpoint, non-hill entities
+    if (!entity.properties?.isCheckpoint && !entity.properties?.isHill && !entity.properties?.isGoal) {
+      entity.position[0] += (Math.random() - 0.5) * 2;
+      entity.position[2] += (Math.random() - 0.5) * 2;
+    }
+
+    // Vary kinematic/rotating speeds ±30%
+    if (entity.properties?.speed) {
+      entity.properties.speed *= 0.7 + Math.random() * 0.6;
+    }
+
+    // Vary conveyor speed ±30%
+    if (entity.properties?.conveyorSpeed) {
+      entity.properties.conveyorSpeed *= 0.7 + Math.random() * 0.6;
+    }
+
+    // Vary breakable platform delays ±100ms
+    if (entity.properties?.breakDelay) {
+      entity.properties.breakDelay += Math.floor((Math.random() - 0.5) * 200);
+      entity.properties.breakDelay = Math.max(100, entity.properties.breakDelay);
+    }
+  }
+
+  // Vary hazard plane riseSpeed ±20%
+  if (tmpl.hazardPlane?.riseSpeed) {
+    tmpl.hazardPlane.riseSpeed *= 0.8 + Math.random() * 0.4;
+  }
+
+  return tmpl;
+}
 
 export function getTemplateNames() {
   return Object.keys(TEMPLATES);

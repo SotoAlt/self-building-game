@@ -24,6 +24,7 @@ import { MockChainInterface } from './blockchain/ChainInterface.js';
 import { MonadChainInterface } from './blockchain/MonadChainInterface.js';
 import { spawnPrefab, getPrefabInfo } from './Prefabs.js';
 import { compose, loadCacheFromDisk, getComposerStats } from './Composer.js';
+import { randomizeTemplate as globalRandomizeTemplate } from './ArenaTemplates.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -79,8 +80,11 @@ function scheduleAutoStart() {
     const humanPlayers = worldState.getPlayers().filter(p => p.type !== 'ai');
     if (humanPlayers.length === 0) return;
 
-    const templates = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell', 'hex_a_gone', 'slime_climb', 'wind_tunnel'];
-    const template = templates[Math.floor(Math.random() * templates.length)];
+    const allTemplates = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell', 'hex_a_gone', 'slime_climb', 'wind_tunnel', 'treasure_trove', 'ice_rink', 'king_plateau', 'king_islands', 'hot_potato_arena', 'hot_potato_platforms', 'checkpoint_dash', 'race_circuit'];
+    const recentTemplates = worldState.gameHistory.slice(-3).map(g => g.template);
+    const available = allTemplates.filter(t => !recentTemplates.includes(t));
+    const pool = available.length > 0 ? available : allTemplates;
+    const template = pool[Math.floor(Math.random() * pool.length)];
     console.log(`[AutoStart] Agent didn't start a game in ${AUTO_START_DELAY / 1000}s — auto-starting with ${template}`);
     fetch(`http://localhost:${PORT}/api/game/start`, {
       method: 'POST',
@@ -235,7 +239,9 @@ app.get('/api/agent/context', (req, res) => {
     pendingWelcomes: agentLoop.pendingWelcomes,
     lastGameType: worldState.lastGameType || null,
     lastGameEndTime: worldState.lastGameEndTime || null,
-    suggestedGameTypes: ['reach', 'collect', 'survival'].filter(t => t !== worldState.lastGameType)
+    suggestedGameTypes: ['reach', 'collect', 'survival', 'king', 'hot_potato', 'race'].filter(t => t !== worldState.lastGameType),
+    gameHistory: worldState.gameHistory.map(g => ({ type: g.type, template: g.template })),
+    lastTemplate: worldState.lastTemplate || null
   });
 });
 
@@ -424,31 +430,33 @@ app.post('/api/world/respawn', (req, res) => {
 });
 
 // Shared helper: clear world and apply a template (entities, respawn, floor, environment)
-function applyTemplate(tmpl) {
+function applyTemplate(tmpl, doRandomize = true) {
+  // Randomize positions/speeds so the same template feels different each play
+  const finalTmpl = doRandomize ? globalRandomizeTemplate(tmpl) : tmpl;
   const cleared = worldState.clearEntities();
   for (const id of cleared) broadcastToRoom('entity_destroyed', { id });
 
   const spawned = [];
-  for (const entityDef of tmpl.entities) {
+  for (const entityDef of finalTmpl.entities) {
     const entity = worldState.spawnEntity(entityDef.type, entityDef.position, entityDef.size, entityDef.properties || {});
     broadcastToRoom('entity_spawned', entity);
     spawned.push(entity.id);
   }
 
-  if (tmpl.respawnPoint) {
-    worldState.setRespawnPoint(tmpl.respawnPoint);
-    broadcastToRoom('respawn_point_changed', { position: tmpl.respawnPoint });
+  if (finalTmpl.respawnPoint) {
+    worldState.setRespawnPoint(finalTmpl.respawnPoint);
+    broadcastToRoom('respawn_point_changed', { position: finalTmpl.respawnPoint });
   }
-  if (tmpl.floorType) {
-    worldState.setFloorType(tmpl.floorType);
-    broadcastToRoom('floor_changed', { type: tmpl.floorType });
+  if (finalTmpl.floorType) {
+    worldState.setFloorType(finalTmpl.floorType);
+    broadcastToRoom('floor_changed', { type: finalTmpl.floorType });
   }
-  if (tmpl.environment) {
-    const env = worldState.setEnvironment(tmpl.environment);
+  if (finalTmpl.environment) {
+    const env = worldState.setEnvironment(finalTmpl.environment);
     broadcastToRoom('environment_changed', env);
   }
-  if (tmpl.hazardPlane) {
-    worldState.setHazardPlane(tmpl.hazardPlane);
+  if (finalTmpl.hazardPlane) {
+    worldState.setHazardPlane(finalTmpl.hazardPlane);
     broadcastToRoom('hazard_plane_changed', { ...worldState.hazardPlane });
   }
 
@@ -659,6 +667,7 @@ app.post('/api/game/start', (req, res) => {
       }
 
       applyTemplate(tmpl);
+      worldState.setLastTemplate(template);
 
       const gameType = type || tmpl.gameType || 'reach';
       startGameInternal(gameType, req.body, res);
