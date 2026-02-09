@@ -42,8 +42,8 @@ export function createSkyDome(scene) {
   const skyGeo = new THREE.SphereGeometry(400, 16, 16);
   const skyMat = new THREE.ShaderMaterial({
     uniforms: {
-      topColor: { value: new THREE.Color(0x0d1b2a) },
-      bottomColor: { value: new THREE.Color(0x1a1a2e) },
+      topColor: { value: new THREE.Color(0x1a3050) },
+      bottomColor: { value: new THREE.Color(0x2a3a5e) },
       offset: { value: 20 },
       exponent: { value: 0.6 },
     },

@@ -106,6 +106,13 @@ function moveToward(current, target, maxDelta) {
   return current + Math.sign(target - current) * maxDelta;
 }
 
+function shortAngleDist(from, to) {
+  let diff = to - from;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  return diff;
+}
+
 // Reconnection logic
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -1468,6 +1475,13 @@ function updatePlayer(delta) {
   playerMesh.position.y += playerVelocity.y * delta;
   playerMesh.position.z += playerVelocity.z * delta;
 
+  // --- Face movement direction ---
+  const hSpeed = Math.sqrt(playerVelocity.x ** 2 + playerVelocity.z ** 2);
+  if (hSpeed > 0.5) {
+    const targetYaw = Math.atan2(playerVelocity.x, playerVelocity.z);
+    playerMesh.rotation.y += shortAngleDist(playerMesh.rotation.y, targetYaw) * Math.min(1, 15 * delta);
+  }
+
   // Reset before this frame's collision detection
   isGrounded = false;
 
@@ -2358,6 +2372,13 @@ function animate() {
 
   for (const [, mesh] of remotePlayers) {
     if (mesh.userData.targetPosition) {
+      const dx = mesh.userData.targetPosition.x - mesh.position.x;
+      const dz = mesh.userData.targetPosition.z - mesh.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist > 0.05) {
+        const targetYaw = Math.atan2(dx, dz);
+        mesh.rotation.y += shortAngleDist(mesh.rotation.y, targetYaw) * 0.15;
+      }
       mesh.position.lerp(mesh.userData.targetPosition, 0.15);
     }
   }

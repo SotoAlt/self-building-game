@@ -60,7 +60,7 @@ export function createEntityToonMaterial(entity) {
     color,
     gradientMap,
     emissive: color,
-    emissiveIntensity: props.emissive ? 0.4 : 0.05,
+    emissiveIntensity: props.emissive ? 0.5 : 0.12,
     transparent: isTransparent,
     opacity: props.opacity ?? 1,
   };
@@ -92,8 +92,10 @@ export function createPlayerToonMaterial(color) {
 
 export function createGroundToonMaterial() {
   return new THREE.MeshToonMaterial({
-    color: 0x2d3436,
+    color: 0x3d4446,
     gradientMap: GRADIENT_4,
+    emissive: 0x3d4446,
+    emissiveIntensity: 0.08,
   });
 }
 

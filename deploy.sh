@@ -114,7 +114,7 @@ ssh $SERVER "mkdir -p $APP_DIR/data"
 
 # Step 7: Start everything
 echo "[7/8] Starting services..."
-ssh $SERVER "cd $APP_DIR && docker compose build --no-cache && docker compose up -d"
+ssh $SERVER "cd $APP_DIR && docker builder prune -f 2>/dev/null; docker compose build --no-cache && docker compose up -d && docker image prune -f 2>/dev/null"
 
 # Step 8: Setup agent-runner as host-side systemd service
 echo "[8/8] Setting up Chaos Agent (agent-runner)..."

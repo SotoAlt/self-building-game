@@ -2,7 +2,7 @@
 
 Design document for new mechanics in the Self-Building Game. Organized by implementation priority — agent creative tools first, environment mechanics second, game types third, player abilities last.
 
-**Current state (v0.24.0)**: 3 game types (reach, collect, survival), 6 entity types (platform, ramp, collectible, obstacle, trigger, decoration), 23 shapes (8 basic + 16 templates), 23 prefabs, 8 spells, 7 arena templates (incl. hex_a_gone), breakable platforms, bounce pads, speed strips, 4 random obstacle patterns, compose system with per-child rotation + material controls + disk-cached recipes.
+**Current state (v0.26.0)**: 3 game types (reach, collect, survival), 6 entity types (platform, ramp, collectible, obstacle, trigger, decoration), 23 shapes (8 basic + 16 templates), 25 prefabs (incl. conveyor_belt, wind_zone), 8 spells, 9 arena templates (incl. hex_a_gone, slime_climb, wind_tunnel), breakable platforms, bounce pads, speed strips, ice surfaces, conveyor belts, wind zones, rising hazard plane, 4 random obstacle patterns, compose system with per-child rotation + material controls + disk-cached recipes.
 
 ---
 
@@ -35,7 +35,7 @@ A **compose system** — the agent calls `POST /api/world/compose` for everythin
 | Prefab | Visual | Behavior | Effect |
 |--------|--------|----------|--------|
 | `bounce_pad` | Flat cylinder, bright green, slight glow | Stationary | Launches player upward on contact (configurable force) |
-| `conveyor_belt` | Flat box with animated arrow texture | Stationary | Pushes player/entities in `properties.direction` |
+| `conveyor_belt` | Orange glowing platform (4x0.3x2) | Stationary | Pushes players in `conveyorDir` at `conveyorSpeed` (default 6) |
 | `teleporter` | Ring shape with particle effect, comes in pairs | Stationary | Touching one teleports player to paired teleporter |
 | `checkpoint` | Glowing flag on pole | Stationary | Sets player respawn point to this location |
 | `speed_strip` | Flat box with stripe pattern | Stationary | Horizontal speed boost while on surface |
@@ -83,59 +83,66 @@ spawn_prefab({ name: 'teleporter', position: [0, 1, 0], properties: { pairPositi
 
 ---
 
-## 2. Environment Mechanics (Dynamic Arenas)
+## 2. Environment Mechanics (Dynamic Arenas) ✅ COMPLETED (v0.26.0)
 
-The arena itself should change during gameplay, creating emergent challenges beyond static layouts.
+The arena itself changes during gameplay, creating emergent challenges beyond static layouts.
 
-### Breakable Platforms (Hex-A-Gone style)
+### Breakable Platforms (Hex-A-Gone style) ✅
 
 Platforms that crack and disappear when stepped on.
 
 - **Entity property**: `breakable: true`, `breakDelay: 500` (ms after player contact)
 - **Sequence**: player steps on → crack visual/sound → platform fades → removed from collision
 - **Regeneration**: optional `breakRegenDelay: 5000` — platform reappears after N ms
-- **Use case**: survival games with layered floors — players race to stay on remaining platforms
-- **Agent tool**: `set_entity_breakable({ id, delay, regenDelay })` or spawn with property directly
+- **Server**: `WorldState.startBreaking()`, `processBreakingPlatforms()` in tick loop
+- **Client**: `platform_step` → `platform_cracking` WS messages, crack shake+fade animation, break particles
 
-### Rising Hazard Plane
+### Ice Surfaces ✅
 
-A rising lava/water surface that forces players upward.
+Platforms with reduced friction — players slide on contact.
 
-- **API**: `POST /api/world/hazard-plane` → `{ type: 'lava' | 'water', riseSpeed: 0.5, startY: -10 }`
-- **Behavior**: plane mesh rises at constant speed, kills players whose Y position falls below it
-- **Visual**: lava = red/orange emissive plane with particle effects; water = blue semi-transparent
-- **Agent tool**: `set_hazard_plane({ type, riseSpeed, startY, maxY })`
-- **Use case**: "Slime Climb" style games — vertical climb under time pressure
+- **Entity property**: `isIce: true` on any platform
+- **Effect**: ground deceleration reduced to 8%, acceleration to 15% — momentum carries
+- **Visual**: light blue tint (`#b3e5fc`), low roughness (0.05), slight metalness (0.6), semi-transparent (0.85)
+- **Composer validation**: `isIce` validated in `Composer.js`
+- **Use case**: narrow ice paths over abyss, ice + wind combos, slippery gauntlets
 
-### Conveyor Zones
+### Conveyor Belts ✅
 
-Surfaces that push players in a direction.
+Platforms that push players in a direction while standing on them.
 
-- **Entity property**: `conveyor: true`, `conveyorDirection: [1, 0, 0]`, `conveyorSpeed: 5`
-- **Effect**: players on surface get velocity added in direction each physics tick
-- **Visual**: animated directional arrows on surface
-- **Use case**: obstacle courses where players fight against current, or speed boosts along track
+- **Entity properties**: `isConveyor: true`, `conveyorDir: [x, 0, z]` (normalized -1 to 1), `conveyorSpeed: 1-20`
+- **Effect**: adds velocity in direction proportional to speed each physics tick (frame-rate independent via `frameDelta`)
+- **Visual**: orange emissive glow (`#e67e22`)
+- **Prefab**: `conveyor_belt` — 4x0.3x2 platform, default speed 6, direction [1,0,0]
+- **Composer validation**: `isConveyor`, `conveyorDir`, `conveyorSpeed` all validated with clamping
+- **Use case**: obstacle courses where players fight against current, alternating-direction gauntlets
 
-### Wind Zones
+### Wind Zones ✅
 
-Area-of-effect volumes that push players.
+Trigger volumes that push players with directional force.
 
-- **Entity type or property**: `wind_zone` type, or `windForce: [0, 10, 0]` on trigger entities
-- **Effect**: all players within bounds receive force in direction each tick
-- **Variants**: horizontal (push off platforms), vertical updraft (extend jumps), downdraft (slam down)
-- **Agent tool**: `spawn_wind_zone({ position, size, direction, force })`
-- **Use case**: courses where wind pushes players sideways off narrow bridges
+- **Entity properties**: `isWind: true`, `windForce: [x, y, z]` (each component clamped -30 to 30)
+- **Effect**: force applied to player velocity while inside trigger AABB (frame-rate independent via `frameDelta`)
+- **Variants**: lateral (push off platforms), updraft (extend jumps), downdraft (slam), headwind (slow progress)
+- **Prefab**: `wind_zone` — 4x6x4 trigger, default force [10,0,0], semi-transparent blue (`#87ceeb`, opacity 0.15)
+- **Composer validation**: `isWind`, `windForce` validated with clamping
+- **Use case**: courses with crosswind on narrow bridges, updraft shortcuts, headwind challenges
 
-### Ice Physics
+### Rising Hazard Plane ✅
 
-Surfaces with reduced friction.
+Server-authoritative lava/water plane that rises during gameplay, killing players below its height.
 
-- **Entity property**: `surface: 'ice'`
-- **Effect**: player deceleration reduced by 80% while on surface — momentum carries
-- **Visual**: light blue tint, slight transparency
-- **Use case**: narrow ice paths over abyss, ice + wind combos
+- **API**: `POST /api/world/hazard-plane` → `{ active, type: 'lava'|'water', startHeight, riseSpeed: 0.1-5, maxHeight: up to 100 }`
+- **Server**: `WorldState.setHazardPlane()`, `updateHazardPlane(delta)` in tick loop, 200ms throttled broadcasts, server-side kill check
+- **Cleanup**: deactivates on game end, world clear, lobby transition
+- **Client**: 400x400 plane mesh, lava (red/orange emissive) or water (blue semi-transparent), pulsing animation
+- **WS messages**: `hazard_plane_changed` (config), `hazard_plane_update` (height tick)
+- **Agent context**: `hazardPlane` field with active/type/height/riseSpeed/maxHeight
+- **Template support**: `hazardPlane` config in arena templates (used by `slime_climb`)
+- **Safe phases**: plane doesn't rise during countdown/lobby/ended
 
-### Trap Doors
+### Trap Doors (Future)
 
 Platforms that open/disappear when triggered.
 
@@ -144,31 +151,20 @@ Platforms that open/disappear when triggered.
   - `proximity` — opens when a player steps on it (with configurable delay)
   - `timer` — opens/closes on a cycle (`trapCycleMs: 3000`)
   - `weight` — opens after N players stand on it simultaneously
-- **Visual**: distinct edge pattern so players can identify trap doors vs normal platforms
-- **Use case**: "trust no floor" arenas, elimination traps in survival games
 
-### Gravity Zones
+### Gravity Zones (Future)
 
 Localized gravity overrides.
 
 - **Entity type**: trigger with `localGravity: [0, 5, 0]`
-- **Variants**:
-  - Inverted gravity: `[0, 15, 0]` — fall upward within zone
-  - Zero-G: `[0, 0, 0]` — float freely
-  - Heavy: `[0, -40, 0]` — extra gravity pull
-  - Lateral: `[10, -20, 0]` — pulled sideways
-- **Visual**: particle field indicating gravity direction within zone
-- **Use case**: spatial puzzles, unique navigation challenges, secret paths
+- **Variants**: inverted (`[0, 15, 0]`), zero-G (`[0, 0, 0]`), heavy (`[0, -40, 0]`), lateral (`[10, -20, 0]`)
 
-### Portals / Teleporters
+### Portals / Teleporters (Future)
 
 Paired entities that teleport players between locations.
 
 - **Implementation**: two trigger entities with `teleportTarget: entityId` pointing at each other
 - **Cooldown**: 2s per player to prevent oscillation
-- **Visual**: ring shape with swirling particle effect, color-matched pairs
-- **Agent tool**: part of `spawn_prefab({ name: 'teleporter', ... })` or direct entity property
-- **Use case**: creative arena layouts, shortcuts, portal networks
 
 ---
 
@@ -322,25 +318,27 @@ For new mechanics to work with the Chaos Magician, the agent needs expanded tool
 
 ### New Agent Tools
 
-| Tool | Parameters | Purpose |
-|------|-----------|---------|
-| `spawn_prefab` | `{ name, position, properties }` | Spawn named prefab (multi-entity group) |
-| `set_hazard_plane` | `{ type, riseSpeed, startY, maxY }` | Rising lava/water hazard |
-| `spawn_wind_zone` | `{ position, size, direction, force }` | Area-of-effect wind push |
-| `set_entity_breakable` | `{ id, delay, regenDelay }` | Make existing platform breakable |
-| `spawn_enemy` | `{ type, position, patrolPath }` | NPC enemy entity |
-| `assign_teams` | `{ teams }` | Assign players to teams |
-| `start_game` (update) | `{ template, modifiers }` | Accept modifier list |
+| Tool | Parameters | Purpose | Status |
+|------|-----------|---------|--------|
+| `compose` | `{ description, position, recipe?, properties? }` | Spawn anything — prefabs, custom recipes | ✅ v0.24.0 |
+| `spawn_prefab` | `{ name, position, properties }` | Spawn named prefab (deprecated, use compose) | ✅ v0.20.0 |
+| `set_hazard_plane` | `{ active, type, startHeight, riseSpeed, maxHeight }` | Rising lava/water hazard | ✅ v0.26.0 |
+| `set_entity_breakable` | `{ id, delay, regenDelay }` | Make existing platform breakable | Future |
+| `spawn_enemy` | `{ type, position, patrolPath }` | NPC enemy entity | Future |
+| `assign_teams` | `{ teams }` | Assign players to teams | Future |
+| `start_game` (update) | `{ template, modifiers }` | Accept modifier list | Future |
 
 ### Enhanced Agent Context (`/api/agent/context`)
 
-New fields:
-- `availablePrefabs` — list of prefab names the agent can spawn
-- `activeModifiers` — modifiers applied to current game
-- `hazardPlane` — current hazard plane state (type, Y position, speed)
-- `enemyCount` — active NPC enemies in world
-- `teams` — team assignments if team game active
-- `playerHealth` — per-player health if health system active
+| Field | Description | Status |
+|-------|-------------|--------|
+| `availablePrefabs` | List of prefab names (25 total) | ✅ v0.20.0 |
+| `hazardPlane` | Current hazard plane state (active, type, height, riseSpeed, maxHeight) | ✅ v0.26.0 |
+| `activeEffects` | Active spells list | ✅ v0.8.0 |
+| `suggestedGameTypes` | Variety hints excluding last played | ✅ v0.11.0 |
+| `activeModifiers` | Modifiers applied to current game | Future |
+| `enemyCount` | Active NPC enemies in world | Future |
+| `teams` | Team assignments if team game active | Future |
 
 ---
 
@@ -348,16 +346,16 @@ New fields:
 
 New templates that showcase the new mechanics.
 
-| Template | Mechanics Used | Game Type | Description |
-|----------|---------------|-----------|-------------|
-| `hex_a_gone` | Breakable platforms, multi-layer | Survival | 3-layer grid of breakable tiles over abyss — last player standing |
-| `slime_climb` | Rising lava, vertical climb | Reach | Tall vertical course with rising lava — race upward before it catches you |
-| `dodgeball_arena` | Projectile system | Dodgeball | Enclosed flat arena with projectile spawners and cover walls |
-| `king_of_hill` | Conveyor belts, hill zones | King | Multi-hill arena with conveyors pushing players off hills |
-| `ice_rink` | Ice physics, obstacles | Survival | All-ice surfaces with moving obstacles — momentum is deadly |
-| `wind_tunnel` | Wind zones, narrow paths | Reach | Horizontal course with lateral wind pushing players off bridges |
-| `trap_house` | Trap doors, crushers, fake floors | Reach | Nothing is safe — every surface might be a trap |
-| `enemy_gauntlet` | Turrets, spiders, projectiles | Reach | Sprint through turret fire and spider patrols to reach the goal |
+| Template | Mechanics Used | Game Type | Status |
+|----------|---------------|-----------|--------|
+| `hex_a_gone` | Breakable platforms, multi-layer | Survival | ✅ v0.20.0 |
+| `slime_climb` | Rising lava, conveyors, ice bridge, obstacles | Reach | ✅ v0.26.0 |
+| `wind_tunnel` | Wind zones, ice, conveyors, crosswind bridges | Reach | ✅ v0.26.0 |
+| `dodgeball_arena` | Projectile system | Dodgeball | Future |
+| `king_of_hill` | Conveyor belts, hill zones | King | Future |
+| `ice_rink` | Ice physics, obstacles | Survival | Future |
+| `trap_house` | Trap doors, crushers, fake floors | Reach | Future |
+| `enemy_gauntlet` | Turrets, spiders, projectiles | Reach | Future |
 
 ---
 
@@ -436,19 +434,21 @@ New templates that showcase the new mechanics.
 - [ ] Opacity children need `depthWrite: false` for proper transparency rendering
 - [ ] Add subtle bob animation for floating/flying composed entities (ghost, ufo, birds)
 
-### Phase 2: Environment Mechanics
+### Phase 2: Environment Mechanics ✅ COMPLETED (v0.26.0)
 
 **Priority**: MEDIUM — makes arenas feel alive and dynamic.
 
 **Scope**: 1 session
 
-- Rising hazard plane (lava/water) — server entity + client renderer
-- Conveyor belt entity property + physics effect
-- Wind zone entity type + force application
-- Ice surface property + friction reduction
-- `slime_climb` and `wind_tunnel` templates
-- Agent tools: `set_hazard_plane`, `spawn_wind_zone`
-- Update agent context with hazard/environment state
+- [x] Ice surfaces — `isIce: true` property, 8% decel / 15% accel, blue translucent visual
+- [x] Conveyor belts — `isConveyor: true` + `conveyorDir` + `conveyorSpeed`, `conveyor_belt` prefab
+- [x] Wind zones — `isWind: true` + `windForce: [x,y,z]`, `wind_zone` prefab
+- [x] Rising hazard plane — `POST /api/world/hazard-plane`, server tick update, lava/water types, kill check
+- [x] `slime_climb` template — vertical race Y=0→40, rising lava, conveyors, ice bridge
+- [x] `wind_tunnel` template — horizontal course, crosswind bridges, ice+wind combos
+- [x] Composer.js validation for all new entity properties
+- [x] Agent integration — SKILL.md, SOUL.md, agent-runner prompt, agent context `hazardPlane` field
+- [x] `frameDelta` pattern for frame-rate-independent physics (conveyors + wind)
 
 ### Phase 3: New Game Types + Modifiers
 

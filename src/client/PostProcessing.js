@@ -47,11 +47,11 @@ export function initPostProcessing(rendererRef, sceneRef, cameraRef) {
 
   // 2. Outline pass — cartoon edges
   outlinePass = new OutlinePass(size, scene, camera);
-  outlinePass.edgeStrength = 3.0;
-  outlinePass.edgeGlow = 0.0;
-  outlinePass.edgeThickness = 1.5;
-  outlinePass.visibleEdgeColor.set('#000000');
-  outlinePass.hiddenEdgeColor.set('#000000');
+  outlinePass.edgeStrength = 4.0;
+  outlinePass.edgeGlow = 0.2;
+  outlinePass.edgeThickness = 1.0;
+  outlinePass.visibleEdgeColor.set('#1a1a1a');
+  outlinePass.hiddenEdgeColor.set('#0a0a0a');
   composer.addPass(outlinePass);
 
   // 3. Bloom — selective glow for emissive objects
@@ -75,7 +75,7 @@ export function initPostProcessing(rendererRef, sceneRef, cameraRef) {
 }
 
 let outlineUpdateTimer = 0;
-const OUTLINE_UPDATE_INTERVAL = 500; // ms
+const OUTLINE_UPDATE_INTERVAL = 200; // ms
 
 export function updateOutlineObjects(entityMeshes, groupParents, playerMesh, remotePlayers) {
   if (!outlinePass) return;
