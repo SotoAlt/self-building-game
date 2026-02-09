@@ -204,6 +204,14 @@ SVCEOF
 scp "$SVCFILE" $SERVER:/etc/systemd/system/chaos-agent.service
 rm -f "$SVCFILE"
 
+# Sync OpenClaw skill files to workspace (agent reads from here, not config/openclaw/)
+ssh $SERVER "
+  mkdir -p /root/.openclaw/workspace/skills/game-world
+  cp $APP_DIR/config/openclaw/game-world-skill.js /root/.openclaw/workspace/skills/game-world/index.js
+  cp $APP_DIR/config/openclaw/SOUL.md /root/.openclaw/workspace/SOUL.md
+  echo 'OpenClaw skill files synced'
+"
+
 ssh $SERVER "systemctl daemon-reload && systemctl enable chaos-agent && systemctl restart chaos-agent && echo 'Agent runner service started!'"
 
 echo ""
