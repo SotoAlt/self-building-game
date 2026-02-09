@@ -155,6 +155,52 @@ function getNewWelcomes(context) {
   return (context.pendingWelcomes || []).filter(w => !welcomedPlayers.has(w.playerId || w.name));
 }
 
+const ARENA_TEMPLATES = 'spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone';
+
+const KNOWN_PREFABS = [
+  'spider', 'shark', 'ghost', 'ufo', 'car', 'spinning_blade', 'swinging_axe',
+  'crusher', 'rolling_boulder', 'cactus', 'bounce_pad', 'checkpoint', 'speed_strip',
+  'torch', 'crystal', 'barrel', 'flag', 'tree', 'snowman', 'fish', 'mushroom',
+  'rocket', 'trashcan',
+].join(', ');
+
+const COMPOSE_SHAPES = [
+  'box/sphere/cylinder/cone/pyramid/torus/dodecahedron/ring',
+  'horn/wing/tentacle/arch/dome/star/heart/column/vase/teardrop/mushroom_cap/flask/bell/s_curve/arrow/cross',
+].join(' + ');
+
+const DRAGON_EXAMPLE = JSON.stringify({
+  description: 'dragon', position: [5, 3, 0],
+  recipe: {
+    name: 'dragon', category: 'hazard', behavior: 'chase',
+    defaultProperties: { speed: 3, chaseRadius: 25 },
+    children: [
+      { type: 'obstacle', offset: [0, 1, 0], size: [2.5, 1.2, 1.2], props: { shape: 'sphere', color: '#c0392b', roughness: 0.7 } },
+      { type: 'obstacle', offset: [1.5, 1.5, 0], size: [0.8, 0.8, 0.8], props: { shape: 'sphere', color: '#e74c3c' } },
+      { type: 'decoration', offset: [-1.2, 1.2, 0.8], size: [1.5, 0.3, 0.8], rotation: [0.3, 0, 0.5], props: { shape: 'wing', color: '#8b0000' } },
+      { type: 'decoration', offset: [-1.2, 1.2, -0.8], size: [1.5, 0.3, 0.8], rotation: [-0.3, 0, 0.5], props: { shape: 'wing', color: '#8b0000' } },
+      { type: 'decoration', offset: [-1.5, 0.8, 0], size: [0.3, 0.3, 1], rotation: [0, 0, -0.3], props: { shape: 'tentacle', color: '#c0392b' } },
+      { type: 'decoration', offset: [2, 1.5, 0], size: [0.5, 0.3, 0.3], rotation: [0, 0, -0.4], props: { shape: 'cone', color: '#f39c12', emissive: true, opacity: 0.7 } },
+    ],
+  },
+});
+
+function buildPalettePrompt() {
+  return [
+    `\n**Your palette**: Use start_game({ template: '...' }) to load arenas. Templates: ${ARENA_TEMPLATES}.`,
+    `**COMPOSE -- use POST /api/world/compose for ALL creatures and objects**:`,
+    `  KNOWN prefabs (no recipe needed): ${KNOWN_PREFABS}.`,
+    `  Example: POST /api/world/compose {"description":"ghost","position":[5,1,0]}`,
+    `  CUSTOM creations (provide recipe with up to 12 children):`,
+    `  POST /api/world/compose ${DRAGON_EXAMPLE}`,
+    `  RECIPE FEATURES: rotation:[rx,ry,rz] per child (radians), shapes: ${COMPOSE_SHAPES}.`,
+    `  Material props: roughness (0-1), metalness (0-1), opacity (0.1-1), emissive (true/false).`,
+    `  Compose creates multi-part grouped entities. DO NOT use spawn_entity for creatures -- it only makes a single box/sphere.`,
+    `  Once created, cached forever. Next time same description = instant spawn.`,
+    `**Primitives (POST /api/world/spawn)**: ONLY for simple platforms, ramps, walls.`,
+  ].join('\n');
+}
+
 function buildPrompt(phase, context, drama) {
   const parts = [];
 
@@ -164,7 +210,7 @@ function buildPrompt(phase, context, drama) {
   If the lobby timer is still active (shown below): ONLY chat. Tell jokes, react to messages. Do NOT build anything.
   If the lobby timer has expired: use start_game with a template to begin! This loads the arena AND starts the game in one step.
   Example: start_game({ template: 'parkour_hell' }) or start_game({ template: 'gauntlet', type: 'survival' })
-  Available templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone
+  Available templates: ${ARENA_TEMPLATES}
   DO NOT use load_template — it's been merged into start_game.
   IMPORTANT: If you don't start a game, one will auto-start in 45s!`,
     gaming: `**Phase: GAMING** — A game is active! Commentate, cast spells, add tricks. Do NOT use clear_world or load_template.`,
@@ -182,14 +228,7 @@ function buildPrompt(phase, context, drama) {
   } else {
     parts.push(phasePrompts[phase] || `**Phase: ${phase}** — Keep the game entertaining.`);
 
-    parts.push(`\n**Your palette**: Use start_game({ template: '...' }) to load arenas. Templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone.
-**COMPOSE — use POST /api/world/compose for ALL creatures and objects**:
-  KNOWN prefabs (no recipe needed): spider, shark, ghost, ufo, car, spinning_blade, swinging_axe, crusher, rolling_boulder, cactus, bounce_pad, checkpoint, speed_strip, torch, crystal, barrel, flag, tree, snowman, fish, mushroom, rocket, trashcan.
-  Example: POST /api/world/compose {"description":"ghost","position":[5,1,0]}
-  CUSTOM creations (provide recipe): POST /api/world/compose {"description":"turtle","position":[5,1,0],"recipe":{"name":"turtle","category":"hazard","behavior":"patrol","defaultProperties":{"speed":1},"children":[{"type":"obstacle","offset":[0,0.5,0],"size":[2,1,1.5],"props":{"shape":"sphere","color":"#2e7d32"}},{"type":"obstacle","offset":[0,1.2,0],"size":[0.6,0.6,0.6],"props":{"shape":"sphere","color":"#388e3c"}},{"type":"decoration","offset":[-0.8,0.3,0.5],"size":[0.3,0.15,0.6],"props":{"shape":"cylinder","color":"#2e7d32"}},{"type":"decoration","offset":[0.8,0.3,0.5],"size":[0.3,0.15,0.6],"props":{"shape":"cylinder","color":"#2e7d32"}}]}}
-  Compose creates multi-part grouped entities. DO NOT use spawn_entity for creatures — it only makes a single box/sphere.
-  Once created, cached forever. Next time same description = instant spawn.
-**Primitives (POST /api/world/spawn)**: ONLY for simple platforms, ramps, walls. Shapes: box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring.`);
+    parts.push(buildPalettePrompt());
 
     parts.push(`\n**PACING**: Max 3 world-changing actions this turn. Spell cooldown: 10s between casts. ALWAYS use start_game (with template param) to begin a game — it loads the arena and starts the countdown in one step!`);
   }

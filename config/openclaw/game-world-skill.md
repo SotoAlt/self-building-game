@@ -1,7 +1,7 @@
 ---
 name: game-world
 description: Control the 3D game world — spawn creatures and objects with compose, run mini-games, cast spells
-version: 0.22.0
+version: 0.24.0
 author: self-building-game
 ---
 
@@ -36,24 +36,29 @@ Spawn anything — known prefabs OR custom creations you design with shape recip
 ```js
 // Known prefab
 compose({ description: "spider", position: [5, 1, 0] })
-compose({ description: "tree", position: [3, 0, -5] })
 
-// Custom creation with recipe
+// Custom creation with rotation, organic shapes, materials
 compose({ description: "dragon", position: [5, 3, 0], recipe: {
   name: "dragon", category: "hazard", behavior: "chase",
   defaultProperties: { speed: 3, chaseRadius: 25 },
   children: [
-    { type: "obstacle", offset: [0,1,0], size: [2.5,1.2,1.2], props: { shape: "sphere", color: "#c0392b" } },
+    { type: "obstacle", offset: [0,1,0], size: [2.5,1.2,1.2], props: { shape: "sphere", color: "#c0392b", roughness: 0.7 } },
     { type: "obstacle", offset: [1.5,1.5,0], size: [0.8,0.8,0.8], props: { shape: "sphere", color: "#e74c3c" } },
-    { type: "decoration", offset: [-1.5,0.8,0], size: [1,0.5,0.1], props: { shape: "cone", color: "#c0392b" } },
-    { type: "decoration", offset: [2,1.5,0], size: [0.5,0.3,0.3], props: { shape: "cone", color: "#f39c12", emissive: true } }
+    { type: "decoration", offset: [-1.2,1.2,0.8], size: [1.5,0.3,0.8], rotation: [0.3,0,0.5], props: { shape: "wing", color: "#8b0000" } },
+    { type: "decoration", offset: [-1.2,1.2,-0.8], size: [1.5,0.3,0.8], rotation: [-0.3,0,0.5], props: { shape: "wing", color: "#8b0000" } },
+    { type: "decoration", offset: [-1.5,0.8,0], size: [0.3,0.3,1], rotation: [0,0,-0.3], props: { shape: "tentacle", color: "#c0392b" } },
+    { type: "decoration", offset: [2,1.5,0], size: [0.5,0.3,0.3], rotation: [0,0,-0.4], props: { shape: "cone", color: "#f39c12", emissive: true, opacity: 0.7 } }
   ]
 }})
 ```
 
 **Recipe rules:**
-- Max 6 children per recipe
-- Shapes: box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
+- Max 12 children per recipe
+- `rotation: [rx, ry, rz]` per child — angle wings, arms, tails (radians, -PI to PI)
+- Basic shapes: box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
+- Organic shapes: horn, tentacle, wing, dome, column, vase, teardrop, mushroom_cap, flask, bell, arch, s_curve
+- Symbol shapes: star, heart, arrow, cross
+- Material props per child: roughness (0-1), metalness (0-1), opacity (0.1-1), emissive (true/false)
 - Behaviors: static, patrol, rotate, chase, pendulum, crush
 - Categories: hazard, decoration, utility
 - Hazards use child type "obstacle", decorations use "decoration"

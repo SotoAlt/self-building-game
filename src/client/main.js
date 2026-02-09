@@ -4,6 +4,7 @@
  */
 
 import * as THREE from 'three';
+import { GEOMETRY_TEMPLATES } from './GeometryTemplates.js';
 import { Client } from 'colyseus.js';
 import {
   initPrivy, handleOAuthCallback, exchangeForBackendToken, ensureEmbeddedWallet,
@@ -580,6 +581,61 @@ function getCameraDirections() {
 // ============================================
 const entityMeshes = new Map();
 
+const groupParents = new Map();   // groupId -> THREE.Group
+const pendingGroups = new Map();  // groupId -> debounce timeout ID
+const entityToGroup = new Map();  // entityId -> groupId
+
+function assembleGroup(groupId) {
+  if (groupParents.has(groupId)) return;
+
+  const childMeshes = [];
+  for (const [eid, gid] of entityToGroup) {
+    if (gid === groupId && entityMeshes.has(eid)) {
+      childMeshes.push(entityMeshes.get(eid));
+    }
+  }
+  if (childMeshes.length < 2) return;
+
+  const group = new THREE.Group();
+  const firstMesh = childMeshes[0];
+  group.position.copy(firstMesh.position);
+
+  for (const mesh of childMeshes) {
+    scene.remove(mesh);
+    mesh.position.sub(group.position);
+    group.add(mesh);
+  }
+
+  scene.add(group);
+  groupParents.set(groupId, group);
+
+  const firstEntity = firstMesh.userData.entity;
+  group.userData = { isGroupParent: true, entity: firstEntity };
+
+  if (firstEntity?.properties?.kinematic) {
+    group.userData.targetPosition = firstMesh.userData.targetPosition
+      ? firstMesh.userData.targetPosition.clone()
+      : null;
+  }
+  if (firstEntity?.properties?.rotating) {
+    group.userData.rotating = true;
+    group.userData.speed = firstEntity.properties.speed || 1;
+    for (const mesh of childMeshes) {
+      mesh.userData.rotating = false;
+    }
+  }
+}
+
+function scheduleGroupAssembly(groupId) {
+  if (groupParents.has(groupId)) return;
+  if (pendingGroups.has(groupId)) clearTimeout(pendingGroups.get(groupId));
+  const DEBOUNCE_MS = 150;
+  pendingGroups.set(groupId, setTimeout(() => {
+    pendingGroups.delete(groupId);
+    assembleGroup(groupId);
+  }, DEBOUNCE_MS));
+}
+
 function getEntityColor(type, customColor) {
   if (customColor) return new THREE.Color(customColor);
 
@@ -603,6 +659,11 @@ function getGeometry(entity) {
     return new THREE.SphereGeometry(0.5, 16, 16);
   }
 
+  // Check geometry templates (lathe, extrude, tube shapes)
+  if (shape && GEOMETRY_TEMPLATES[shape]) {
+    return GEOMETRY_TEMPLATES[shape](sx, sy, sz);
+  }
+
   switch (shape) {
     case 'sphere': return new THREE.SphereGeometry(Math.max(sx, sy, sz) / 2, 16, 16);
     case 'cylinder': return new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 16);
@@ -619,21 +680,27 @@ function createEntityMesh(entity) {
   const geometry = getGeometry(entity);
   const color = getEntityColor(entity.type, entity.properties?.color);
 
+  const props = entity.properties || {};
+  const isTransparent = props.opacity != null && props.opacity < 1;
   const material = new THREE.MeshStandardMaterial({
     color,
-    roughness: 0.5,
-    metalness: 0.1,
+    roughness: props.roughness ?? 0.5,
+    metalness: props.metalness ?? 0.1,
     emissive: color,
-    emissiveIntensity: 0.1
+    emissiveIntensity: props.emissive ? 0.5 : 0.1,
+    transparent: isTransparent,
+    opacity: props.opacity ?? 1,
   });
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(...entity.position);
+  if (props.rotation) {
+    mesh.rotation.set(props.rotation[0] || 0, props.rotation[1] || 0, props.rotation[2] || 0);
+  }
   mesh.castShadow = true;
   mesh.receiveShadow = true;
-  mesh.userData = { entity, rotating: entity.properties?.rotating, speed: entity.properties?.speed || 1 };
+  mesh.userData = { entity, rotating: props.rotating, speed: props.speed || 1 };
 
-  // Add glow effect for collectibles
   if (entity.type === 'collectible') {
     const glowGeometry = new THREE.SphereGeometry(0.7, 16, 16);
     const glowMaterial = new THREE.MeshBasicMaterial({
@@ -655,24 +722,44 @@ function addEntity(entity) {
   scene.add(mesh);
   entityMeshes.set(entity.id, mesh);
   state.entities.set(entity.id, entity);
-  updateUI();
 
-  console.log(`[Entity] Added ${entity.type}: ${entity.id}`);
+  const groupId = entity.properties?.groupId;
+  if (groupId) {
+    entityToGroup.set(entity.id, groupId);
+    scheduleGroupAssembly(groupId);
+  }
+
+  updateUI();
+}
+
+function setTargetPosition(obj, position) {
+  if (!obj.userData.targetPosition) {
+    obj.userData.targetPosition = new THREE.Vector3(...position);
+  } else {
+    obj.userData.targetPosition.set(...position);
+  }
+}
+
+function trackLastPosition(obj) {
+  if (!obj.userData.lastPosition) {
+    obj.userData.lastPosition = obj.position.clone();
+  } else {
+    obj.userData.lastPosition.copy(obj.position);
+  }
 }
 
 function updateEntity(entity) {
   const mesh = entityMeshes.get(entity.id);
   if (!mesh) return addEntity(entity);
 
-  // Store target position for smooth interpolation
-  if (!mesh.userData.targetPosition) {
-    mesh.userData.targetPosition = new THREE.Vector3(...entity.position);
-  } else {
-    mesh.userData.targetPosition.set(...entity.position);
-  }
+  const groupId = entityToGroup.get(entity.id);
+  const group = groupId ? groupParents.get(groupId) : null;
 
-  // Immediate update for non-kinematic
-  if (!entity.properties?.kinematic) {
+  setTargetPosition(mesh, entity.position);
+
+  if (group && entity.properties?.kinematic) {
+    setTargetPosition(group, entity.position);
+  } else if (!entity.properties?.kinematic && !group) {
     mesh.position.set(...entity.position);
   }
 
@@ -683,6 +770,13 @@ function updateEntity(entity) {
   if (entity.properties?.color) {
     mesh.material.color.set(entity.properties.color);
     mesh.material.emissive.set(entity.properties.color);
+  }
+  if (entity.properties?.rotation && !entity.properties?.rotating) {
+    mesh.rotation.set(
+      entity.properties.rotation[0] || 0,
+      entity.properties.rotation[1] || 0,
+      entity.properties.rotation[2] || 0
+    );
   }
   mesh.userData.entity = entity;
   mesh.userData.rotating = entity.properties?.rotating;
@@ -695,16 +789,26 @@ function updateEntity(entity) {
 function removeEntity(id) {
   const mesh = entityMeshes.get(id);
   if (mesh) {
-    scene.remove(mesh);
+    const groupId = entityToGroup.get(id);
+    if (groupId && groupParents.has(groupId)) {
+      const group = groupParents.get(groupId);
+      group.remove(mesh);
+      if (group.children.length === 0) {
+        scene.remove(group);
+        groupParents.delete(groupId);
+      }
+    } else {
+      scene.remove(mesh);
+    }
     mesh.traverse((child) => {
       if (child.geometry) child.geometry.dispose();
       if (child.material) child.material.dispose();
     });
     entityMeshes.delete(id);
   }
+  entityToGroup.delete(id);
   state.entities.delete(id);
   updateUI();
-  console.log(`[Entity] Removed: ${id}`);
 }
 
 // ============================================
@@ -1020,8 +1124,12 @@ function checkCollisions() {
     const entity = mesh.userData.entity;
     if (!entity) continue;
 
-    // Manual AABB — ignores glow/decoration children
-    const ep = mesh.position;
+    const isGrouped = mesh.parent && mesh.parent !== scene;
+    const ep = isGrouped
+      ? { x: mesh.parent.position.x + mesh.position.x,
+          y: mesh.parent.position.y + mesh.position.y,
+          z: mesh.parent.position.z + mesh.position.z }
+      : mesh.position;
     const halfSize = entity.type === 'collectible'
       ? [0.5, 0.5, 0.5]
       : entity.size.map(s => s / 2);
@@ -1030,21 +1138,17 @@ function checkCollisions() {
 
     if (!playerBox.intersectsBox(entityBox)) continue;
 
-    // Handle special entity types first
     if (entity.type === 'collectible') {
       collectItem(entity);
       continue;
     }
     if (entity.type === 'obstacle') {
-      // Only kill on obstacle collision during active gameplay (not countdown/lobby/ended)
-      const gamePhase = state.gameState.phase;
-      if (gamePhase === 'playing') {
+      if (state.gameState.phase === 'playing') {
         playerDie();
       }
       continue;
     }
     if (entity.type === 'trigger') {
-      // Bounce pad
       if (entity.properties?.isBounce) {
         const force = entity.properties.bounceForce || 18;
         playerVelocity.y = force;
@@ -1054,7 +1158,6 @@ function checkCollisions() {
         playBounceSound();
         continue;
       }
-      // Speed strip
       if (entity.properties?.isSpeedBoost) {
         const duration = entity.properties.boostDuration || 3000;
         speedBoostUntil = Date.now() + duration;
@@ -1065,16 +1168,13 @@ function checkCollisions() {
       continue;
     }
 
-    // Solid collision (platform/ramp) - wall-slide resolution
     if (entity.type === 'platform' || entity.type === 'ramp') {
-      // Calculate overlaps on each axis
       const overlapX = (0.5 + halfSize[0]) - Math.abs(playerMesh.position.x - ep.x);
       const overlapY = (1 + halfSize[1]) - Math.abs(playerMesh.position.y - ep.y);
       const overlapZ = (0.5 + halfSize[2]) - Math.abs(playerMesh.position.z - ep.z);
 
       if (overlapX <= 0 || overlapY <= 0 || overlapZ <= 0) continue;
 
-      // Check if standing on top
       const playerBottom = playerMesh.position.y - 1;
       const platformTop = ep.y + halfSize[1];
 
@@ -1083,22 +1183,22 @@ function checkCollisions() {
         platformY = platformTop + 1;
         standingOnEntity = entity;
 
-        // Breakable platform — notify server once
         if (entity.properties?.breakable && !mesh.userData._breakNotified) {
           mesh.userData._breakNotified = true;
           sendToServer('platform_step', { entityId: entity.id });
         }
 
-        // Track kinematic platform velocity for carry
-        if (entity.properties?.kinematic && mesh.userData.lastPosition) {
-          platformVelocity = new THREE.Vector3(
-            mesh.position.x - mesh.userData.lastPosition.x,
-            mesh.position.y - mesh.userData.lastPosition.y,
-            mesh.position.z - mesh.userData.lastPosition.z
-          );
+        if (entity.properties?.kinematic) {
+          const moveSrc = isGrouped ? mesh.parent : mesh;
+          if (moveSrc.userData.lastPosition) {
+            platformVelocity = new THREE.Vector3(
+              moveSrc.position.x - moveSrc.userData.lastPosition.x,
+              moveSrc.position.y - moveSrc.userData.lastPosition.y,
+              moveSrc.position.z - moveSrc.userData.lastPosition.z
+            );
+          }
         }
       } else {
-        // Wall slide - push out on minimum penetration axis (X or Z only)
         if (overlapX < overlapZ) {
           const pushDir = playerMesh.position.x > ep.x ? 1 : -1;
           playerMesh.position.x += overlapX * pushDir;
@@ -1112,14 +1212,12 @@ function checkCollisions() {
     }
   }
 
-  // Resolve platform standing
   if (standingOnPlatform) {
     playerMesh.position.y = platformY;
     playerVelocity.y = 0;
     isGrounded = true;
     isJumping = false;
 
-    // Carry player with moving platform
     if (platformVelocity) {
       playerMesh.position.x += platformVelocity.x;
       playerMesh.position.z += platformVelocity.z;
@@ -2085,6 +2183,12 @@ async function connectToServer() {
       }
       entityMeshes.clear();
       state.entities.clear();
+      // Clear group tracking
+      for (const group of groupParents.values()) scene.remove(group);
+      groupParents.clear();
+      entityToGroup.clear();
+      for (const tid of pendingGroups.values()) clearTimeout(tid);
+      pendingGroups.clear();
       updateUI();
     });
 
@@ -2208,68 +2312,61 @@ function animate() {
 
   const delta = clock.getDelta();
 
-  // Update player (skip in spectator mode or mid-game spectating)
   if (!isSpectator && !state.isSpectating) updatePlayer(delta);
-
-  // Check collisions with entities
   if (!isSpectator && !state.isSpectating) checkCollisions();
 
-  // Interpolate remote players
   for (const [, mesh] of remotePlayers) {
     if (mesh.userData.targetPosition) {
       mesh.position.lerp(mesh.userData.targetPosition, 0.15);
     }
   }
 
-  // Animate entities
-  for (const [, mesh] of entityMeshes) {
-    // Store last position for kinematic velocity tracking
-    if (mesh.userData.entity?.properties?.kinematic) {
-      if (!mesh.userData.lastPosition) {
-        mesh.userData.lastPosition = mesh.position.clone();
-      } else {
-        mesh.userData.lastPosition.copy(mesh.position);
-      }
+  for (const [, group] of groupParents) {
+    if (group.userData.targetPosition) {
+      trackLastPosition(group);
+      group.position.lerp(group.userData.targetPosition, 0.2);
+    }
+    if (group.userData.rotating) {
+      group.rotation.y += (group.userData.speed || 1) * delta;
+    }
+  }
 
-      // Smooth interpolation for kinematic entities
+  for (const [, mesh] of entityMeshes) {
+    const isGrouped = mesh.parent && mesh.parent !== scene;
+
+    if (mesh.userData.entity?.properties?.kinematic && !isGrouped) {
+      trackLastPosition(mesh);
       if (mesh.userData.targetPosition) {
         mesh.position.lerp(mesh.userData.targetPosition, 0.2);
       }
     }
 
-    if (mesh.userData.rotating) {
+    if (mesh.userData.rotating && !isGrouped) {
       mesh.rotation.y += mesh.userData.speed * delta;
     }
 
-    // Cracking animation for breakable platforms
     if (mesh.userData.cracking) {
       const elapsed = (Date.now() - mesh.userData.crackStart) / 1000;
-      // Shake
       mesh.position.x += (Math.random() - 0.5) * 0.04;
       mesh.position.z += (Math.random() - 0.5) * 0.04;
-      // Darken and fade
       if (mesh.material) {
         mesh.material.transparent = true;
         mesh.material.opacity = Math.max(0.2, 1 - elapsed * 1.5);
       }
     }
 
-    // Collectible bobbing
     if (mesh.userData.entity?.type === 'collectible') {
       mesh.position.y = mesh.userData.entity.position[1] + Math.sin(Date.now() * 0.003) * 0.3;
     }
   }
 
-  // Animate lava floor
   if (lavaFloor.visible) {
     lavaMaterial.emissiveIntensity = 0.5 + Math.sin(Date.now() * 0.002) * 0.2;
     lavaFloor.position.y = -0.5 + Math.sin(Date.now() * 0.001) * 0.1;
   }
 
-  // Update particles
   updateParticles();
 
-  // Spectator camera update (runs even without player)
   if (isSpectator) updateCamera();
 
   renderer.render(scene, camera);

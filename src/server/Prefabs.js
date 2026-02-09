@@ -13,11 +13,11 @@ const PREFABS = {
     description: 'Black spider that chases the nearest player — kills on contact',
     defaultProperties: { speed: 2, chaseRadius: 20 },
     children: [
-      { type: 'obstacle', offset: [0, 0.5, 0], size: [1, 0.8, 1], props: { shape: 'sphere', color: '#1a1a1a' } },
-      { type: 'obstacle', offset: [-0.6, 0.2, 0.4], size: [0.15, 0.15, 0.8], props: { shape: 'cylinder', color: '#333333' } },
-      { type: 'obstacle', offset: [0.6, 0.2, 0.4], size: [0.15, 0.15, 0.8], props: { shape: 'cylinder', color: '#333333' } },
-      { type: 'obstacle', offset: [-0.6, 0.2, -0.4], size: [0.15, 0.15, 0.8], props: { shape: 'cylinder', color: '#333333' } },
-      { type: 'obstacle', offset: [0.6, 0.2, -0.4], size: [0.15, 0.15, 0.8], props: { shape: 'cylinder', color: '#333333' } },
+      { type: 'obstacle', offset: [0, 0.5, 0], size: [1, 0.8, 1], props: { shape: 'sphere', color: '#1a1a1a', roughness: 0.9 } },
+      { type: 'obstacle', offset: [-0.6, 0.2, 0.4], size: [0.15, 0.15, 0.8], rotation: [0.3, 0, -0.4], props: { shape: 'cylinder', color: '#333333' } },
+      { type: 'obstacle', offset: [0.6, 0.2, 0.4], size: [0.15, 0.15, 0.8], rotation: [0.3, 0, 0.4], props: { shape: 'cylinder', color: '#333333' } },
+      { type: 'obstacle', offset: [-0.6, 0.2, -0.4], size: [0.15, 0.15, 0.8], rotation: [-0.3, 0, -0.4], props: { shape: 'cylinder', color: '#333333' } },
+      { type: 'obstacle', offset: [0.6, 0.2, -0.4], size: [0.15, 0.15, 0.8], rotation: [-0.3, 0, 0.4], props: { shape: 'cylinder', color: '#333333' } },
     ],
     behavior: 'chase',
   },
@@ -130,15 +130,11 @@ const PREFABS = {
     description: 'Flag on a pole — marks positions or goals',
     defaultProperties: {},
     children: [
-      { type: 'decoration', offset: [0, 1.5, 0], size: [0.1, 3, 0.1], props: { shape: 'cylinder', color: '#bdc3c7' } },
-      { type: 'decoration', offset: [0.5, 2.7, 0], size: [0.8, 0.5, 0.05], props: { color: '#e74c3c' } },
+      { type: 'decoration', offset: [0, 1.5, 0], size: [0.1, 3, 0.1], props: { shape: 'cylinder', color: '#bdc3c7', metalness: 0.6 } },
+      { type: 'decoration', offset: [0.5, 2.7, 0], size: [0.8, 0.5, 0.05], rotation: [0, 0, 0.15], props: { color: '#e74c3c' } },
     ],
     behavior: 'static',
   },
-
-  // ============================================
-  // More creatures & objects
-  // ============================================
 
   fish: {
     category: 'decoration',
@@ -157,9 +153,9 @@ const PREFABS = {
     description: 'Grey shark that chases players — kills on contact',
     defaultProperties: { speed: 3, chaseRadius: 25 },
     children: [
-      { type: 'obstacle', offset: [0, 0, 0], size: [2, 0.8, 0.8], props: { shape: 'sphere', color: '#5a6672' } },
+      { type: 'obstacle', offset: [0, 0, 0], size: [2, 0.8, 0.8], props: { shape: 'sphere', color: '#5a6672', roughness: 0.3, metalness: 0.2 } },
       { type: 'obstacle', offset: [-1.2, 0, 0], size: [0.6, 0.8, 0.1], props: { shape: 'cone', color: '#5a6672' } },
-      { type: 'obstacle', offset: [0, 0.6, 0], size: [0.3, 0.8, 0.1], props: { shape: 'cone', color: '#4a5662' } },
+      { type: 'obstacle', offset: [0, 0.6, 0], size: [0.3, 0.8, 0.1], rotation: [0, 0, 0.1], props: { shape: 'cone', color: '#4a5662' } },
       { type: 'obstacle', offset: [0.7, 0.1, 0], size: [0.15, 0.15, 0.15], props: { shape: 'sphere', color: '#111111' } },
     ],
     behavior: 'chase',
@@ -247,9 +243,9 @@ const PREFABS = {
     description: 'Green cactus — kills on contact (ouch!)',
     defaultProperties: {},
     children: [
-      { type: 'obstacle', offset: [0, 1, 0], size: [0.5, 2, 0.5], props: { shape: 'cylinder', color: '#27ae60' } },
-      { type: 'obstacle', offset: [0.5, 1.5, 0], size: [0.3, 1, 0.3], props: { shape: 'cylinder', color: '#2ecc71' } },
-      { type: 'obstacle', offset: [-0.4, 1.8, 0], size: [0.3, 0.7, 0.3], props: { shape: 'cylinder', color: '#2ecc71' } },
+      { type: 'obstacle', offset: [0, 1, 0], size: [0.5, 2, 0.5], props: { shape: 'cylinder', color: '#27ae60', roughness: 0.8 } },
+      { type: 'obstacle', offset: [0.5, 1.5, 0], size: [0.3, 1, 0.3], rotation: [0, 0, 0.5], props: { shape: 'cylinder', color: '#2ecc71' } },
+      { type: 'obstacle', offset: [-0.4, 1.8, 0], size: [0.3, 0.7, 0.3], rotation: [0, 0, -0.4], props: { shape: 'cylinder', color: '#2ecc71' } },
     ],
     behavior: 'static',
   },
@@ -291,6 +287,92 @@ export function getPrefabInfo() {
 }
 
 /**
+ * Apply behavior-specific properties to a child entity's props.
+ * Shared by both spawnPrefab and Composer.spawnFromRecipe.
+ */
+export function applyBehavior(behavior, merged, childProps, absPos) {
+  switch (behavior) {
+    case 'patrol': {
+      const radius = merged.patrolRadius || 6;
+      childProps.kinematic = true;
+      childProps.speed = merged.speed || 1.5;
+      childProps.path = [
+        [absPos[0] - radius / 2, absPos[1], absPos[2]],
+        [absPos[0] + radius / 2, absPos[1], absPos[2]],
+      ];
+      break;
+    }
+    case 'rotate':
+      childProps.rotating = true;
+      childProps.speed = merged.speed || 2;
+      break;
+    case 'pendulum': {
+      const height = merged.swingHeight || 4;
+      childProps.kinematic = true;
+      childProps.speed = merged.speed || 1;
+      childProps.path = [
+        [absPos[0] - 2, absPos[1], absPos[2]],
+        [absPos[0] + 2, absPos[1] + height * 0.3, absPos[2]],
+      ];
+      break;
+    }
+    case 'crush': {
+      const crushH = merged.crushHeight || 5;
+      childProps.kinematic = true;
+      childProps.speed = merged.speed || 0.6;
+      childProps.path = [
+        [absPos[0], absPos[1], absPos[2]],
+        [absPos[0], absPos[1] - crushH + 1, absPos[2]],
+      ];
+      break;
+    }
+    case 'chase':
+      childProps.chase = true;
+      childProps.speed = merged.speed || 2;
+      childProps.chaseRadius = merged.chaseRadius || 20;
+      childProps.spawnPos = [...absPos];
+      break;
+    default:
+      break;
+  }
+
+  if (childProps.isBounce) childProps.bounceForce = merged.bounceForce || 18;
+  if (childProps.isSpeedBoost) childProps.boostDuration = merged.boostDuration || 3000;
+}
+
+/**
+ * Spawn a group of entities from a definition (prefab or recipe).
+ * `childMeta` is spread onto every child's props (e.g. { prefabName } or { composedName }).
+ * Returns { groupId, entityIds }
+ */
+export function spawnGroup(definition, groupPrefix, position, properties, childMeta, worldState, broadcastFn) {
+  const groupId = `${groupPrefix}-${randomUUID().slice(0, 8)}`;
+  const merged = { ...definition.defaultProperties, ...properties };
+  const entityIds = [];
+
+  for (const child of definition.children) {
+    const absPos = [
+      position[0] + child.offset[0],
+      position[1] + child.offset[1],
+      position[2] + child.offset[2],
+    ];
+
+    const childProps = { ...child.props, ...childMeta, groupId };
+    if (child.rotation && (child.rotation[0] || child.rotation[1] || child.rotation[2])) {
+      childProps.rotation = child.rotation;
+    }
+
+    applyBehavior(definition.behavior, merged, childProps, absPos);
+
+    const entity = worldState.spawnEntity(child.type, absPos, child.size, childProps);
+    broadcastFn('entity_spawned', entity);
+    entityIds.push(entity.id);
+  }
+
+  return { groupId, entityIds };
+}
+
+/**
  * Spawn a prefab as a group of entities.
  * Returns { groupId, entityIds }
  */
@@ -300,78 +382,18 @@ export function spawnPrefab(name, position, properties, worldState, broadcastFn)
     throw new Error(`Unknown prefab: ${name}. Available: ${Object.keys(PREFABS).join(', ')}`);
   }
 
-  const groupId = `prefab-${name}-${randomUUID().slice(0, 8)}`;
-  const merged = { ...prefab.defaultProperties, ...properties };
-  const entityIds = [];
+  const result = spawnGroup(
+    prefab,
+    `prefab-${name}`,
+    position,
+    properties,
+    { prefabName: name },
+    worldState,
+    broadcastFn,
+  );
 
-  for (const child of prefab.children) {
-    const absPos = [
-      position[0] + child.offset[0],
-      position[1] + child.offset[1],
-      position[2] + child.offset[2],
-    ];
-
-    const childProps = {
-      ...child.props,
-      groupId,
-      prefabName: name,
-    };
-
-    // Apply behavior-specific properties
-    switch (prefab.behavior) {
-      case 'patrol': {
-        const radius = merged.patrolRadius || 6;
-        childProps.kinematic = true;
-        childProps.speed = merged.speed || 1.5;
-        childProps.path = [
-          [absPos[0] - radius / 2, absPos[1], absPos[2]],
-          [absPos[0] + radius / 2, absPos[1], absPos[2]],
-        ];
-        break;
-      }
-      case 'rotate':
-        childProps.rotating = true;
-        childProps.speed = merged.speed || 2;
-        break;
-      case 'pendulum': {
-        const height = merged.swingHeight || 4;
-        childProps.kinematic = true;
-        childProps.speed = merged.speed || 1;
-        childProps.path = [
-          [absPos[0] - 2, absPos[1], absPos[2]],
-          [absPos[0] + 2, absPos[1] + height * 0.3, absPos[2]],
-        ];
-        break;
-      }
-      case 'crush': {
-        const crushH = merged.crushHeight || 5;
-        childProps.kinematic = true;
-        childProps.speed = merged.speed || 0.6;
-        childProps.path = [
-          [absPos[0], absPos[1], absPos[2]],
-          [absPos[0], absPos[1] - crushH + 1, absPos[2]],
-        ];
-        break;
-      }
-      case 'chase':
-        childProps.chase = true;
-        childProps.speed = merged.speed || 2;
-        childProps.chaseRadius = merged.chaseRadius || 20;
-        childProps.spawnPos = [...absPos];
-        break;
-    }
-
-    // Pass through trigger properties from child definition
-    if (child.props.isBounce) childProps.bounceForce = merged.bounceForce || 18;
-    if (child.props.isSpeedBoost) childProps.boostDuration = merged.boostDuration || 3000;
-
-    const entity = worldState.spawnEntity(child.type, absPos, child.size, childProps);
-    broadcastFn('entity_spawned', entity);
-    entityIds.push(entity.id);
-  }
-
-  console.log(`[Prefabs] Spawned '${name}' as group ${groupId} (${entityIds.length} entities)`);
-  return { groupId, entityIds };
+  console.log(`[Prefabs] Spawned '${name}' as group ${result.groupId} (${result.entityIds.length} entities)`);
+  return result;
 }
 
 export { PREFABS };

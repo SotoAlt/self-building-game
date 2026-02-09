@@ -7,10 +7,9 @@
  * the cached recipe spawns without the agent needing to provide it again.
  */
 
-import { randomUUID } from 'crypto';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import path from 'path';
-import { PREFABS, spawnPrefab } from './Prefabs.js';
+import { PREFABS, spawnPrefab, spawnGroup } from './Prefabs.js';
 
 const CACHE_DIR = path.resolve('data');
 const CACHE_FILE = path.join(CACHE_DIR, 'compose-cache.json');
@@ -18,10 +17,15 @@ const CACHE_FILE = path.join(CACHE_DIR, 'compose-cache.json');
 const recipeCache = new Map();
 
 const VALID_TYPES = ['platform', 'ramp', 'collectible', 'obstacle', 'trigger', 'decoration'];
-const VALID_SHAPES = ['box', 'sphere', 'cylinder', 'cone', 'pyramid', 'torus', 'dodecahedron', 'ring'];
+const VALID_SHAPES = [
+  'box', 'sphere', 'cylinder', 'cone', 'pyramid', 'torus', 'dodecahedron', 'ring',
+  'column', 'vase', 'teardrop', 'mushroom_cap', 'horn', 'flask', 'bell', 'dome',
+  'wing', 'star', 'heart', 'arrow', 'cross',
+  'tentacle', 'arch', 's_curve',
+];
 const VALID_BEHAVIORS = ['static', 'patrol', 'rotate', 'chase', 'pendulum', 'crush'];
 const VALID_CATEGORIES = ['hazard', 'decoration', 'utility'];
-const MAX_CHILDREN = 6;
+const MAX_CHILDREN = 12;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
 
 function normalize(desc) {
@@ -85,6 +89,7 @@ function validateRecipe(recipe) {
 
     c.offset = parseVec3(child.offset, 0, -10, 10);
     c.size = parseVec3(child.size, 1, 0.1, 10);
+    c.rotation = parseVec3(child.rotation, 0, -Math.PI, Math.PI);
 
     const props = child.props || {};
     c.props = {
@@ -92,6 +97,9 @@ function validateRecipe(recipe) {
       color: (typeof props.color === 'string' && HEX_COLOR_RE.test(props.color)) ? props.color : '#888888',
     };
     if (props.emissive) c.props.emissive = true;
+    if (typeof props.metalness === 'number') c.props.metalness = clamp(props.metalness, 0, 1);
+    if (typeof props.roughness === 'number') c.props.roughness = clamp(props.roughness, 0, 1);
+    if (typeof props.opacity === 'number') c.props.opacity = clamp(props.opacity, 0.1, 1);
     if (props.isBounce) c.props.isBounce = true;
     if (props.isSpeedBoost) c.props.isSpeedBoost = true;
     if (props.isCheckpoint) c.props.isCheckpoint = true;
@@ -133,77 +141,19 @@ async function saveCacheToDisk() {
 }
 
 function spawnFromRecipe(recipe, position, properties, worldState, broadcastFn) {
-  const groupId = `compose-${recipe.name || 'custom'}-${randomUUID().slice(0, 8)}`;
-  const merged = { ...recipe.defaultProperties, ...properties };
-  const entityIds = [];
+  const name = recipe.name || 'custom';
+  const result = spawnGroup(
+    recipe,
+    `compose-${name}`,
+    position,
+    properties,
+    { composedName: name },
+    worldState,
+    broadcastFn,
+  );
 
-  for (const child of recipe.children) {
-    const absPos = [
-      position[0] + child.offset[0],
-      position[1] + child.offset[1],
-      position[2] + child.offset[2],
-    ];
-
-    const childProps = {
-      ...child.props,
-      groupId,
-      composedName: recipe.name || 'custom',
-    };
-
-    switch (recipe.behavior) {
-      case 'patrol': {
-        const radius = merged.patrolRadius || 6;
-        childProps.kinematic = true;
-        childProps.speed = merged.speed || 1.5;
-        childProps.path = [
-          [absPos[0] - radius / 2, absPos[1], absPos[2]],
-          [absPos[0] + radius / 2, absPos[1], absPos[2]],
-        ];
-        break;
-      }
-      case 'rotate':
-        childProps.rotating = true;
-        childProps.speed = merged.speed || 2;
-        break;
-      case 'pendulum': {
-        const height = merged.swingHeight || 4;
-        childProps.kinematic = true;
-        childProps.speed = merged.speed || 1;
-        childProps.path = [
-          [absPos[0] - 2, absPos[1], absPos[2]],
-          [absPos[0] + 2, absPos[1] + height * 0.3, absPos[2]],
-        ];
-        break;
-      }
-      case 'crush': {
-        const crushH = merged.crushHeight || 5;
-        childProps.kinematic = true;
-        childProps.speed = merged.speed || 0.6;
-        childProps.path = [
-          [absPos[0], absPos[1], absPos[2]],
-          [absPos[0], absPos[1] - crushH + 1, absPos[2]],
-        ];
-        break;
-      }
-      case 'chase':
-        childProps.chase = true;
-        childProps.speed = merged.speed || 2;
-        childProps.chaseRadius = merged.chaseRadius || 20;
-        childProps.spawnPos = [...absPos];
-        break;
-      default:
-        break;
-    }
-    if (child.props.isBounce) childProps.bounceForce = merged.bounceForce || 18;
-    if (child.props.isSpeedBoost) childProps.boostDuration = merged.boostDuration || 3000;
-
-    const entity = worldState.spawnEntity(child.type, absPos, child.size, childProps);
-    broadcastFn('entity_spawned', entity);
-    entityIds.push(entity.id);
-  }
-
-  console.log(`[Composer] Spawned '${recipe.name || 'custom'}' as group ${groupId} (${entityIds.length} entities)`);
-  return { groupId, entityIds };
+  console.log(`[Composer] Spawned '${name}' as group ${result.groupId} (${result.entityIds.length} entities)`);
+  return result;
 }
 
 export function compose(description, position, recipe, properties, worldState, broadcastFn) {
