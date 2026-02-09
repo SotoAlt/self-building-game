@@ -80,10 +80,15 @@ function scheduleAutoStart() {
     const humanPlayers = worldState.getPlayers().filter(p => p.type !== 'ai');
     if (humanPlayers.length === 0) return;
 
-    const allTemplates = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell', 'hex_a_gone', 'slime_climb', 'wind_tunnel', 'treasure_trove', 'ice_rink', 'king_plateau', 'king_islands', 'hot_potato_arena', 'hot_potato_platforms', 'checkpoint_dash', 'race_circuit'];
+    // Prefer new game types (king, hot_potato, race) that haven't been played yet
+    const newTypeTemplates = ['king_plateau', 'king_islands', 'hot_potato_arena', 'hot_potato_platforms', 'checkpoint_dash', 'race_circuit'];
+    const allTemplates = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell', 'hex_a_gone', 'slime_climb', 'wind_tunnel', 'treasure_trove', 'ice_rink', ...newTypeTemplates];
     const recentTemplates = worldState.gameHistory.slice(-3).map(g => g.template);
+    const playedTypes = new Set(worldState.gameHistory.map(g => g.type));
+    // Strongly prefer unplayed new types
+    const unplayedNew = newTypeTemplates.filter(t => !recentTemplates.includes(t) && !playedTypes.has(t.includes('king') ? 'king' : t.includes('hot_potato') ? 'hot_potato' : 'race'));
     const available = allTemplates.filter(t => !recentTemplates.includes(t));
-    const pool = available.length > 0 ? available : allTemplates;
+    const pool = unplayedNew.length > 0 ? unplayedNew : (available.length > 0 ? available : allTemplates);
     const template = pool[Math.floor(Math.random() * pool.length)];
     console.log(`[AutoStart] Agent didn't start a game in ${AUTO_START_DELAY / 1000}s — auto-starting with ${template}`);
     fetch(`http://localhost:${PORT}/api/game/start`, {

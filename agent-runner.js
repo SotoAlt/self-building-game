@@ -204,11 +204,26 @@ function buildVarietyDirective(context) {
   const recentTypes = history.slice(-3).map(g => g.type);
   const recentTemplates = history.slice(-3).map(g => g.template).filter(Boolean);
 
-  const lines = [`\n**VARIETY RULES (MANDATORY)**:`];
+  const lines = [`\n**VARIETY RULES (MANDATORY — FOLLOW EXACTLY)**:`];
+
+  // Find which types have been played
+  const typeCounts = {};
+  for (const t of ALL_GAME_TYPES) typeCounts[t] = 0;
+  for (const g of history) {
+    if (g.type && typeCounts[g.type] !== undefined) typeCounts[g.type]++;
+  }
+
+  // Unplayed types get highest priority
+  const unplayedTypes = ALL_GAME_TYPES.filter(t => typeCounts[t] === 0);
+  // New types (king, hot_potato, race) get extra priority if never played
+  const newUnplayed = unplayedTypes.filter(t => ['king', 'hot_potato', 'race'].includes(t));
 
   // Ban last game's type entirely
   if (lastType) {
     lines.push(`- DO NOT start a "${lastType}" game. Pick a DIFFERENT type.`);
+  } else {
+    // No history at all — ban reach (most common default)
+    lines.push(`- DO NOT start a "reach" game. We need VARIETY. Pick king, hot_potato, or race.`);
   }
 
   // Ban recent templates
@@ -216,12 +231,13 @@ function buildVarietyDirective(context) {
     lines.push(`- DO NOT use templates: ${recentTemplates.join(', ')}. They were played recently.`);
   }
 
-  // Find least recently played type
-  const typeCounts = {};
-  for (const t of ALL_GAME_TYPES) typeCounts[t] = 0;
-  for (const g of history) {
-    if (g.type && typeCounts[g.type] !== undefined) typeCounts[g.type]++;
+  // Strong push for unplayed types
+  if (newUnplayed.length > 0) {
+    const pick = newUnplayed[Math.floor(Math.random() * newUnplayed.length)];
+    const tmpl = TYPE_TO_TEMPLATES[pick]?.[Math.floor(Math.random() * TYPE_TO_TEMPLATES[pick].length)];
+    lines.push(`- **YOU MUST USE**: start_game({ template: '${tmpl}' })  ← This is a ${pick} game that has NEVER been played!`);
   }
+
   const sortedTypes = ALL_GAME_TYPES
     .filter(t => t !== lastType)
     .sort((a, b) => typeCounts[a] - typeCounts[b]);
