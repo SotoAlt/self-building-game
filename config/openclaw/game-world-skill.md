@@ -1,7 +1,7 @@
 ---
 name: game-world
-description: Control the 3D game world — spawn creatures and objects with compose, run mini-games, cast spells
-version: 0.24.0
+description: Control the 3D game world — compose creatures and objects, run mini-games, cast spells. ALWAYS use compose to spawn.
+version: 0.24.1
 author: self-building-game
 ---
 
@@ -64,17 +64,9 @@ compose({ description: "dragon", position: [5, 3, 0], recipe: {
 - Hazards use child type "obstacle", decorations use "decoration"
 - Cached after first creation — same description = instant spawn next time
 
-### spawn_entity
+### spawn_entity (DEPRECATED)
 
-Create a single primitive shape. **Use compose for creatures/objects.** Only for platforms, ramps, walls, floors.
-
-**Parameters:**
-- `type` (required): "platform" | "ramp" | "collectible" | "obstacle" | "trigger" | "decoration"
-- `position` (required): [x, y, z]
-- `size`: [w, h, d] default [1,1,1]
-- `properties`: { color, shape, kinematic, rotating, speed }
-
-Shapes: box (default), sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
+Use `compose` instead. spawn_entity only creates single boxes.
 
 ### modify_entity
 
@@ -154,4 +146,4 @@ Utility tools for game management.
 
 ### spawn_prefab (DEPRECATED)
 
-Use `compose` instead.
+Use `compose` instead. spawn_prefab is superseded by compose.

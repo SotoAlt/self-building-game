@@ -6,7 +6,7 @@
  * Polls the game server for context, decides when to invoke the agent,
  * and uses `openclaw agent` CLI to send messages.
  *
- * v0.20.0 — Prefabs, breakable platforms, hex_a_gone template
+ * v0.22.0 — Compose system, prefabs, breakable platforms
  */
 
 import { execFile } from 'child_process';
@@ -165,9 +165,10 @@ const KNOWN_PREFABS = [
 ].join(', ');
 
 const COMPOSE_SHAPES = [
-  'box/sphere/cylinder/cone/pyramid/torus/dodecahedron/ring',
-  'horn/wing/tentacle/arch/dome/star/heart/column/vase/teardrop/mushroom_cap/flask/bell/s_curve/arrow/cross',
-].join(' + ');
+  'box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring',
+  'horn, tentacle, wing, dome, column, vase, teardrop, mushroom_cap, flask, bell, arch, s_curve',
+  'star, heart, arrow, cross',
+].join(' | ');
 
 const DRAGON_EXAMPLE = JSON.stringify({
   description: 'dragon', position: [5, 3, 0],
@@ -188,16 +189,16 @@ const DRAGON_EXAMPLE = JSON.stringify({
 function buildPalettePrompt() {
   return [
     `\n**Your palette**: Use start_game({ template: '...' }) to load arenas. Templates: ${ARENA_TEMPLATES}.`,
-    `**COMPOSE -- use POST /api/world/compose for ALL creatures and objects**:`,
-    `  KNOWN prefabs (no recipe needed): ${KNOWN_PREFABS}.`,
+    `**POST /api/world/compose — YOUR ONLY SPAWNING TOOL.**`,
+    `  Known prefabs (no recipe needed): ${KNOWN_PREFABS}.`,
     `  Example: POST /api/world/compose {"description":"ghost","position":[5,1,0]}`,
-    `  CUSTOM creations (provide recipe with up to 12 children):`,
+    `  Not a known prefab? YOU MUST provide a recipe (e.g. "octopus" → tentacle shapes, "castle" → columns and domes).`,
+    `  Custom recipe example:`,
     `  POST /api/world/compose ${DRAGON_EXAMPLE}`,
-    `  RECIPE FEATURES: rotation:[rx,ry,rz] per child (radians), shapes: ${COMPOSE_SHAPES}.`,
-    `  Material props: roughness (0-1), metalness (0-1), opacity (0.1-1), emissive (true/false).`,
-    `  Compose creates multi-part grouped entities. DO NOT use spawn_entity for creatures -- it only makes a single box/sphere.`,
-    `  Once created, cached forever. Next time same description = instant spawn.`,
-    `**Primitives (POST /api/world/spawn)**: ONLY for simple platforms, ramps, walls.`,
+    `  Shapes: ${COMPOSE_SHAPES}.`,
+    `  Recipe rules: max 12 children, rotation:[rx,ry,rz] radians, material: roughness/metalness/opacity/emissive.`,
+    `  Cached after first creation — same description = instant spawn next time.`,
+    `  DO NOT use /api/world/spawn. ALWAYS use /api/world/compose.`,
   ].join('\n');
 }
 
@@ -439,7 +440,7 @@ async function tick() {
 // Start
 console.log(`
 ╔═══════════════════════════════════════╗
-║   Chaos Magician Agent Runner v0.20  ║
+║   Chaos Magician Agent Runner v0.22  ║
 ║                                       ║
 ║  Game: ${GAME_URL.padEnd(30)}║
 ║  Session: ${SESSION_ID.slice(0, 27).padEnd(27)}║

@@ -68,52 +68,44 @@ Then try something creative with the tools you have.
 
 ## Your Palette
 
-**Compose (your main spawning tool)** — use `compose()` for everything:
+**Compose is your ONLY spawning tool. Use `POST /api/world/compose` for everything.**
 
-  Known prefabs (instant, no recipe needed):
-  - Hazards: spider, shark, ghost, ufo, car, spinning_blade, swinging_axe, crusher, rolling_boulder, cactus
-  - Utility: bounce_pad, checkpoint, speed_strip
-  - Decoration: torch, crystal, barrel, flag, tree, snowman, fish, mushroom, rocket, trashcan
+Known prefabs (no recipe needed -- just description + position):
+- Hazards: spider, shark, ghost, ufo, car, spinning_blade, swinging_axe, crusher, rolling_boulder, cactus
+- Utility: bounce_pad, checkpoint, speed_strip
+- Decoration: torch, crystal, barrel, flag, tree, snowman, fish, mushroom, rocket, trashcan
 
-  `compose({ description: "spider", position: [5,1,0] })`
+```
+POST /api/world/compose {"description":"spider","position":[5,1,0]}
+```
 
-  Custom creations (provide a recipe — YOU design the shapes!):
+Not a known prefab? You MUST provide a recipe. Design it yourself using available shapes.
 
-  `compose({ description: "dragon", position: [5,3,0], recipe: {
-    "name": "dragon", "category": "hazard", "behavior": "chase",
-    "defaultProperties": { "speed": 3, "chaseRadius": 25 },
-    "children": [
-      { "type": "obstacle", "offset": [0,1,0], "size": [2.5,1.2,1.2], "props": { "shape": "sphere", "color": "#c0392b", "roughness": 0.7 } },
-      { "type": "obstacle", "offset": [1.5,1.5,0], "size": [0.8,0.8,0.8], "props": { "shape": "sphere", "color": "#e74c3c" } },
-      { "type": "decoration", "offset": [-1.2,1.2,0.8], "size": [1.5,0.3,0.8], "rotation": [0.3,0,0.5], "props": { "shape": "wing", "color": "#8b0000" } },
-      { "type": "decoration", "offset": [-1.2,1.2,-0.8], "size": [1.5,0.3,0.8], "rotation": [-0.3,0,0.5], "props": { "shape": "wing", "color": "#8b0000" } },
-      { "type": "decoration", "offset": [-1.5,0.8,0], "size": [0.3,0.3,1], "rotation": [0,0,-0.3], "props": { "shape": "tentacle", "color": "#c0392b" } },
-      { "type": "decoration", "offset": [2,1.5,0], "size": [0.5,0.3,0.3], "rotation": [0,0,-0.4], "props": { "shape": "cone", "color": "#f39c12", "emissive": true, "opacity": 0.7 } }
-    ]
-  }})`
+```json
+{"description":"dragon","position":[5,3,0],"recipe":{
+  "name":"dragon","category":"hazard","behavior":"chase",
+  "defaultProperties":{"speed":3,"chaseRadius":25},
+  "children":[
+    {"type":"obstacle","offset":[0,1,0],"size":[2.5,1.2,1.2],"props":{"shape":"sphere","color":"#c0392b","roughness":0.7}},
+    {"type":"decoration","offset":[-1.2,1.2,0.8],"size":[1.5,0.3,0.8],"rotation":[0.3,0,0.5],"props":{"shape":"wing","color":"#8b0000"}},
+    {"type":"decoration","offset":[-1.2,1.2,-0.8],"size":[1.5,0.3,0.8],"rotation":[-0.3,0,0.5],"props":{"shape":"wing","color":"#8b0000"}},
+    {"type":"decoration","offset":[-1.5,0.8,0],"size":[0.3,0.3,1],"rotation":[0,0,-0.3],"props":{"shape":"tentacle","color":"#c0392b"}},
+    {"type":"decoration","offset":[2,1.5,0],"size":[0.5,0.3,0.3],"rotation":[0,0,-0.4],"props":{"shape":"cone","color":"#f39c12","emissive":true,"opacity":0.7}}
+  ]
+}}
+```
 
-  `compose({ description: "wizard tower", position: [0,0,-10], recipe: {
-    "name": "wizard_tower", "category": "decoration", "behavior": "static",
-    "children": [
-      { "type": "decoration", "offset": [0,2,0], "size": [2,4,2], "props": { "shape": "column", "color": "#7f8c8d", "roughness": 0.9 } },
-      { "type": "decoration", "offset": [0,5,0], "size": [2.5,2,2.5], "props": { "shape": "dome", "color": "#8e44ad" } },
-      { "type": "decoration", "offset": [0,6.5,0], "size": [0.5,1.5,0.5], "props": { "shape": "horn", "color": "#9b59b6", "emissive": true } },
-      { "type": "decoration", "offset": [1.2,3,0], "size": [0.5,0.8,0.3], "rotation": [0,0,0.3], "props": { "shape": "arch", "color": "#5d6d7e" } }
-    ]
-  }})`
+Recipe rules:
+- Max 12 children. `rotation: [rx, ry, rz]` in radians to angle parts.
+- Basic shapes: box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
+- Organic shapes: horn, tentacle, wing, dome, column, vase, teardrop, mushroom_cap, flask, bell, arch, s_curve
+- Symbol shapes: star, heart, arrow, cross
+- Material: roughness (0-1), metalness (0-1), opacity (0.1-1), emissive (true/false)
+- Hazards: child type "obstacle" + behavior "chase" or "patrol"
+- Decorations: child type "decoration" + behavior "static" or "rotate"
+- Cached after first creation -- same description = instant spawn next time
 
-  Recipe features:
-  - Max 12 children. Use `rotation: [rx, ry, rz]` (radians) to angle parts — wings, arms, tails!
-  - Basic shapes: box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
-  - Organic shapes: horn, tentacle, wing, dome, column, vase, teardrop, mushroom_cap, flask, bell, arch, s_curve
-  - Symbol shapes: star, heart, arrow, cross
-  - Material props: roughness (0-1), metalness (0-1), opacity (0.1-1), emissive (true/false)
-  - Hazards: child type "obstacle" + behavior "chase" or "patrol"
-  - Decorations: child type "decoration" + behavior "static" or "rotate"
-  - Once created, it's cached forever — next time just use the description without a recipe.
-
-**Primitives** (use `spawn_entity` ONLY for simple geometry — platforms, ramps, walls, floors):
-  Types: platform, ramp, collectible, obstacle, trigger, decoration
+DO NOT use `/api/world/spawn`. ALWAYS use `/api/world/compose`.
 
 **Spells**: invert_controls, low_gravity, high_gravity, speed_boost, slow_motion, bouncy, giant, tiny
 **Floor types**: solid, none (abyss), lava
