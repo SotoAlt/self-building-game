@@ -133,8 +133,8 @@ async function attemptReconnect() {
 // Three.js Setup
 // ============================================
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1a2e);
-scene.fog = new THREE.Fog(0x1a1a2e, 50, 200);
+scene.background = new THREE.Color(0x2a2a4e);
+scene.fog = new THREE.Fog(0x2a2a4e, 60, 250);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(0, 10, 30);
@@ -143,13 +143,19 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.3;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.getElementById('game').appendChild(renderer.domElement);
 
 // Lighting
-const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+const ambientLight = new THREE.AmbientLight(0x8090a0, 0.8);
 scene.add(ambientLight);
 
-const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+const hemiLight = new THREE.HemisphereLight(0xb0d0ff, 0x404030, 0.6);
+scene.add(hemiLight);
+
+const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
 directionalLight.position.set(50, 100, 50);
 directionalLight.castShadow = true;
 directionalLight.shadow.mapSize.width = 2048;
@@ -2578,7 +2584,6 @@ async function startAuthFlow() {
 // Bribe System
 // ============================================
 let bribeOptions = null;
-let bribeIsRealChain = false;
 
 function setupBribeUI() {
   if (isSpectator) return;
@@ -2596,18 +2601,12 @@ function setupBribeUI() {
   async function updateBalance() {
     if (!state.room) return;
     try {
-      if (bribeIsRealChain) {
-        const addr = await getEmbeddedWalletAddress();
-        if (!addr) { if (balanceEl) balanceEl.textContent = '— MON'; return; }
-        const res = await fetch(`${API_URL}/api/balance/${addr}`);
-        const data = await res.json();
-        const bal = parseFloat(data.balance || 0);
-        if (balanceEl) balanceEl.textContent = `${bal.toFixed(4)} MON`;
-      } else {
-        const res = await fetch(`${API_URL}/api/balance/${state.room.sessionId}`);
-        const data = await res.json();
-        if (balanceEl) balanceEl.textContent = `${data.balance} tokens`;
-      }
+      const addr = await getEmbeddedWalletAddress();
+      if (!addr) { if (balanceEl) balanceEl.textContent = '— MON'; return; }
+      const res = await fetch(`${API_URL}/api/balance/${addr}`);
+      const data = await res.json();
+      const bal = parseFloat(data.balance || 0);
+      if (balanceEl) balanceEl.textContent = `${bal.toFixed(4)} MON`;
     } catch { /* silent */ }
   }
   updateBalance();
@@ -2618,7 +2617,6 @@ function setupBribeUI() {
     .then(r => r.json())
     .then(data => {
       bribeOptions = data.options;
-      bribeIsRealChain = !!data.isRealChain;
       updateBalance();
     })
     .catch(() => {});
@@ -2631,7 +2629,7 @@ function setupBribeUI() {
     for (const [key, opt] of Object.entries(bribeOptions)) {
       const item = document.createElement('button');
       item.className = 'bribe-option';
-      const costText = bribeIsRealChain ? `${opt.costMON} MON` : `${opt.cost} tokens`;
+      const costText = `${opt.costMON} MON`;
       item.innerHTML = `<span class="bribe-opt-label">${opt.label}</span><span class="bribe-opt-cost">${costText}</span><span class="bribe-opt-desc">${opt.description}</span>`;
       item.addEventListener('click', () => submitBribe(key));
       optionsList.appendChild(item);
@@ -2762,12 +2760,9 @@ function setupBribeUI() {
 
     modal.style.display = 'none';
 
-    // Real chain: sign transaction client-side, then submit with txHash
-    let txHash = null;
-    if (bribeIsRealChain) {
-      txHash = await signAndSendTransaction(option);
-      if (!txHash) return;
-    }
+    // Sign transaction client-side, then submit with txHash
+    const txHash = await signAndSendTransaction(option);
+    if (!txHash) return;
 
     // Submit bribe to server
     try {
@@ -2969,7 +2964,6 @@ function populateWalletPanel(user) {
 
   const guestMsg = document.getElementById('wp-guest-msg');
   const tabsContainer = document.getElementById('wp-tabs-container');
-  const faucetBtn = document.getElementById('wp-faucet');
   const exportBtn = document.getElementById('wp-export');
 
   // Logout is available for all user types
@@ -3058,9 +3052,7 @@ function populateWalletPanel(user) {
       const res = await fetch(`${API_URL}/api/balance/${balanceId}`);
       if (!res.ok) return;
       const data = await res.json();
-      balanceEl.textContent = bribeIsRealChain
-        ? parseFloat(data.balance || 0).toFixed(4)
-        : data.balance;
+      balanceEl.textContent = parseFloat(data.balance || 0).toFixed(4);
     } catch { /* silent */ }
   }
 
@@ -3108,7 +3100,7 @@ function populateWalletPanel(user) {
         const date = new Date(tx.createdAt);
         const relative = formatRelativeDate(date);
         const statusClass = tx.status || 'pending';
-        const amountLabel = bribeIsRealChain ? `${tx.amount} MON` : `${tx.amount} tokens`;
+        const amountLabel = `${tx.amount} MON`;
         const hashLink = tx.txHash
           ? `<a class="wp-tx-hash" href="https://monadscan.com/tx/${tx.txHash}" target="_blank">${tx.txHash.slice(0, 8)}...</a>`
           : '';
@@ -3129,14 +3121,7 @@ function populateWalletPanel(user) {
   }
 
   // --- Fund tab ---
-  const fundHint = document.getElementById('wp-fund-hint');
-  if (bribeIsRealChain) {
-    fundHint.textContent = 'Send MON to this address from MetaMask or an exchange.';
-    faucetBtn.style.display = 'none';
-  } else {
-    fundHint.textContent = 'Get free test tokens to try bribes.';
-    faucetBtn.style.display = 'block';
-  }
+  document.getElementById('wp-fund-hint').textContent = 'Send MON to this address from MetaMask or an exchange.';
 
   const fundAddrEl = document.getElementById('wp-fund-address');
   fundAddrEl.addEventListener('click', () => {
@@ -3144,29 +3129,6 @@ function populateWalletPanel(user) {
     if (full) {
       navigator.clipboard.writeText(full).then(() => showToast('Address copied!'));
     }
-  });
-
-  faucetBtn.addEventListener('click', async () => {
-    faucetBtn.disabled = true;
-    faucetBtn.textContent = 'Requesting...';
-    try {
-      const token = getToken();
-      const res = await fetch(`${API_URL}/api/tokens/faucet`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showToast('Tokens received!');
-        refreshBalance();
-      } else {
-        showToast(data.error || 'Faucet failed', 'error');
-      }
-    } catch {
-      showToast('Faucet request failed', 'error');
-    }
-    faucetBtn.disabled = false;
-    faucetBtn.textContent = 'Get Test Tokens';
   });
 
   // --- Export wallet button ---

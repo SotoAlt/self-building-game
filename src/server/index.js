@@ -971,35 +971,26 @@ app.post('/api/bribe', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Custom bribe requires a request text' });
   }
 
-  const dbUser = await findUser(userId);
-
-  // Real chain: verify on-chain transaction
-  if (isRealChain) {
-    if (!txHash) {
-      return res.status(400).json({ error: 'Missing txHash for on-chain bribe' });
-    }
-
-    // DB replay check
-    const existingTx = await findTransactionByTxHash(txHash);
-    if (existingTx) {
-      return res.status(400).json({ error: 'Transaction already used' });
-    }
-
-    // Pass sender address for verification
-    const verification = await chain.verifyBribeTransaction(txHash, option.costWei, dbUser?.wallet_address);
-    if (!verification.valid) {
-      return res.status(400).json({ error: verification.error });
-    }
-  } else {
-    // Mock chain: check mock balance
-    const balance = await chain.getBalance(playerId);
-    if (balance < option.cost) {
-      return res.status(400).json({ error: 'Insufficient balance', balance });
-    }
+  if (!txHash) {
+    return res.status(400).json({ error: 'Missing txHash — transaction required' });
   }
 
-  const amount = isRealChain ? option.costMON : option.cost;
-  const costLabel = isRealChain ? `${option.costMON} MON` : `${option.cost} tokens`;
+  const dbUser = await findUser(userId);
+
+  // DB replay check
+  const existingTx = await findTransactionByTxHash(txHash);
+  if (existingTx) {
+    return res.status(400).json({ error: 'Transaction already used' });
+  }
+
+  // Verify on-chain transaction with sender check
+  const verification = await chain.verifyBribeTransaction(txHash, option.costWei, dbUser?.wallet_address);
+  if (!verification.valid) {
+    return res.status(400).json({ error: verification.error });
+  }
+
+  const amount = option.costMON;
+  const costLabel = `${option.costMON} MON`;
   const description = bribeType === 'custom' ? request : option.label;
   const bribe = await chain.submitBribe(playerId, amount, description, txHash);
 
