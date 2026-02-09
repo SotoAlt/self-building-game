@@ -103,6 +103,22 @@ function validateRecipe(recipe) {
     if (props.isBounce) c.props.isBounce = true;
     if (props.isSpeedBoost) c.props.isSpeedBoost = true;
     if (props.isCheckpoint) c.props.isCheckpoint = true;
+    if (props.isIce) c.props.isIce = true;
+    if (props.isConveyor) {
+      c.props.isConveyor = true;
+      if (Array.isArray(props.conveyorDir) && props.conveyorDir.length >= 3) {
+        c.props.conveyorDir = props.conveyorDir.slice(0, 3).map(v => clamp(Number(v) || 0, -1, 1));
+      }
+      if (typeof props.conveyorSpeed === 'number') {
+        c.props.conveyorSpeed = clamp(props.conveyorSpeed, 1, 20);
+      }
+    }
+    if (props.isWind) {
+      c.props.isWind = true;
+      if (Array.isArray(props.windForce) && props.windForce.length >= 3) {
+        c.props.windForce = props.windForce.slice(0, 3).map(v => clamp(Number(v) || 0, -30, 30));
+      }
+    }
 
     return c;
   });

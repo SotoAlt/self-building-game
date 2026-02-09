@@ -208,6 +208,80 @@ export const TEMPLATES = {
     entities: generateHexAGoneEntities(),
   },
 
+  slime_climb: {
+    name: 'Slime Climb',
+    gameType: 'reach',
+    floorType: 'none',
+    environment: { skyColor: '#1a0a0a', fogColor: '#2a0a0a', fogFar: 180, ambientColor: '#553333', ambientIntensity: 0.3, sunColor: '#ff6633', sunIntensity: 0.8 },
+    respawnPoint: [0, 2, 15],
+    goalPosition: [0, 42, -30],
+    hazardPlane: { active: true, type: 'lava', startHeight: -5, riseSpeed: 0.4, maxHeight: 35 },
+    entities: [
+      // Start platform
+      { type: 'platform', position: [0, 0, 15], size: [8, 1, 6], properties: { color: '#2c3e50' } },
+      // Ascending ramps
+      { type: 'platform', position: [0, 3, 8], size: [5, 1, 4], properties: { color: '#3498db' } },
+      { type: 'platform', position: [0, 6, 2], size: [5, 1, 4], properties: { color: '#2980b9' } },
+      // Conveyor gauntlet
+      { type: 'platform', position: [0, 9, -4], size: [6, 0.3, 3], properties: { color: '#e67e22', isConveyor: true, conveyorDir: [-1, 0, 0], conveyorSpeed: 5 } },
+      { type: 'platform', position: [0, 12, -9], size: [6, 0.3, 3], properties: { color: '#e67e22', isConveyor: true, conveyorDir: [1, 0, 0], conveyorSpeed: 6 } },
+      // Ice bridge
+      { type: 'platform', position: [0, 15, -15], size: [3, 0.3, 8], properties: { color: '#b3e5fc', isIce: true } },
+      // Mid platform with obstacle
+      { type: 'platform', position: [0, 18, -22], size: [6, 1, 5], properties: { color: '#2c3e50' } },
+      { type: 'obstacle', position: [0, 20, -22], size: [4, 1, 1], properties: { color: '#e74c3c', kinematic: true, path: [[-3, 20, -22], [3, 20, -22]], speed: 1.5 } },
+      // Ascending narrow platforms
+      { type: 'platform', position: [3, 21, -26], size: [3, 0.5, 2], properties: { color: '#9b59b6' } },
+      { type: 'platform', position: [-2, 24, -28], size: [3, 0.5, 2], properties: { color: '#8e44ad' } },
+      // Conveyor + ice combo
+      { type: 'platform', position: [0, 27, -32], size: [5, 0.3, 3], properties: { color: '#e67e22', isConveyor: true, conveyorDir: [0, 0, 1], conveyorSpeed: 4, isIce: true } },
+      // Final climb
+      { type: 'platform', position: [2, 30, -28], size: [2, 0.5, 2], properties: { color: '#e74c3c' } },
+      { type: 'platform', position: [-2, 33, -30], size: [2, 0.5, 2], properties: { color: '#f1c40f' } },
+      { type: 'platform', position: [0, 36, -32], size: [3, 0.5, 3], properties: { color: '#2ecc71' } },
+      // Goal platform
+      { type: 'platform', position: [0, 39, -30], size: [4, 1, 4], properties: { color: '#f1c40f' } },
+      { type: 'trigger', position: [0, 41, -30], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } },
+    ]
+  },
+
+  wind_tunnel: {
+    name: 'Wind Tunnel',
+    gameType: 'reach',
+    floorType: 'none',
+    environment: { skyColor: '#1a2a3a', fogColor: '#1a2a3a', fogFar: 200, ambientIntensity: 0.5, sunIntensity: 1.0 },
+    respawnPoint: [0, 4, 30],
+    goalPosition: [0, 9, -40],
+    entities: [
+      // Start platform
+      { type: 'platform', position: [0, 2, 30], size: [8, 1, 6], properties: { color: '#2c3e50' } },
+      // Narrow bridge + lateral wind
+      { type: 'platform', position: [0, 2, 20], size: [2, 0.5, 12], properties: { color: '#3498db' } },
+      { type: 'trigger', position: [3, 4, 20], size: [4, 6, 12], properties: { color: '#87ceeb', isWind: true, windForce: [8, 0, 0], opacity: 0.1 } },
+      // Platform + alternating wind
+      { type: 'platform', position: [0, 3, 8], size: [6, 1, 6], properties: { color: '#2980b9' } },
+      { type: 'trigger', position: [-4, 5, 8], size: [4, 6, 6], properties: { color: '#87ceeb', isWind: true, windForce: [-6, 0, 0], opacity: 0.1 } },
+      { type: 'trigger', position: [4, 5, 8], size: [4, 6, 6], properties: { color: '#87ceeb', isWind: true, windForce: [6, 0, 0], opacity: 0.1 } },
+      // Ice + updraft section
+      { type: 'platform', position: [0, 3, -2], size: [4, 0.3, 6], properties: { color: '#b3e5fc', isIce: true } },
+      { type: 'trigger', position: [0, 5, -2], size: [4, 6, 6], properties: { color: '#87ceeb', isWind: true, windForce: [0, 5, 0], opacity: 0.08 } },
+      // Platform hop with crosswind
+      { type: 'platform', position: [-3, 4, -10], size: [3, 0.5, 3], properties: { color: '#e67e22' } },
+      { type: 'platform', position: [3, 5, -14], size: [3, 0.5, 3], properties: { color: '#e67e22' } },
+      { type: 'platform', position: [-2, 6, -18], size: [3, 0.5, 3], properties: { color: '#e67e22' } },
+      { type: 'trigger', position: [0, 6, -14], size: [10, 8, 12], properties: { color: '#87ceeb', isWind: true, windForce: [5, 0, -3], opacity: 0.08 } },
+      // Conveyor + wind combo
+      { type: 'platform', position: [0, 6, -26], size: [4, 0.3, 8], properties: { color: '#e67e22', isConveyor: true, conveyorDir: [0, 0, 1], conveyorSpeed: 4 } },
+      { type: 'trigger', position: [0, 8, -26], size: [6, 6, 8], properties: { color: '#87ceeb', isWind: true, windForce: [0, 0, -6], opacity: 0.1 } },
+      // Final narrow bridge + headwind
+      { type: 'platform', position: [0, 7, -34], size: [2, 0.5, 6], properties: { color: '#9b59b6' } },
+      { type: 'trigger', position: [0, 9, -34], size: [4, 6, 6], properties: { color: '#87ceeb', isWind: true, windForce: [0, 0, 4], opacity: 0.12 } },
+      // Goal platform
+      { type: 'platform', position: [0, 7, -40], size: [5, 1, 5], properties: { color: '#f1c40f' } },
+      { type: 'trigger', position: [0, 9, -40], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } },
+    ]
+  },
+
   blank_canvas: {
     name: 'The Void',
     gameType: 'survival',

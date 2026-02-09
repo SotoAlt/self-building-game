@@ -77,7 +77,7 @@ function scheduleAutoStart() {
     const humanPlayers = worldState.getPlayers().filter(p => p.type !== 'ai');
     if (humanPlayers.length === 0) return;
 
-    const templates = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell', 'hex_a_gone'];
+    const templates = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell', 'hex_a_gone', 'slime_climb', 'wind_tunnel'];
     const template = templates[Math.floor(Math.random() * templates.length)];
     console.log(`[AutoStart] Agent didn't start a game in ${AUTO_START_DELAY / 1000}s — auto-starting with ${template}`);
     fetch(`http://localhost:${PORT}/api/game/start`, {
@@ -98,6 +98,7 @@ worldState.onPhaseChange = function onPhaseChange(gameState) {
     broadcastToRoom('physics_changed', worldState.physics);
     broadcastToRoom('environment_changed', worldState.environment);
     broadcastToRoom('floor_changed', { type: worldState.floorType });
+    broadcastToRoom('hazard_plane_changed', { ...worldState.hazardPlane });
     broadcastToRoom('effects_cleared', {});
 
     const activated = worldState.activateSpectators();
@@ -227,6 +228,7 @@ app.get('/api/agent/context', (req, res) => {
     lobbyReadyAt: worldState.lobbyEnteredAt + MIN_LOBBY_MS,
     spellCooldownUntil: worldState.lastSpellCastTime + WorldState.SPELL_COOLDOWN,
     environment: { ...worldState.environment },
+    hazardPlane: { ...worldState.hazardPlane },
     pendingWelcomes: agentLoop.pendingWelcomes,
     lastGameType: worldState.lastGameType || null,
     lastGameEndTime: worldState.lastGameEndTime || null,
@@ -377,6 +379,21 @@ app.get('/api/world/floor', (req, res) => {
   res.json({ floorType: worldState.floorType });
 });
 
+// Set hazard plane (rising lava/water)
+app.post('/api/world/hazard-plane', (req, res) => {
+  try {
+    const state = worldState.setHazardPlane(req.body);
+    broadcastToRoom('hazard_plane_changed', state);
+    res.json({ success: true, hazardPlane: state });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/world/hazard-plane', (req, res) => {
+  res.json({ hazardPlane: { ...worldState.hazardPlane } });
+});
+
 // Set environment (sky, fog, lighting)
 app.post('/api/world/environment', (req, res) => {
   try {
@@ -426,6 +443,10 @@ function applyTemplate(tmpl) {
   if (tmpl.environment) {
     const env = worldState.setEnvironment(tmpl.environment);
     broadcastToRoom('environment_changed', env);
+  }
+  if (tmpl.hazardPlane) {
+    worldState.setHazardPlane(tmpl.hazardPlane);
+    broadcastToRoom('hazard_plane_changed', { ...worldState.hazardPlane });
   }
 
   return spawned;
@@ -1559,6 +1580,7 @@ gameServer.onShutdown(() => {
 // Game loop for mini-game updates (10 ticks per second)
 let lastUpdateTime = Date.now();
 let lastStateBroadcast = 0;
+let lastHazardBroadcast = 0;
 setInterval(() => {
   const now = Date.now();
   const delta = (now - lastUpdateTime) / 1000;
@@ -1578,6 +1600,24 @@ setInterval(() => {
 
   // Process breaking platforms
   worldState.processBreakingPlatforms(broadcastToRoom);
+
+  // Rising hazard plane
+  const hazardUpdate = worldState.updateHazardPlane(delta);
+  if (hazardUpdate) {
+    // Throttle broadcasts to 5/sec (200ms interval)
+    if (now - lastHazardBroadcast >= 200) {
+      lastHazardBroadcast = now;
+      broadcastToRoom('hazard_plane_update', hazardUpdate);
+    }
+
+    // Server-side kill check — players below hazard plane die
+    for (const player of worldState.players.values()) {
+      if (player.state === 'alive' && player.position[1] < hazardUpdate.height) {
+        player.state = 'dead';
+        broadcastToRoom('player_died', { id: player.id, cause: 'hazard_plane' });
+      }
+    }
+  }
 
   if (currentMiniGame?.isActive) {
     currentMiniGame.update(delta);

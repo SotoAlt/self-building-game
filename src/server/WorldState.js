@@ -65,6 +65,9 @@ export class WorldState {
 
     this.environment = { ...WorldState.DEFAULT_ENVIRONMENT };
 
+    // Rising hazard plane (lava/water that rises during gameplay)
+    this.hazardPlane = { active: false, type: 'lava', height: -10, startHeight: -10, riseSpeed: 0.5, maxHeight: 50 };
+
     // Lobby pacing — minimum time before games/templates allowed
     this.lobbyEnteredAt = Date.now();
 
@@ -151,6 +154,7 @@ export class WorldState {
     this.physics = { ...WorldState.DEFAULT_PHYSICS };
     this.floorType = 'solid';
     this.environment = { ...WorldState.DEFAULT_ENVIRONMENT };
+    this.deactivateHazardPlane();
     this.clearEffects();
     console.log(`[WorldState] Cleared ${ids.length} entities`);
     return ids;
@@ -272,6 +276,42 @@ export class WorldState {
 
     console.log(`[WorldState] Environment updated`);
     return { ...this.environment };
+  }
+
+  setHazardPlane({ active, type, startHeight, riseSpeed, maxHeight }) {
+    if (active !== undefined) {
+      this.hazardPlane.active = !!active;
+    }
+    if (type === 'lava' || type === 'water') {
+      this.hazardPlane.type = type;
+    }
+    if (typeof startHeight === 'number') {
+      this.hazardPlane.startHeight = startHeight;
+      this.hazardPlane.height = startHeight;
+    }
+    if (typeof riseSpeed === 'number') {
+      this.hazardPlane.riseSpeed = Math.max(0.1, Math.min(5, riseSpeed));
+    }
+    if (typeof maxHeight === 'number') {
+      this.hazardPlane.maxHeight = Math.max(this.hazardPlane.startHeight, Math.min(100, maxHeight));
+    }
+
+    console.log(`[WorldState] Hazard plane: active=${this.hazardPlane.active}, type=${this.hazardPlane.type}, height=${this.hazardPlane.height}`);
+    return { ...this.hazardPlane };
+  }
+
+  updateHazardPlane(delta) {
+    if (!this.hazardPlane.active || this.gameState.phase !== 'playing') return null;
+
+    this.hazardPlane.height += this.hazardPlane.riseSpeed * delta;
+    this.hazardPlane.height = Math.min(this.hazardPlane.height, this.hazardPlane.maxHeight);
+
+    return { ...this.hazardPlane };
+  }
+
+  deactivateHazardPlane() {
+    this.hazardPlane.active = false;
+    this.hazardPlane.height = this.hazardPlane.startHeight;
   }
 
   setRespawnPoint(position) {
@@ -545,6 +585,7 @@ export class WorldState {
     this.lastGameType = this.gameState.gameType;
     this.lastGameEndTime = Date.now();
 
+    this.deactivateHazardPlane();
     this.gameState.phase = 'ended';
     this.gameState.endTime = Date.now();
     this.gameState.result = result; // 'win', 'lose', 'timeout', 'cancelled'
@@ -918,6 +959,7 @@ export class WorldState {
       announcements: this.getAnnouncements(),
       floorType: this.floorType,
       environment: { ...this.environment },
+      hazardPlane: { ...this.hazardPlane },
       statistics: {
         ...this.statistics,
         totalEntities: this.entities.size,

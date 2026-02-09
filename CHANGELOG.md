@@ -2,6 +2,32 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.24.0] - 2026-02-09
+
+### Added
+- **Compose system** (`src/server/Composer.js`) — agent-generated recipes with validation, disk caching (`data/compose-cache.json`), and Docker volume persistence
+  - Known prefabs resolve by description (no recipe needed)
+  - Custom creations: agent provides a recipe → validated → cached → spawned as grouped entities
+  - Cache hits: same description without recipe → instant spawn from cache
+  - `POST /api/world/compose` — single endpoint replaces `spawn-prefab` for all spawning
+- **Advanced 3D composition** — per-child rotation, material controls, 16 geometry templates, group merging
+  - **Per-child rotation**: `rotation: [rx, ry, rz]` (radians) — angled wings, tilted parts, upside-down objects
+  - **Material properties**: `roughness`, `metalness`, `opacity`, `emissive` per child — metallic surfaces, transparency, glow
+  - **16 geometry templates** (`src/client/GeometryTemplates.js`):
+    - Lathe-based: column, vase, teardrop, mushroom_cap, horn, flask, bell, dome
+    - Extrude-based: wing, star, heart, arrow, cross
+    - Tube-based: tentacle, arch, s_curve
+  - **Client group merging**: composed entities wrapped in `THREE.Group` for unified movement and animation
+  - **MAX_CHILDREN raised**: 6 → 12 children per compose recipe
+- **Compose-only enforcement** — agent prompt, SOUL.md, and SKILL.md updated to route all spawning through compose; `spawn_entity` and `spawn_prefab` deprecated
+
+### Changed
+- **Agent prompt** (`agent-runner.js`): compose is the only advertised spawning tool; includes dragon recipe example with rotation + organic shapes
+- **SOUL.md**: compose palette with recipe examples, shape categories, material props
+- **SKILL.md**: version 0.24.1, `spawn_entity` and `spawn_prefab` marked deprecated
+- **Prefabs.js**: extracted shared `applyBehavior()` and `spawnGroup()` functions; upgraded spider, shark, flag, cactus prefabs with rotation + materials
+- **Agent-runner banner**: v0.20 → v0.22
+
 ## [0.20.0] - 2026-02-06
 
 ### Added

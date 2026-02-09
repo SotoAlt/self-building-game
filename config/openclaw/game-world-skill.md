@@ -29,7 +29,7 @@ Spawn anything — known prefabs OR custom creations you design with shape recip
 
 **Known prefabs (no recipe needed — just use description):**
 - Hazards: spider, shark, ghost, ufo, car, spinning_blade, swinging_axe, crusher, rolling_boulder, cactus
-- Utility: bounce_pad, checkpoint, speed_strip
+- Utility: bounce_pad, checkpoint, speed_strip, conveyor_belt, wind_zone
 - Decoration: torch, crystal, barrel, flag, tree, snowman, fish, mushroom, rocket, trashcan
 
 **Examples:**
@@ -84,6 +84,21 @@ Remove all entities in a composed/prefab group. `{ groupId }`
 
 `{ gravity: -20..0, friction: 0..1, bounce: 0..2 }`
 
+### set_hazard_plane
+
+Rising lava/water plane that kills players below its height during gameplay.
+
+`POST /api/world/hazard-plane { active: true, type: "lava"|"water", startHeight: -5, riseSpeed: 0.5, maxHeight: 35 }`
+
+Rises during `playing` phase only. Deactivates automatically on game end.
+
+### Entity Surface Properties
+
+Platform children can have special surface properties:
+- `isIce: true` — Slippery surface, players slide with very low friction
+- `isConveyor: true, conveyorDir: [x,0,z], conveyorSpeed: 1-20` — Pushes players in a direction
+- `isWind: true, windForce: [x,y,z]` — Trigger zone that pushes players with wind force
+
 ### set_floor
 
 `{ type: "solid" | "none" | "lava" }`
@@ -106,7 +121,7 @@ Start a mini-game, optionally with a template.
 
 `{ template?, type?, timeLimit?, goalPosition?, collectibleCount? }`
 
-Templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone
+Templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone, slime_climb, wind_tunnel
 
 ### end_game
 

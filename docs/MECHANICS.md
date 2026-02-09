@@ -2,19 +2,19 @@
 
 Design document for new mechanics in the Self-Building Game. Organized by implementation priority — agent creative tools first, environment mechanics second, game types third, player abilities last.
 
-**Current state (v0.20.0)**: 3 game types (reach, collect, survival), 6 entity types (platform, ramp, collectible, obstacle, trigger, decoration), 8 shapes, 12 prefabs, 8 spells, 7 arena templates (incl. hex_a_gone), breakable platforms, bounce pads, speed strips, 4 random obstacle patterns.
+**Current state (v0.24.0)**: 3 game types (reach, collect, survival), 6 entity types (platform, ramp, collectible, obstacle, trigger, decoration), 23 shapes (8 basic + 16 templates), 23 prefabs, 8 spells, 7 arena templates (incl. hex_a_gone), breakable platforms, bounce pads, speed strips, 4 random obstacle patterns, compose system with per-child rotation + material controls + disk-cached recipes.
 
 ---
 
-## 1. Prefab Entities (Agent Creative Tools)
+## 1. Compose System (Agent Creative Tools) ✅ COMPLETED
 
-### Problem
+### Problem (v0.20)
 
-The agent can only spawn geometric primitives. When a player says "spawn spiders", the agent creates grey cubes because it has no concept of compound entities with behaviors. There's no visual or behavioral variety beyond color and shape.
+The agent could only spawn geometric primitives or predefined prefabs. Custom creations were impossible — the agent couldn't design a dragon, spaceship, or octopus from shapes.
 
-### Solution
+### Solution (v0.24)
 
-A **prefab registry** — named entity presets that bundle multiple child entities, colors, behaviors, and collision rules into a single spawn call. The agent says `spawn_prefab({ name: 'spider', position: [5, 1, 0] })` and gets a multi-part entity that looks and acts like a spider.
+A **compose system** — the agent calls `POST /api/world/compose` for everything. Known prefabs resolve instantly by name. Custom creations use agent-designed recipes with up to 12 children, per-child rotation, 23 shapes (including organic curves like horn, tentacle, wing, dome), and material controls (metalness, roughness, opacity, emissive). Recipes are cached to disk — first creation is designed, all future spawns are instant.
 
 ### Prefab Catalog
 
@@ -377,6 +377,64 @@ New templates that showcase the new mechanics.
 - [x] Client crack/disappear animation + break particles + 3 new sounds
 - [x] `hex_a_gone` arena template (3-layer, 111 breakable platforms, survival)
 - [x] Update agent context with `availablePrefabs`
+
+### Phase 1.5: Compose System + 3D Composition ✅ COMPLETED (v0.24.0)
+
+**Priority**: HIGH — transforms agent from prefab-only to creative designer.
+
+**Scope**: 2 sessions
+
+- [x] `src/server/Composer.js` — recipe validation, disk cache, prefab resolution
+- [x] `POST /api/world/compose` — single endpoint for all spawning
+- [x] Per-child rotation (`rotation: [rx, ry, rz]` radians)
+- [x] Material properties (`roughness`, `metalness`, `opacity`, `emissive`)
+- [x] 16 geometry templates (`src/client/GeometryTemplates.js`) — lathe, extrude, tube shapes
+- [x] Client group merging — `THREE.Group` for composed entities
+- [x] MAX_CHILDREN raised from 6 to 12
+- [x] Compose-only enforcement — `spawn_entity` and `spawn_prefab` deprecated in agent prompts
+- [x] Agent successfully creating custom recipes (dragon, chaos_hounds, forest_upside_down, super_computer)
+
+### Phase 1.6: Compose Refinement (NEXT)
+
+**Priority**: HIGH — compose works but creations need to look and behave right.
+
+**Scope**: 1 session
+
+#### Enemy Behavior & Chase Logic
+- [ ] Ensure composed hazards with `behavior: "chase"` actually follow the nearest player — currently chase behavior is applied by `applyBehavior()` in Prefabs.js but needs validation that custom compose recipes properly inherit chase logic
+- [ ] Chase speed should scale with creature size — a giant monster should be slower but more threatening, a small spider should be faster
+- [ ] Chase radius should default based on category — hazards get `chaseRadius: 20` if not specified
+- [ ] Patrol behavior needs proper path logic for composed groups — currently patrols back-and-forth linearly, should support circular patrol and waypoints
+
+#### Orientation & Rotation Validation
+- [ ] Composed entities should face their movement direction — a chasing creature should rotate to face the player, not slide sideways
+- [ ] Client-side: apply `lookAt()` or yaw rotation toward velocity direction for chasing/patrolling groups
+- [ ] Agent recipes with `rotation` on the root group should define the default facing — children rotate relative to parent
+- [ ] Validate rotation values in Composer.js — clamp to valid range, warn on nonsensical values (e.g. rotation on a sphere does nothing)
+
+#### Size Awareness & Scale Guidelines
+- [ ] Define size categories in agent prompt and SOUL.md:
+  - **Tiny**: 0.3-0.5 units (bugs, coins, crystals) — player is ~1.8 units tall
+  - **Small**: 0.5-1.5 units (spiders, barrels, mushrooms)
+  - **Player-sized**: 1.5-2.5 units (enemies, NPCs, furniture)
+  - **Large**: 3-6 units (vehicles, trees, small buildings)
+  - **Giant**: 8-15 units (bosses, towers, large structures)
+- [ ] Composer.js validation: warn if total bounding box exceeds 20 units in any dimension
+- [ ] Agent prompt: include player height reference ("player capsule is 1.8 units tall") so agent scales creatures appropriately
+- [ ] Prefab definitions should have consistent sizing — audit existing 23 prefabs for proper scale
+
+#### Movement-to-Form Coherence
+- [ ] Creatures with legs (spider, chaos_hounds) should use patrol/chase — not static
+- [ ] Decorations (trees, towers, crystals) should be static or rotate — not chase
+- [ ] Composer.js: validate behavior matches category — `decoration` category rejects `chase` behavior, `hazard` category requires a movement behavior
+- [ ] Flying creatures (ufo, ghost, birds) should have Y-axis offset in patrol — patrol at elevated height, not ground level
+- [ ] Speed should match form — a boulder rolls slow (speed 2), a blade spins fast, a spider scurries (speed 5-8)
+
+#### Visual Polish
+- [ ] Composed groups should cast unified shadows — verify `THREE.Group` shadow settings
+- [ ] Emissive children (eyes, flames, crystals) should be more visible — increase emissiveIntensity for `emissive: true`
+- [ ] Opacity children need `depthWrite: false` for proper transparency rendering
+- [ ] Add subtle bob animation for floating/flying composed entities (ghost, ufo, birds)
 
 ### Phase 2: Environment Mechanics
 

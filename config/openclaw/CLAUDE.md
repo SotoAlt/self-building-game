@@ -14,4 +14,11 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #7447 | 12:02 PM | 🔵 | Chaos Magician AI Agent Framework Documentation | ~519 |
+
+### Feb 7, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #9837 | 11:34 PM | ✅ | Expanded prefab documentation with additional creatures and decorations | ~321 |
+| #9786 | 11:20 PM | ✅ | Agent guidance updated to clarify prefab vs primitive usage | ~369 |
 </claude-mem-context>

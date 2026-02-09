@@ -272,6 +272,30 @@ const PREFABS = {
     ],
     behavior: 'static',
   },
+
+  conveyor_belt: {
+    category: 'utility',
+    description: 'Platform that pushes players in a direction',
+    defaultProperties: { conveyorSpeed: 6 },
+    children: [
+      { type: 'platform', offset: [0, 0.15, 0], size: [4, 0.3, 2], props: {
+        color: '#e67e22', isConveyor: true, conveyorDir: [1, 0, 0]
+      }},
+    ],
+    behavior: 'static',
+  },
+
+  wind_zone: {
+    category: 'utility',
+    description: 'Invisible zone that pushes players with wind force',
+    defaultProperties: {},
+    children: [
+      { type: 'trigger', offset: [0, 3, 0], size: [4, 6, 4], props: {
+        color: '#87ceeb', isWind: true, windForce: [10, 0, 0], opacity: 0.15
+      }},
+    ],
+    behavior: 'static',
+  },
 };
 
 export function getPrefabNames() {

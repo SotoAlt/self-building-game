@@ -184,6 +184,32 @@ lavaFloor.position.y = -0.5;
 lavaFloor.visible = false;
 scene.add(lavaFloor);
 
+// Rising hazard plane (lava/water that rises during gameplay)
+const hazardPlaneGeom = new THREE.PlaneGeometry(400, 400);
+const hazardPlaneMat = new THREE.MeshStandardMaterial({
+  color: 0xe74c3c, emissive: 0xff4500, emissiveIntensity: 0.6,
+  roughness: 0.3, transparent: true, opacity: 0.85,
+});
+const hazardPlaneMesh = new THREE.Mesh(hazardPlaneGeom, hazardPlaneMat);
+hazardPlaneMesh.rotation.x = -Math.PI / 2;
+hazardPlaneMesh.visible = false;
+scene.add(hazardPlaneMesh);
+let hazardPlaneState = { active: false, type: 'lava', height: -10 };
+
+function updateHazardPlaneMaterial(type) {
+  if (type === 'water') {
+    hazardPlaneMat.color.set(0x2980b9);
+    hazardPlaneMat.emissive.set(0x3498db);
+    hazardPlaneMat.emissiveIntensity = 0.3;
+    hazardPlaneMat.opacity = 0.7;
+  } else {
+    hazardPlaneMat.color.set(0xe74c3c);
+    hazardPlaneMat.emissive.set(0xff4500);
+    hazardPlaneMat.emissiveIntensity = 0.6;
+    hazardPlaneMat.opacity = 0.85;
+  }
+}
+
 // Current floor type tracked on client
 let currentFloorType = 'solid';
 
@@ -692,6 +718,22 @@ function createEntityMesh(entity) {
     opacity: props.opacity ?? 1,
   });
 
+  // Ice surface visual
+  if (props.isIce) {
+    material.roughness = 0.05;
+    material.metalness = 0.6;
+    material.opacity = 0.85;
+    material.transparent = true;
+    material.color.set('#b3e5fc');
+    material.emissive.set('#b3e5fc');
+    material.emissiveIntensity = 0.15;
+  }
+  // Conveyor belt visual
+  if (props.isConveyor) {
+    material.emissive.set('#e67e22');
+    material.emissiveIntensity = 0.3;
+  }
+
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(...entity.position);
   if (props.rotation) {
@@ -1106,6 +1148,7 @@ const playerBox = new THREE.Box3();
 const entityBox = new THREE.Box3();
 
 let standingOnEntity = null; // Track what entity we're standing on
+let frameDelta = 0.016; // Updated each frame for conveyor/wind calculations
 
 function checkCollisions() {
   if (!playerMesh) return;
@@ -1162,6 +1205,14 @@ function checkCollisions() {
         const duration = entity.properties.boostDuration || 3000;
         speedBoostUntil = Date.now() + duration;
         spawnParticles(playerMesh.position, '#e67e22', 8, 2);
+        continue;
+      }
+      if (entity.properties?.isWind) {
+        const force = entity.properties.windForce || [0, 0, 0];
+        const dt = frameDelta;
+        playerVelocity.x += force[0] * dt;
+        playerVelocity.y += force[1] * dt;
+        playerVelocity.z += force[2] * dt;
         continue;
       }
       triggerEvent(entity);
@@ -1221,6 +1272,13 @@ function checkCollisions() {
     if (platformVelocity) {
       playerMesh.position.x += platformVelocity.x;
       playerMesh.position.z += platformVelocity.z;
+    }
+    // Conveyor belt push
+    if (standingOnEntity?.properties?.isConveyor) {
+      const dir = standingOnEntity.properties.conveyorDir || [1, 0, 0];
+      const speed = standingOnEntity.properties.conveyorSpeed || 6;
+      playerVelocity.x += dir[0] * speed * frameDelta;
+      playerVelocity.z += dir[2] * speed * frameDelta;
     }
   }
 }
@@ -1361,6 +1419,7 @@ function updatePlayer(delta) {
 
   // Clamp delta to prevent physics explosions on tab-switch
   delta = Math.min(delta, 0.05);
+  frameDelta = delta; // expose for conveyor/wind in checkCollisions
 
   // --- Spell modifiers ---
   let targetSpeed = keys.shift ? PHYSICS.SPRINT_SPEED : PHYSICS.WALK_SPEED;
@@ -1398,11 +1457,16 @@ function updatePlayer(delta) {
   const targetVelZ = moveDir.z * targetSpeed;
   const hasInput = moveDir.lengthSq() > 0.01;
 
+  const onIce = standingOnEntity?.properties?.isIce;
+
   let accel;
-  if (isGrounded) {
-    accel = hasInput ? PHYSICS.GROUND_ACCEL : PHYSICS.GROUND_DECEL;
-  } else {
+  if (!isGrounded) {
     accel = hasInput ? PHYSICS.AIR_ACCEL : PHYSICS.AIR_DECEL;
+  } else if (onIce) {
+    // Ice reduces acceleration to 15% and deceleration to 8% for a sliding feel
+    accel = hasInput ? PHYSICS.GROUND_ACCEL * 0.15 : PHYSICS.GROUND_DECEL * 0.08;
+  } else {
+    accel = hasInput ? PHYSICS.GROUND_ACCEL : PHYSICS.GROUND_DECEL;
   }
 
   playerVelocity.x = moveToward(playerVelocity.x, targetVelX, accel * delta);
@@ -1477,6 +1541,11 @@ function updatePlayer(delta) {
       spawnParticles(playerMesh.position, '#ffaa00', 10, 4);
       playerDie();
     }
+  }
+  // Hazard plane death (rising lava/water)
+  if (hazardPlaneState.active && phase === 'playing' && playerMesh.position.y < hazardPlaneState.height && !invulnerable) {
+    spawnParticles(playerMesh.position, hazardPlaneState.type === 'lava' ? '#ff4500' : '#3498db', 20, 6);
+    playerDie();
   }
   // Void death (Y < -50) stays always active as ultimate safety net
   if (playerMesh.position.y < VOID_DEATH_Y) {
@@ -1981,6 +2050,12 @@ function applyWorldState(worldData) {
   if (worldData.gameState) state.gameState = worldData.gameState;
   if (worldData.floorType) setFloorType(worldData.floorType);
   if (worldData.environment) applyEnvironment(worldData.environment);
+  if (worldData.hazardPlane) {
+    hazardPlaneState = { ...hazardPlaneState, ...worldData.hazardPlane };
+    hazardPlaneMesh.visible = hazardPlaneState.active;
+    hazardPlaneMesh.position.y = hazardPlaneState.height;
+    updateHazardPlaneMaterial(hazardPlaneState.type);
+  }
   for (const entity of worldData.entities || []) {
     addEntity(entity);
   }
@@ -2162,6 +2237,18 @@ async function connectToServer() {
       setFloorType(data.type);
     });
 
+    room.onMessage('hazard_plane_changed', (data) => {
+      hazardPlaneState = { ...hazardPlaneState, ...data };
+      hazardPlaneMesh.visible = data.active;
+      hazardPlaneMesh.position.y = hazardPlaneState.height;
+      updateHazardPlaneMaterial(data.type);
+    });
+
+    room.onMessage('hazard_plane_update', (data) => {
+      hazardPlaneState = { ...hazardPlaneState, ...data };
+      hazardPlaneMesh.position.y = data.height;
+    });
+
     room.onMessage('environment_changed', (env) => {
       applyEnvironment(env);
     });
@@ -2189,6 +2276,9 @@ async function connectToServer() {
       entityToGroup.clear();
       for (const tid of pendingGroups.values()) clearTimeout(tid);
       pendingGroups.clear();
+      // Reset hazard plane
+      hazardPlaneMesh.visible = false;
+      hazardPlaneState = { active: false, type: 'lava', height: -10 };
       updateUI();
     });
 
@@ -2363,6 +2453,13 @@ function animate() {
   if (lavaFloor.visible) {
     lavaMaterial.emissiveIntensity = 0.5 + Math.sin(Date.now() * 0.002) * 0.2;
     lavaFloor.position.y = -0.5 + Math.sin(Date.now() * 0.001) * 0.1;
+  }
+
+  // Rising hazard plane animation
+  if (hazardPlaneMesh.visible) {
+    hazardPlaneMat.emissiveIntensity = (hazardPlaneState.type === 'lava' ? 0.5 : 0.2) + Math.sin(Date.now() * 0.003) * 0.15;
+    // Gentle wave offset on top of server height
+    hazardPlaneMesh.position.y = hazardPlaneState.height + Math.sin(Date.now() * 0.0015) * 0.15;
   }
 
   updateParticles();

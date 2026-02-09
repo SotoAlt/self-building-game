@@ -155,13 +155,13 @@ function getNewWelcomes(context) {
   return (context.pendingWelcomes || []).filter(w => !welcomedPlayers.has(w.playerId || w.name));
 }
 
-const ARENA_TEMPLATES = 'spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone';
+const ARENA_TEMPLATES = 'spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone, slime_climb, wind_tunnel';
 
 const KNOWN_PREFABS = [
   'spider', 'shark', 'ghost', 'ufo', 'car', 'spinning_blade', 'swinging_axe',
   'crusher', 'rolling_boulder', 'cactus', 'bounce_pad', 'checkpoint', 'speed_strip',
   'torch', 'crystal', 'barrel', 'flag', 'tree', 'snowman', 'fish', 'mushroom',
-  'rocket', 'trashcan',
+  'rocket', 'trashcan', 'conveyor_belt', 'wind_zone',
 ].join(', ');
 
 const COMPOSE_SHAPES = [
@@ -199,6 +199,10 @@ function buildPalettePrompt() {
     `  Recipe rules: max 12 children, rotation:[rx,ry,rz] radians, material: roughness/metalness/opacity/emissive.`,
     `  Cached after first creation — same description = instant spawn next time.`,
     `  DO NOT use /api/world/spawn. ALWAYS use /api/world/compose.`,
+    `  Entity props: isIce (slippery), isConveyor + conveyorDir:[x,0,z] + conveyorSpeed:1-20, isWind + windForce:[x,y,z].`,
+    `**POST /api/world/hazard-plane** — Rising lava/water plane.`,
+    `  { active: true, type: "lava"|"water", startHeight: -5, riseSpeed: 0.5, maxHeight: 35 }`,
+    `  Rises during "playing" phase, kills players below its height. Deactivates on game end.`,
   ].join('\n');
 }
 
@@ -252,6 +256,7 @@ function buildPrompt(phase, context, drama) {
   parts.push(`- Entities: ${context.entityCount} in world`);
   parts.push(`- Game phase: ${context.gameState.phase}`);
   if (context.gameState.gameType) parts.push(`- Current game: ${context.gameState.gameType}`);
+  if (context.hazardPlane?.active) parts.push(`- Hazard plane: ${context.hazardPlane.type} at height ${context.hazardPlane.height.toFixed(1)} (rising to ${context.hazardPlane.maxHeight})`);
   parts.push(`- Games played: ${gamesPlayed}`);
 
   // Active cooldowns

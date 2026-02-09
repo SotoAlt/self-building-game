@@ -6,7 +6,7 @@ An AI agent ("Chaos Magician") builds a 3D multiplayer game in real-time while p
 
 ## Current Phase
 
-**Production v0.20.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
+**Production v0.24.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
 
 ## Architecture
 
@@ -42,7 +42,8 @@ Claude (Anthropic) via OpenClaw Gateway
 │   │   ├── AgentBridge.js    # OpenClaw CLI invocation
 │   │   ├── AIPlayer.js       # Personality-driven AI bots
 │   │   ├── ArenaTemplates.js # 7 pre-built arena layouts (incl. hex_a_gone)
-│   │   ├── Prefabs.js        # 12 named entity presets (spider, bounce_pad, etc.)
+│   │   ├── Prefabs.js        # 23 named entity presets (spider, bounce_pad, etc.)
+│   │   ├── Composer.js       # Compose system — agent-generated recipes, validation, disk cache
 │   │   ├── auth.js           # Privy JWT verification
 │   │   ├── db.js             # PostgreSQL with in-memory fallback
 │   │   ├── blockchain/       # Mock chain interface (bribe system)
@@ -51,7 +52,8 @@ Claude (Anthropic) via OpenClaw Gateway
 │       ├── main.js           # Three.js renderer, physics, player controls
 │       └── auth.js           # Privy client-side auth
 ├── config/openclaw/
-│   ├── game-world-skill.js   # 27 agent tools (HTTP API wrappers, decoration type, shape property)
+│   ├── game-world-skill.js   # 30 agent tools (compose, spawn_entity, spells, games, etc.)
+│   ├── game-world-skill.md   # SKILL.md — tool descriptions OpenClaw reads to know available tools
 │   ├── game-player-skill.js  # 8 external agent player tools
 │   └── SOUL.md               # Chaos Magician personality
 ├── docs/                     # PRD, CONCEPT, ROADMAP, STACK-EVALUATION
@@ -79,9 +81,10 @@ npm run build        # Build client for production
 |----------|---------|
 | `GET /api/agent/context` | Full game state for agent decisions |
 | `POST /api/game/start` | Start a mini-game |
-| `POST /api/world/spawn` | Spawn entity in world |
-| `POST /api/world/spawn-prefab` | Spawn prefab group (spider, bounce_pad, etc.) |
-| `POST /api/world/destroy-group` | Destroy all entities in a prefab group |
+| `POST /api/world/spawn` | Spawn single primitive entity |
+| `POST /api/world/compose` | Compose anything — prefabs, cached, or new recipes |
+| `POST /api/world/spawn-prefab` | Spawn prefab group (deprecated, use compose) |
+| `POST /api/world/destroy-group` | Destroy all entities in a group |
 | `POST /api/spell/cast` | Cast spell on players |
 | `POST /api/agent/pause` | Kill switch — pause agent |
 | `POST /api/agent/resume` | Resume agent |
@@ -128,6 +131,7 @@ npm run build        # Build client for production
 - **Floor types**: `solid` (default), `none` (abyss — no floor during gameplay, solid in safe phases), `lava` (kills during playing only)
 - **Entity types**: platform, ramp, collectible, obstacle, trigger, decoration (no collision)
 - **Entity shapes** (via `properties.shape`): box (default), sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
+- **Compose system** (v0.22.0): `compose()` is the agent's main spawning tool — known prefabs resolve instantly, custom creations use agent-generated recipes cached to `data/compose-cache.json`
 
 ## Key Files to Read
 
