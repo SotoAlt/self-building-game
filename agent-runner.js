@@ -183,12 +183,13 @@ function buildPrompt(phase, context, drama) {
     parts.push(phasePrompts[phase] || `**Phase: ${phase}** — Keep the game entertaining.`);
 
     parts.push(`\n**Your palette**: Use start_game({ template: '...' }) to load arenas. Templates: spiral_tower, floating_islands, gauntlet, shrinking_arena, parkour_hell, hex_a_gone.
-**Compose (your main spawning tool)**: Describe anything or provide a recipe.
-  Known (instant): spider, shark, ghost, ufo, car, spinning_blade, swinging_axe, crusher, rolling_boulder, cactus, bounce_pad, checkpoint, speed_strip, torch, crystal, barrel, flag, tree, snowman, fish, mushroom, rocket, trashcan.
-  Example: compose({ description: "ghost", position: [5,1,0] })
-  Custom: compose({ description: "dragon", position: [5,1,0], recipe: { name: "dragon", category: "hazard", behavior: "chase", defaultProperties: { speed: 3 }, children: [{ type: "obstacle", offset: [0,1,0], size: [2,1,1], props: { shape: "sphere", color: "#c0392b" } }] } })
-  Once created, future calls with same description use cached recipe automatically.
-**Primitives (spawn_entity)**: Only for simple platforms, ramps, walls, floors. Shapes: box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring.`);
+**COMPOSE — use POST /api/world/compose for ALL creatures and objects**:
+  KNOWN prefabs (no recipe needed): spider, shark, ghost, ufo, car, spinning_blade, swinging_axe, crusher, rolling_boulder, cactus, bounce_pad, checkpoint, speed_strip, torch, crystal, barrel, flag, tree, snowman, fish, mushroom, rocket, trashcan.
+  Example: POST /api/world/compose {"description":"ghost","position":[5,1,0]}
+  CUSTOM creations (provide recipe): POST /api/world/compose {"description":"turtle","position":[5,1,0],"recipe":{"name":"turtle","category":"hazard","behavior":"patrol","defaultProperties":{"speed":1},"children":[{"type":"obstacle","offset":[0,0.5,0],"size":[2,1,1.5],"props":{"shape":"sphere","color":"#2e7d32"}},{"type":"obstacle","offset":[0,1.2,0],"size":[0.6,0.6,0.6],"props":{"shape":"sphere","color":"#388e3c"}},{"type":"decoration","offset":[-0.8,0.3,0.5],"size":[0.3,0.15,0.6],"props":{"shape":"cylinder","color":"#2e7d32"}},{"type":"decoration","offset":[0.8,0.3,0.5],"size":[0.3,0.15,0.6],"props":{"shape":"cylinder","color":"#2e7d32"}}]}}
+  Compose creates multi-part grouped entities. DO NOT use spawn_entity for creatures — it only makes a single box/sphere.
+  Once created, cached forever. Next time same description = instant spawn.
+**Primitives (POST /api/world/spawn)**: ONLY for simple platforms, ramps, walls. Shapes: box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring.`);
 
     parts.push(`\n**PACING**: Max 3 world-changing actions this turn. Spell cooldown: 10s between casts. ALWAYS use start_game (with template param) to begin a game — it loads the arena and starts the countdown in one step!`);
   }
