@@ -34,7 +34,9 @@
       border-radius: 8px;
       font-size: 11px;
       z-index: 140;
+      transition: opacity 1s ease;
     }
+    #controls.faded { opacity: 0; pointer-events: none; }
     #login-screen {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -149,26 +151,56 @@
     }
     #game-status {
       position: fixed;
-      top: 60px;
-      right: 20px;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
       z-index: 100;
-      background: rgba(0, 0, 0, 0.8);
-      padding: 15px;
-      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.85);
+      padding: 16px 32px;
+      border-radius: 12px;
       color: white;
-      min-width: 150px;
+      min-width: 200px;
+      text-align: center;
+      transition: all 0.4s ease;
+      backdrop-filter: blur(4px);
+    }
+    /* Compact top-right layout for active/ended phases */
+    #game-status.playing,
+    #game-status.ended {
+      top: 16px;
+      right: 20px;
+      left: auto;
+      transform: none;
+      padding: 10px 16px;
+      min-width: 100px;
     }
     #game-status.playing {
       border: 2px solid #2ecc71;
     }
     #game-status.countdown {
       border: 2px solid #f39c12;
+      animation: statusPulse 1s ease-in-out infinite;
+    }
+    @keyframes statusPulse {
+      0%, 100% { box-shadow: 0 0 8px rgba(243,156,18,0.3); }
+      50% { box-shadow: 0 0 20px rgba(243,156,18,0.6); }
+    }
+    #game-phase {
+      font-size: 16px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      text-transform: uppercase;
     }
     #game-timer {
       font-size: 28px;
       font-weight: bold;
       text-align: center;
       margin-top: 5px;
+    }
+    #game-type {
+      font-size: 13px;
+      opacity: 0.8;
+      margin-top: 2px;
     }
     /* King of the Hill score overlay */
     #score-overlay {
@@ -257,7 +289,10 @@
       display: flex;
       flex-direction: column;
       max-height: 300px;
+      opacity: 0.4;
+      transition: opacity 0.3s ease;
     }
+    #chat-panel:hover, #chat-panel:focus-within { opacity: 1; }
     #chat-messages {
       flex: 1;
       overflow-y: auto;
@@ -326,20 +361,23 @@
       bottom: 60px;
       right: 20px;
       z-index: 100;
-      background: rgba(0, 0, 0, 0.8);
-      padding: 8px 14px;
-      border-radius: 8px;
-      color: #888;
-      font-size: 13px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 6px 12px;
+      border-radius: 6px;
+      color: rgba(255,255,255,0.4);
+      font-size: 11px;
     }
     #ready-indicator.is-ready {
       color: #2ecc71;
       border: 1px solid #2ecc71;
+      background: rgba(46,204,113,0.15);
     }
     /* Game status phase variants */
-    #game-status.building { border: 2px solid #9b59b6; }
-    #game-status.lobby { border: 2px solid #95a5a6; opacity: 0.9; }
-    #game-status.ended { border: 2px solid #e74c3c; }
+    #game-status.building { border: 2px solid #9b59b6; animation: statusPulse 1.5s ease-in-out infinite; }
+    #game-status.lobby { border: 2px solid rgba(155,89,182,0.6); }
+    #game-status.ended {
+      border: 2px solid #e74c3c;
+    }
     /* Portrait rotation overlay — mobile only */
     #rotate-overlay {
       display: none;

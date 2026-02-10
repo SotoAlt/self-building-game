@@ -74,7 +74,11 @@ const AUTO_START_DELAY = 45000;
 function scheduleAutoStart() {
   clearTimeout(autoStartTimer);
   worldState.autoStartTargetTime = Date.now() + AUTO_START_DELAY;
-  broadcastToRoom('lobby_countdown', { targetTime: worldState.autoStartTargetTime, duration: AUTO_START_DELAY });
+  broadcastToRoom('lobby_countdown', {
+    targetTime: worldState.autoStartTargetTime,
+    duration: AUTO_START_DELAY,
+    lobbyReadyAt: worldState.lobbyEnteredAt + MIN_LOBBY_MS,
+  });
   autoStartTimer = setTimeout(() => {
     if (worldState.gameState.phase !== 'lobby') return;
     const humanPlayers = worldState.getPlayers().filter(p => p.type !== 'ai');

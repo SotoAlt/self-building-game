@@ -48,10 +48,10 @@ export function initPostProcessing(rendererRef, sceneRef, cameraRef) {
   // 2. Outline pass — cartoon edges
   outlinePass = new OutlinePass(size, scene, camera);
   outlinePass.edgeStrength = 4.0;
-  outlinePass.edgeGlow = 0.2;
+  outlinePass.edgeGlow = 0.4;
   outlinePass.edgeThickness = 1.0;
-  outlinePass.visibleEdgeColor.set('#1a1a1a');
-  outlinePass.hiddenEdgeColor.set('#0a0a0a');
+  outlinePass.visibleEdgeColor.set('#5a5a8a');
+  outlinePass.hiddenEdgeColor.set('#2a2a4a');
   composer.addPass(outlinePass);
 
   // 3. Bloom — selective glow for emissive objects

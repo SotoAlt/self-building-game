@@ -53,7 +53,8 @@ const state = {
   activeEffects: [],
   respawnPoint: [0, 2, 0],
   isSpectating: false,
-  lobbyCountdownTarget: null
+  lobbyCountdownTarget: null,
+  lobbyReadyAt: null,
 };
 
 // Auth state
@@ -2107,12 +2108,20 @@ function updateGameStateUI() {
     statusEl.className = 'lobby';
     phaseEl.textContent = 'LOBBY';
     if (state.lobbyCountdownTarget) {
-      const remaining = Math.max(0, Math.ceil((state.lobbyCountdownTarget - Date.now()) / 1000));
-      typeEl.textContent = remaining > 0 ? 'Get ready!' : 'Starting...';
-      timerEl.textContent = remaining > 0 ? `Next game in ${remaining}s` : '';
-      timerEl.style.color = remaining <= 10 ? '#f39c12' : '#95a5a6';
+      const now = Date.now();
+      if (state.lobbyReadyAt && now < state.lobbyReadyAt) {
+        // Phase 1: warm-up countdown (accurate)
+        const remaining = Math.max(0, Math.ceil((state.lobbyReadyAt - now) / 1000));
+        typeEl.textContent = 'Get ready!';
+        timerEl.textContent = remaining > 0 ? `Starting in ${remaining}s` : '';
+        timerEl.style.color = '#f39c12';
+      } else {
+        // Phase 2: waiting for agent (no misleading countdown)
+        typeEl.textContent = 'Chaos Magician choosing...';
+        timerEl.textContent = '';
+      }
     } else {
-      typeEl.textContent = 'Waiting for game...';
+      typeEl.textContent = 'Waiting for players...';
       timerEl.textContent = '';
     }
     return;
@@ -2531,6 +2540,7 @@ async function connectToServer() {
       // Clear lobby countdown when leaving lobby
       if (gameState.phase !== 'lobby') {
         state.lobbyCountdownTarget = null;
+        state.lobbyReadyAt = null;
       }
 
       // Auto-clear spectating when returning to lobby
@@ -2613,6 +2623,7 @@ async function connectToServer() {
     // Lobby countdown
     room.onMessage('lobby_countdown', (data) => {
       state.lobbyCountdownTarget = data.targetTime || null;
+      state.lobbyReadyAt = data.lobbyReadyAt || null;
       updateGameStateUI();
     });
 
@@ -3517,8 +3528,10 @@ async function init() {
 
   // Transition from login screen to game UI
   document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('ui').style.display = 'block';
-  document.getElementById('controls').style.display = 'block';
+  if (isDebug) document.getElementById('ui').style.display = 'block';
+  const controlsEl = document.getElementById('controls');
+  controlsEl.style.display = 'block';
+  setTimeout(() => controlsEl.classList.add('faded'), 10_000); // fade after 10s
   document.getElementById('chat-panel').style.display = 'flex';
 
   // Profile button & wallet panel

@@ -53,14 +53,28 @@ export function createEntityToonMaterial(entity) {
   }
 
   const color = getEntityColor(type, props.color);
+  const isSurface = type === 'platform' || type === 'ramp';
+
+  // Nudge surfaces whose luminance is too close to the ground (~0.24) for visibility
+  if (isSurface && !props.emissive) {
+    const lum = color.r * 0.299 + color.g * 0.587 + color.b * 0.114;
+    if (Math.abs(lum - 0.24) < 0.12) {
+      color.offsetHSL(0, 0.1, 0.15);
+    }
+  }
+
   const isTransparent = props.opacity != null && props.opacity < 1;
   const gradientMap = GRADIENT_MAP[type] || GRADIENT_3;
+
+  let emissiveIntensity = 0.12;
+  if (props.emissive) emissiveIntensity = 0.7;
+  else if (isSurface) emissiveIntensity = 0.2;
 
   const matOpts = {
     color,
     gradientMap,
     emissive: color,
-    emissiveIntensity: props.emissive ? 0.7 : 0.12,
+    emissiveIntensity,
     transparent: isTransparent,
     opacity: props.opacity ?? 1,
     depthWrite: !isTransparent,
@@ -93,9 +107,9 @@ export function createPlayerToonMaterial(color) {
 
 export function createGroundToonMaterial() {
   return new THREE.MeshToonMaterial({
-    color: 0x3d4446,
+    color: 0x2d3436,
     gradientMap: GRADIENT_4,
-    emissive: 0x3d4446,
+    emissive: 0x2d3436,
     emissiveIntensity: 0.08,
   });
 }
