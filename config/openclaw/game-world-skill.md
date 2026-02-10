@@ -191,4 +191,7 @@ The game uses **cel-shaded toon rendering** with cartoon outlines and bloom glow
 - **Organic shapes for creatures**: horn, tentacle, wing, dome, teardrop — these look alive.
 - **Geometric shapes for structures**: box, column, cylinder, arch — these look built.
 - **Scale reference**: A player is 1.8 units tall. A tree is ~5 units. A small decoration is ~1 unit.
+- **Size categories**: Tiny(0.3-0.5u) Small(0.5-1.5u) Player(1.5-2.5u) Large(3-6u) Giant(8-15u)
+- **Behavior rules**: hazards=chase/patrol, decorations=static/rotate. Chase speed auto-scales by size.
+- **Floating**: isFloating:true in defaultProperties for flying/hovering creatures (bob mid-air).
 - **Textures are auto-applied**: Platforms get checkerboards, breakable platforms get hex grids, conveyors get animated stripes. You don't need to worry about this.

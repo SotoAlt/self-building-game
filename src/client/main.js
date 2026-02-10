@@ -785,16 +785,17 @@ function assembleGroup(groupId) {
   groupParents.set(groupId, group);
 
   const firstEntity = firstMesh.userData.entity;
+  const props = firstEntity?.properties;
   group.userData = { isGroupParent: true, entity: firstEntity };
 
-  if (firstEntity?.properties?.kinematic) {
+  if (props?.kinematic || props?.chase) {
     group.userData.targetPosition = firstMesh.userData.targetPosition
       ? firstMesh.userData.targetPosition.clone()
       : null;
   }
-  if (firstEntity?.properties?.rotating) {
+  if (props?.rotating) {
     group.userData.rotating = true;
-    group.userData.speed = firstEntity.properties.speed || 1;
+    group.userData.speed = props.speed || 1;
     for (const mesh of childMeshes) {
       mesh.userData.rotating = false;
     }
@@ -921,9 +922,11 @@ function updateEntity(entity) {
 
   setTargetPosition(mesh, entity.position);
 
-  if (group && entity.properties?.kinematic) {
+  const eProps = entity.properties;
+  if (group && (eProps?.kinematic || eProps?.chase)) {
     setTargetPosition(group, entity.position);
-  } else if (!entity.properties?.kinematic && !group) {
+    group.userData.entity = entity;
+  } else if (!eProps?.kinematic && !group) {
     mesh.position.set(...entity.position);
   }
 
@@ -2681,6 +2684,19 @@ function animate() {
     }
     if (group.userData.rotating) {
       group.rotation.y += (group.userData.speed || 1) * delta;
+    } else {
+      const props = group.userData.entity?.properties;
+      // Face movement direction for chase/patrol groups
+      if (props?._facing !== undefined) {
+        group.rotation.y += shortAngleDist(group.rotation.y, props._facing) * 0.12;
+      }
+      // Bob for floating/flying groups
+      if (props?.isFloating) {
+        const baseY = group.userData.targetPosition
+          ? group.userData.targetPosition.y
+          : group.position.y;
+        group.position.y = baseY + Math.sin(Date.now() * 0.002) * 0.4;
+      }
     }
   }
 

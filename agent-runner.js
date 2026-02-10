@@ -281,6 +281,8 @@ function buildPalettePrompt() {
     `  DO NOT use /api/world/spawn. ALWAYS use /api/world/compose.`,
     `  Entity props: isIce (slippery), isConveyor + conveyorDir:[x,0,z] + conveyorSpeed:1-20, isWind + windForce:[x,y,z].`,
     `**VISUAL TIPS**: Game is cel-shaded toon style. Contrasting colors + emissive eyes/highlights. Overlapping shapes create depth. Organic shapes (horn, dome, tentacle) for creatures, geometric (box, column, cylinder) for structures. Player is 1.8 units tall. Emissive parts glow with bloom.`,
+    `**SIZE GUIDE**: Tiny(0.3-0.5u, bugs/coins) Small(0.5-1.5u, spiders) Player(1.5-2.5u, enemies) Large(3-6u, trees) Giant(8-15u, bosses). Chase speed auto-scales by size.`,
+    `**BEHAVIOR RULES**: hazards→chase/patrol, decorations→static/rotate. Add isFloating:true in defaultProperties for flying creatures (bob animation).`,
     `**POST /api/world/hazard-plane** — Rising lava/water plane.`,
     `  { active: true, type: "lava"|"water", startHeight: -5, riseSpeed: 0.5, maxHeight: 35 }`,
     `  Rises during "playing" phase, kills players below its height. Deactivates on game end.`,

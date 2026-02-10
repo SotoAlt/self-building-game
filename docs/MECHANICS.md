@@ -2,7 +2,7 @@
 
 Design document for new mechanics in the Self-Building Game. Organized by implementation priority — agent creative tools first, environment mechanics second, game types third, player abilities last.
 
-**Current state (v0.26.0)**: 3 game types (reach, collect, survival), 6 entity types (platform, ramp, collectible, obstacle, trigger, decoration), 23 shapes (8 basic + 16 templates), 25 prefabs (incl. conveyor_belt, wind_zone), 8 spells, 9 arena templates (incl. hex_a_gone, slime_climb, wind_tunnel), breakable platforms, bounce pads, speed strips, ice surfaces, conveyor belts, wind zones, rising hazard plane, 4 random obstacle patterns, compose system with per-child rotation + material controls + disk-cached recipes.
+**Current state (v0.32.0)**: 6 game types (reach, collect, survival, king, hot_potato, race), 6 entity types (platform, ramp, collectible, obstacle, trigger, decoration), 23 shapes (8 basic + 16 templates), 25 prefabs (incl. conveyor_belt, wind_zone), 8 spells, 16 arena templates (incl. hex_a_gone, slime_climb, wind_tunnel, king_plateau, checkpoint_dash, race_circuit), breakable platforms, bounce pads, speed strips, ice surfaces, conveyor belts, wind zones, rising hazard plane, 4 random obstacle patterns, compose system with per-child rotation + material controls + disk-cached recipes, toon shading with ACES tone mapping, player rotation, per-template randomization, agent variety enforcement with game history tracking.
 
 ---
 
@@ -172,26 +172,29 @@ Paired entities that teleport players between locations.
 
 ### New Game Types
 
-#### King of the Hill (`king`)
+#### King of the Hill (`king`) ✅ IMPLEMENTED (v0.32.0)
 
 Control zones to earn points over time.
 
 - **Setup**: 1-3 "hill" zones marked in arena (trigger entities with `isHill: true`)
 - **Scoring**: players earn 1 point/second while sole occupant of a hill zone; contested zones award nothing
-- **Win**: first to target score, or highest when time expires
-- **Visual**: hill zones glow team color of controlling player, contested zones flash
-- **Trick potential**: agent can move hills mid-game, add/remove hills, shrink zones
+- **Win**: first to target score (default 30), or highest when time expires
+- **Visual**: hill zones change color to controlling player; score overlay HUD during king games
+- **Trick potential**: agent can move hills mid-game, add/remove hills
+- **Templates**: `king_plateau` (central hill + ramps), `king_islands` (3 floating islands)
+- **File**: `src/server/games/KingOfHill.js`
 
-#### Hot Potato (`hot_potato`)
+#### Hot Potato (`hot_potato`) ✅ IMPLEMENTED (v0.32.0)
 
 Don't be holding the curse when the timer expires.
 
-- **Setup**: one random player receives "the curse" (red glow VFX, trail particles)
-- **Transfer**: curse passes on collision with another player (2s transfer cooldown)
-- **Elimination**: player holding curse when sub-timer hits 0 is eliminated
-- **Rounds**: multi-round — last player standing wins the game
-- **Visual**: cursed player has red glow, screen vignette, heartbeat sound that speeds up near timer end
-- **Trick potential**: agent can add multiple curses, reverse curse direction, grant immunity
+- **Setup**: one random player receives "the curse" (red glow VFX)
+- **Transfer**: curse passes on proximity (< 3 units, 2s transfer cooldown, +2s bonus on pass)
+- **Elimination**: player holding curse when sub-timer (10-16s) hits 0 is eliminated
+- **Rounds**: multi-round — curse resets to random survivor; last player standing wins
+- **Visual**: red emissive glow on cursed player, red vignette if local, pulsing sub-timer HUD
+- **Templates**: `hot_potato_arena` (circular with pillars), `hot_potato_platforms` (floating over abyss)
+- **File**: `src/server/games/HotPotato.js`
 
 #### Dodgeball (`dodgeball`)
 
@@ -205,16 +208,18 @@ Throw projectiles to eliminate opponents.
 - **Visual**: held projectile shown orbiting player, thrown = fast sphere with trail
 - **Trick potential**: agent spawns more/fewer projectiles, adds bounce-back walls, gives specific players ammo
 
-#### Race (`race`)
+#### Race (`race`) ✅ IMPLEMENTED (v0.32.0)
 
 Checkpoint-based race through an obstacle course.
 
-- **Setup**: ordered sequence of checkpoint triggers placed along a route
+- **Setup**: ordered checkpoint triggers (`isCheckpoint: true`, `checkpointIndex: N`)
 - **Rules**: players must hit checkpoints in order — skipping doesn't count
-- **Tracking**: HUD shows current checkpoint / total for each player
-- **Win**: first to complete all checkpoints
-- **Visual**: next checkpoint glows for each player, completed ones dim
-- **Difference from Reach**: reach has one goal; race has a multi-point ordered path
+- **Tracking**: HUD shows "Checkpoint N/Total" per player
+- **Win**: first to complete all checkpoints, or most at timeout
+- **Visual**: next checkpoint highlighted, completed ones change color
+- **Templates**: `checkpoint_dash` (linear 6-checkpoint course), `race_circuit` (circular 8-checkpoint track)
+- **File**: `src/server/games/Race.js`
+- **Key**: `GameRoom.onTriggerActivated(playerId, entityId)` passes entity ID for checkpoint resolution
 
 #### Team Survival (`team_survival`)
 
@@ -352,10 +357,58 @@ New templates that showcase the new mechanics.
 | `slime_climb` | Rising lava, conveyors, ice bridge, obstacles | Reach | ✅ v0.26.0 |
 | `wind_tunnel` | Wind zones, ice, conveyors, crosswind bridges | Reach | ✅ v0.26.0 |
 | `dodgeball_arena` | Projectile system | Dodgeball | Future |
-| `king_of_hill` | Conveyor belts, hill zones | King | Future |
-| `ice_rink` | Ice physics, obstacles | Survival | Future |
+| `king_plateau` | Central hill, ramps, obstacles | King | ✅ v0.32.0 |
+| `king_islands` | 3 floating hills, bridges, wind | King | ✅ v0.32.0 |
+| `hot_potato_arena` | Circular arena, pillars, obstacles | Hot Potato | ✅ v0.32.0 |
+| `hot_potato_platforms` | Floating platforms, ice, abyss | Hot Potato | ✅ v0.32.0 |
+| `checkpoint_dash` | Linear 6-checkpoint course | Race | ✅ v0.32.0 |
+| `race_circuit` | Circular 8-checkpoint track | Race | ✅ v0.32.0 |
+| `treasure_trove` | Multi-level, ledges, ice bridges | Collect | ✅ v0.32.0 |
+| `ice_rink` | Large ice platform, sweeping obstacles | Survival | ✅ v0.32.0 |
 | `trap_house` | Trap doors, crushers, fake floors | Reach | Future |
 | `enemy_gauntlet` | Turrets, spiders, projectiles | Reach | Future |
+
+---
+
+## 7. Visual Rendering ✅ COMPLETED (v0.28.0)
+
+### Toon Shading Pipeline
+
+The game uses a cel-shaded visual style (Fall Guys / Splatoon aesthetic) via a post-processing pipeline:
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `MeshToonMaterial` | `ToonMaterials.js` | 2/3/4-step gradient maps for cel-shaded lighting |
+| `OutlinePass` | `PostProcessing.js` | Cartoon edges around all entities and players |
+| `UnrealBloomPass` | `PostProcessing.js` | Selective glow for emissive objects (lava, collectibles) |
+| `FXAA` | `PostProcessing.js` | Anti-aliasing pass |
+| `OutputPass` | `PostProcessing.js` | Tone mapping output |
+| Sky dome | `EnvironmentEffects.js` | Gradient shader sphere (top/bottom colors, overridable by templates) |
+| Procedural textures | `ProceduralTextures.js` | Lava flow, conveyor arrows, custom patterns |
+
+### Lighting Setup
+
+- **Ambient**: `0x8090a0` at 0.8 intensity — broad fill
+- **Hemisphere**: sky `0xb0d0ff` / ground `0x404030` at 0.6 — natural vertical gradient
+- **Directional**: white at 1.2, position `[50, 100, 50]`, 2048px shadow maps
+- **Tone mapping**: ACES Filmic at 1.3 exposure, sRGB color space
+- **Entity self-illumination**: default emissive 0.12 (emissive entities 0.5)
+
+### Outline System
+
+- **Color**: `#1a1a1a` (dark gray — visible on dark backgrounds without looking neon)
+- **Glow**: 0.2 — slight bloom for edge visibility
+- **Strength**: 4.0, thickness 1.0
+- **Update interval**: 200ms — all visible entities + players added to `selectedObjects`
+- **Quality tiers**: auto-degrades (high → medium → low → potato) based on FPS
+
+### Player Rotation
+
+Players face their movement direction using `Math.atan2` on velocity:
+
+- **Local player**: threshold `> 0.5` speed, 15 rad/s lerp rate via `shortAngleDist()` helper
+- **Remote players**: direction inferred from position delta before lerp, 0.15 lerp rate
+- **Shortest-path**: angle wrapping to `[-PI, PI]` prevents 360-degree spins
 
 ---
 
@@ -450,19 +503,23 @@ New templates that showcase the new mechanics.
 - [x] Agent integration — SKILL.md, SOUL.md, agent-runner prompt, agent context `hazardPlane` field
 - [x] `frameDelta` pattern for frame-rate-independent physics (conveyors + wind)
 
-### Phase 3: New Game Types + Modifiers
+### Phase 3: New Game Types + Agent Variety ✅ COMPLETED (v0.32.0)
 
-**Priority**: HIGH — multiplies replayability. Modifiers make existing templates feel new.
+**Priority**: HIGH — multiplies replayability.
 
-**Scope**: 1-2 sessions
+**Scope**: 1 session
 
-- King of the Hill game type (`src/server/games/KingOfHill.js`)
-- Hot Potato game type (`src/server/games/HotPotato.js`)
-- Race with checkpoints game type (`src/server/games/Race.js`)
-- Game modifier system — composable, applied at game start
-- Implement 4 modifiers: `rising_lava`, `breakable_floor`, `enemy_waves`, `sudden_death`
-- Update `start_game` API and agent tool to accept `modifiers`
-- Deeper existing game enhancements (competitive collect stealing, survival elimination feed)
+- [x] King of the Hill game type (`src/server/games/KingOfHill.js`) — hill zone scoring, score_update broadcasts
+- [x] Hot Potato game type (`src/server/games/HotPotato.js`) — proximity curse transfer, multi-round elimination
+- [x] Race game type (`src/server/games/Race.js`) — ordered checkpoints, onTriggerActivated dispatch
+- [x] 8 new arena templates (king_plateau, king_islands, hot_potato_arena, hot_potato_platforms, checkpoint_dash, race_circuit, treasure_trove, ice_rink)
+- [x] Per-template randomization — positions, speeds, delays vary each load
+- [x] Game history tracking (`worldState.gameHistory[]`, last 8 games)
+- [x] Agent variety enforcement — hard bans on recent types/templates, "YOU MUST USE" directives for unplayed types
+- [x] Auto-start prefers unplayed new game types
+- [x] Client HUD: score overlay (king), curse timer (hot_potato), checkpoint display (race)
+- [x] GameRoom fixes: `onTriggerActivated(playerId, entityId)`, `onPlayerDeath(playerId)` dispatches
+- [ ] Game modifier system — composable modifiers (rising_lava, breakable_floor, enemy_waves, sudden_death) — deferred to future phase
 
 ### Phase 4: Enemy / NPC System
 

@@ -241,7 +241,39 @@
 
 ---
 
-## Phase 13: Demo Prep & Submission
+## Phase 13: Visual Polish - COMPLETE
+
+*Completed Feb 9, 2026 (v0.28.0)*
+
+### Toon Shading (v0.24.0)
+- [x] MeshToonMaterial with gradient maps (2/3/4 step)
+- [x] Cel-shaded outlines via OutlinePass
+- [x] Bloom pass for emissive glow
+- [x] Procedural textures (lava, conveyor arrows)
+- [x] Animated shaders (lava flow, hazard plane)
+
+### Scene Brightness (v0.28.0)
+- [x] Brighter ambient light (0x8090a0 at 0.8)
+- [x] Hemisphere light for natural sky/ground fill
+- [x] ACES filmic tone mapping (1.3 exposure)
+- [x] Lighter sky dome defaults (dark blue, not black)
+- [x] Ground self-illumination (0.08 emissive)
+- [x] Entity emissive bump (0.05 → 0.12)
+
+### Outline Visibility (v0.28.0)
+- [x] Dark gray edges (#1a1a1a) instead of invisible black
+- [x] Slight edge glow (0.2) for visibility on dark backgrounds
+- [x] Faster outline update (500ms → 200ms)
+
+### Player Rotation (v0.28.0)
+- [x] Local player capsule rotates to face movement direction
+- [x] Smooth shortest-path lerp (~66ms turn time)
+- [x] Remote players rotate based on position delta
+- [x] `shortAngleDist()` helper for angle wrapping
+
+---
+
+## Phase 14: Demo Prep & Submission
 
 - [ ] Record demo video / GIF
 - [ ] Polish landing page
@@ -281,6 +313,7 @@
 | 11-12 | External integration + agent-as-player | DONE |
 | 12 | Game lifecycle & variety | DONE |
 | 12-13 | Mobile support | IN PROGRESS |
+| 13 | Visual polish (brightness, outlines, rotation) | DONE |
 | 13-14 | Demo prep + submission | TODO |
 
 ---

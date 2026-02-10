@@ -154,7 +154,7 @@ const PREFABS = {
   fish: {
     category: 'decoration',
     description: 'Orange fish swimming in circles — visual decoration',
-    defaultProperties: { speed: 1.5 },
+    defaultProperties: { speed: 1.5, isFloating: true },
     children: [
       { type: 'decoration', offset: [0, 0, 0], size: [1.2, 0.6, 0.5], props: { shape: 'sphere', color: '#ff6b35' } },
       { type: 'decoration', offset: [-0.8, 0, 0], size: [0.5, 0.6, 0.1], props: { shape: 'cone', color: '#ff6b35' } },
@@ -250,7 +250,7 @@ const PREFABS = {
   ghost: {
     category: 'hazard',
     description: 'Floating white ghost that chases players — kills on contact',
-    defaultProperties: { speed: 1.8, chaseRadius: 18 },
+    defaultProperties: { speed: 1.8, chaseRadius: 18, isFloating: true },
     children: [
       // Body
       { type: 'obstacle', offset: [0, 1, 0], size: [1.2, 1.5, 1.2], props: { shape: 'sphere', color: '#ecf0f1', opacity: 0.85 } },
@@ -288,7 +288,7 @@ const PREFABS = {
   ufo: {
     category: 'hazard',
     description: 'Flying saucer that chases players — kills on contact',
-    defaultProperties: { speed: 2.5, chaseRadius: 30 },
+    defaultProperties: { speed: 2.5, chaseRadius: 30, isFloating: true },
     children: [
       { type: 'obstacle', offset: [0, 3, 0], size: [2.5, 0.4, 2.5], props: { shape: 'cylinder', color: '#95a5a6' } },
       { type: 'obstacle', offset: [0, 3.3, 0], size: [1.2, 0.8, 1.2], props: { shape: 'sphere', color: '#3498db', emissive: true } },
@@ -419,6 +419,7 @@ export function applyBehavior(behavior, merged, childProps, absPos) {
       break;
   }
 
+  if (merged.isFloating) childProps.isFloating = true;
   if (childProps.isBounce) childProps.bounceForce = merged.bounceForce || 18;
   if (childProps.isSpeedBoost) childProps.boostDuration = merged.boostDuration || 3000;
 }

@@ -2,6 +2,43 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.32.0] - 2026-02-09
+
+### Added
+- **3 new game types** — 6 total (was 3):
+  - **King of the Hill** (`king`) — control hill zones to earn 1 point/sec; contested hills award nothing; first to target score or highest at timeout wins
+  - **Hot Potato** (`hot_potato`) — curse transfers on proximity (< 3 units); cursed player eliminated when sub-timer expires; multi-round, last standing wins
+  - **Race** (`race`) — ordered checkpoint triggers; must hit in sequence; first to complete all wins, or most checkpoints at timeout
+- **3 new game class files**: `src/server/games/KingOfHill.js`, `HotPotato.js`, `Race.js`
+- **8 new arena templates** (16 total):
+  - `king_plateau` (king) — central elevated hill + 2 corner hills, ramps, obstacles
+  - `king_islands` (king) — 3 floating islands with hills, narrow bridges, wind zones
+  - `hot_potato_arena` (hot_potato) — circular enclosed arena with pillars and obstacles
+  - `hot_potato_platforms` (hot_potato) — floating platforms over abyss, ice sections
+  - `checkpoint_dash` (race) — linear 6-checkpoint obstacle course, progressive difficulty
+  - `race_circuit` (race) — circular track with 8 checkpoints, ice/conveyor/wind sections
+  - `treasure_trove` (collect) — multi-level enclosed arena with ledges and ice bridges
+  - `ice_rink` (survival) — large ice platform with sweeping obstacles and wind zones
+- **Per-template randomization** — `randomizeTemplate()` nudges positions ±2 units, varies speeds ±30%, randomizes breakable delays and hazard speeds
+- **Game history tracking** — `worldState.gameHistory[]` stores last 8 `{ type, template }` entries
+- **Agent variety enforcement** — hard directives ban last game type + last 3 templates; strongly promote unplayed new types (king, hot_potato, race) with "YOU MUST USE" directive
+- **Lobby countdown on first join** — `worldState.onPlayerJoin` hook triggers `scheduleAutoStart()` when first human joins during lobby
+- **Client HUD**: score overlay (king), curse timer (hot_potato), checkpoint display (race)
+- **GameRoom trigger dispatch** — `onTriggerActivated(playerId, entityId)` passes entityId for checkpoint tracking
+- **GameRoom death dispatch** — `onPlayerDeath(playerId)` notifies active game (used by hot_potato)
+
+### Fixed
+- **Bribe crash** — `executeAutoBribe` `random_spell` case wrapped `castSpell()` in try/catch; unhandled cooldown error no longer kills process
+- **Agent spawning cubes instead of prefabs** — blocked `POST /api/world/spawn` and `POST /api/world/spawn-prefab` endpoints with 400 redirecting to compose
+- **Lobby countdown not starting** — `scheduleAutoStart()` was only called on phase transition, not on first player join
+- **Same games repeating** — variety system now bans reach on fresh start, prefers unplayed new game types for auto-start
+
+### Changed
+- **Auto-start template selection** — prefers templates for unplayed new game types; falls back to old types only after new ones played
+- **`spawn_entity` and `spawn_prefab` gutted in OpenClaw skill** — return deprecation errors pointing to compose
+- **`start_game` valid types** — expanded from 3 to 6 in skill file validation
+- **Agent context** — includes `gameHistory`, `suggestedTemplates` fields
+
 ## [0.30.0] - 2026-02-09
 
 ### Added

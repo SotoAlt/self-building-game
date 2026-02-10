@@ -6,7 +6,7 @@ An AI agent ("Chaos Magician") builds a 3D multiplayer game in real-time while p
 
 ## Current Phase
 
-**Production v0.24.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
+**Production v0.32.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
 
 ## Architecture
 
@@ -41,13 +41,13 @@ Claude (Anthropic) via OpenClaw Gateway
 │   │   ├── AgentLoop.js      # Drama score, phase detection, agent scheduling, player welcomes
 │   │   ├── AgentBridge.js    # OpenClaw CLI invocation
 │   │   ├── AIPlayer.js       # Personality-driven AI bots
-│   │   ├── ArenaTemplates.js # 7 pre-built arena layouts (incl. hex_a_gone)
+│   │   ├── ArenaTemplates.js # 16 arena layouts (incl. hex_a_gone, king_plateau, race_circuit)
 │   │   ├── Prefabs.js        # 23 named entity presets (spider, bounce_pad, etc.)
 │   │   ├── Composer.js       # Compose system — agent-generated recipes, validation, disk cache
 │   │   ├── auth.js           # Privy JWT verification
 │   │   ├── db.js             # PostgreSQL with in-memory fallback
 │   │   ├── blockchain/       # Mock chain interface (bribe system)
-│   │   └── games/            # ReachGoal, CollectGame, Survival
+│   │   └── games/            # ReachGoal, CollectGame, Survival, KingOfHill, HotPotato, Race
 │   └── client/
 │       ├── main.js           # Three.js renderer, physics, player controls
 │       └── auth.js           # Privy client-side auth
@@ -81,9 +81,9 @@ npm run build        # Build client for production
 |----------|---------|
 | `GET /api/agent/context` | Full game state for agent decisions |
 | `POST /api/game/start` | Start a mini-game |
-| `POST /api/world/spawn` | Spawn single primitive entity |
 | `POST /api/world/compose` | Compose anything — prefabs, cached, or new recipes |
-| `POST /api/world/spawn-prefab` | Spawn prefab group (deprecated, use compose) |
+| `POST /api/world/spawn` | **BLOCKED** — returns 400 redirecting to compose |
+| `POST /api/world/spawn-prefab` | **BLOCKED** — returns 400 redirecting to compose |
 | `POST /api/world/destroy-group` | Destroy all entities in a group |
 | `POST /api/spell/cast` | Cast spell on players |
 | `POST /api/agent/pause` | Kill switch — pause agent |
@@ -110,15 +110,26 @@ npm run build        # Build client for production
 - **Announcement rate limit**: 5s cooldown on `/api/announce`
 - **Pacing rules**: Max 3 world-changing actions per invocation, rhythm: greet → build → start across turns
 - **Auto-start fallback**: 45s timer starts on lobby entry; if agent doesn't start a game, random template auto-starts
-- **Variety hints**: `suggestedGameTypes` excludes last played game type
+- **Variety enforcement**: hard directives ban last game type + last 3 templates; promotes unplayed new types
 - **State tracking**: `lastProcessedChatId`, `welcomedPlayers`, `processedBribeIds` — no re-processing
 - **Personality**: Chaos magic apprentice — short messages, twists player requests, tool honesty
 - Model: Claude (Anthropic) via OpenClaw
 
-## Game Flow (v0.18.0)
+## Game Types (v0.32.0)
+
+| Type | Description | Win Condition | Min Players |
+|------|-------------|---------------|-------------|
+| `reach` | Race to a goal trigger | First to reach goal | 1 |
+| `collect` | Gather collectibles | Most collected at timeout | 1 |
+| `survival` | Stay alive longest | Last standing or longest alive | 1 |
+| `king` | Control hill zones | First to target score (30) or highest at timeout | 2 |
+| `hot_potato` | Pass the curse before sub-timer expires | Last standing after multi-round elimination | 2 |
+| `race` | Hit checkpoints in order | First to complete all checkpoints or most at timeout | 1 |
+
+## Game Flow (v0.32.0)
 
 - **Atomic game start**: `start_game({ template })` loads arena + starts game in one call (no separate load_template step)
-- **45s auto-start**: if agent doesn't start a game within 45s of lobby, a random template auto-starts
+- **45s auto-start**: if agent doesn't start a game within 45s of lobby, a random template auto-starts (prefers unplayed new game types)
 - **Countdown**: "GET READY!" → players teleported to start → free movement during 3s countdown (Fall Guys style)
 - **Countdown invulnerability**: `inSafePhase` covers lobby, countdown, and ended — no deaths during transitions
 - **Safe-phase floors**: lava and `none` floors become solid during safe phases
@@ -131,7 +142,9 @@ npm run build        # Build client for production
 - **Floor types**: `solid` (default), `none` (abyss — no floor during gameplay, solid in safe phases), `lava` (kills during playing only)
 - **Entity types**: platform, ramp, collectible, obstacle, trigger, decoration (no collision)
 - **Entity shapes** (via `properties.shape`): box (default), sphere, cylinder, cone, pyramid, torus, dodecahedron, ring
-- **Compose system** (v0.22.0): `compose()` is the agent's main spawning tool — known prefabs resolve instantly, custom creations use agent-generated recipes cached to `data/compose-cache.json`
+- **Compose system** (v0.24.0): `compose()` is the agent's only spawning tool — known prefabs resolve instantly, custom creations use agent-generated recipes cached to `data/compose-cache.json`
+- **Per-template randomization**: positions, speeds, and delays vary each time a template loads
+- **Game history**: last 8 games tracked in `worldState.gameHistory[]` for variety enforcement
 
 ## Key Files to Read
 

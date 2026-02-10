@@ -116,6 +116,13 @@ Recipe rules:
 - Decorations: child type "decoration" + behavior "static" or "rotate"
 - Cached after first creation -- same description = instant spawn next time
 
+**Size Guide** (player = 1.8 units tall):
+- Tiny (0.3-0.5u): bugs, coins — Small (0.5-1.5u): spiders, barrels
+- Player-sized (1.5-2.5u): enemies — Large (3-6u): trees, vehicles
+- Giant (8-15u): bosses, towers (chase slowly)
+Chase speed auto-scales by size. Hazards→chase/patrol, decorations→static/rotate.
+Flying creatures — set isFloating:true in defaultProperties for bob animation.
+
 DO NOT use `/api/world/spawn`. ALWAYS use `/api/world/compose`.
 
 **Spells**: invert_controls, low_gravity, high_gravity, speed_boost, slow_motion, bouncy, giant, tiny

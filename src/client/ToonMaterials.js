@@ -60,9 +60,10 @@ export function createEntityToonMaterial(entity) {
     color,
     gradientMap,
     emissive: color,
-    emissiveIntensity: props.emissive ? 0.5 : 0.12,
+    emissiveIntensity: props.emissive ? 0.7 : 0.12,
     transparent: isTransparent,
     opacity: props.opacity ?? 1,
+    depthWrite: !isTransparent,
   };
 
   // Conveyor belt: warmer emissive

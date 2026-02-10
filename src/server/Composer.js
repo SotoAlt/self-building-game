@@ -58,7 +58,28 @@ const PROPERTY_RANGES = {
   crushHeight:   [1, 10],
   bounceForce:   [5, 30],
   boostDuration: [1000, 10000],
+  bobSpeed:      [0.5, 5],
+  bobHeight:     [0.1, 2],
 };
+
+/** Compute the largest bounding extent across all children (offset + size per axis). */
+function computeMaxExtent(children) {
+  let max = 0;
+  for (const child of children) {
+    for (let i = 0; i < 3; i++) {
+      max = Math.max(max, Math.abs(child.offset[i]) + child.size[i]);
+    }
+  }
+  return max;
+}
+
+/** Scale chase speed inversely with creature size — big things move slower. */
+function chaseSpeedForSize(extent) {
+  if (extent <= 1.5) return 4;
+  if (extent <= 3) return 2.5;
+  if (extent <= 6) return 1.5;
+  return 1;
+}
 
 function validateRecipe(recipe) {
   const clean = {};
@@ -71,6 +92,11 @@ function validateRecipe(recipe) {
   clean.description = typeof recipe.description === 'string' ? recipe.description.slice(0, 200) : '';
   clean.behavior = VALID_BEHAVIORS.includes(recipe.behavior) ? recipe.behavior : 'static';
 
+  // Decorations must not chase/patrol — silently downgrade
+  if (clean.category === 'decoration' && ['chase', 'patrol'].includes(clean.behavior)) {
+    clean.behavior = 'static';
+  }
+
   const dp = recipe.defaultProperties || {};
   clean.defaultProperties = {};
   for (const [key, [min, max]] of Object.entries(PROPERTY_RANGES)) {
@@ -78,6 +104,8 @@ function validateRecipe(recipe) {
       clean.defaultProperties[key] = clamp(dp[key], min, max);
     }
   }
+
+  if (recipe.isFloating || dp.isFloating) clean.defaultProperties.isFloating = true;
 
   if (!Array.isArray(recipe.children) || recipe.children.length === 0) {
     return { valid: false, error: 'Recipe must have at least 1 child entity in "children" array' };
@@ -119,9 +147,20 @@ function validateRecipe(recipe) {
         c.props.windForce = props.windForce.slice(0, 3).map(v => clamp(Number(v) || 0, -30, 30));
       }
     }
+    if (props.isFloating) c.props.isFloating = true;
 
     return c;
   });
+
+  const maxExtent = computeMaxExtent(clean.children);
+  if (maxExtent > 20) {
+    console.warn(`[Composer] Recipe "${clean.name}" bounding radius ${maxExtent.toFixed(1)} exceeds 20 units`);
+  }
+
+  if (clean.behavior === 'chase') {
+    if (!dp.speed) clean.defaultProperties.speed = chaseSpeedForSize(maxExtent);
+    if (!dp.chaseRadius) clean.defaultProperties.chaseRadius = 20;
+  }
 
   return { valid: true, recipe: clean };
 }

@@ -825,6 +825,13 @@ export class WorldState {
         start[2] + (end[2] - start[2]) * t
       ];
 
+      // Compute facing from path travel direction
+      const pdx = end[0] - start[0];
+      const pdz = end[2] - start[2];
+      if (Math.abs(pdx) > 0.01 || Math.abs(pdz) > 0.01) {
+        entity.properties._facing = Math.atan2(pdx * entity._pathDirection, pdz * entity._pathDirection);
+      }
+
       moved.push(entity);
     }
     return moved;
@@ -878,6 +885,9 @@ export class WorldState {
 
       const moveX = (dx / dist) * speed;
       const moveZ = (dz / dist) * speed;
+
+      // Store facing yaw on leader for client
+      leader.properties._facing = Math.atan2(dx, dz);
 
       // Move all entities in the group by the same offset
       for (const entity of entities) {
