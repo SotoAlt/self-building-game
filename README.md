@@ -8,15 +8,17 @@ An AI agent builds a 3D multiplayer game in real-time while players play and aud
 
 ## What It Does
 
-- An AI "Chaos Magician" (chaos magic apprentice) controls the game world — spawning platforms, obstacles, decorations with 8 different shapes
+- An AI "Chaos Magician" (chaos magic apprentice) controls the game world — composing platforms, obstacles, creatures, and decorations with 23 shapes and 16 geometry templates
 - Players join via browser and navigate the 3D world with WASD + jump controls (mobile touch supported)
-- The agent runs mini-games (reach-the-goal, collect-a-thon, survival) with randomized parameters and Fall Guys-style obstacles
+- The agent runs 6 mini-game types (reach, collect, survival, king of the hill, hot potato, race) across 16 arena templates with randomized parameters and Fall Guys-style obstacles
 - Players chat with the agent using @agent mentions — the agent twists requests chaotically instead of obeying
-- 6 entity types (platform, ramp, collectible, obstacle, trigger, decoration) with shape property (sphere, cylinder, cone, pyramid, torus, dodecahedron, ring)
+- 6 entity types (platform, ramp, collectible, obstacle, trigger, decoration) with 8 shape properties + 16 geometry templates
+- Compose system: agent generates multi-entity recipes (dragons, spiders, forests) cached to disk for instant re-spawning
 - Fall Guys-style countdown: players teleport to start, move freely during 3-2-1
 - Mid-game joiners become spectators until the next round
 - Agent greets new players by name within 3-15s
 - Chat bridge connects Twitch, Discord, and Telegram — audiences interact with the agent across platforms
+- Cel-shaded toon rendering with post-processing outlines, procedural textures, and environment effects
 
 ## Architecture
 
@@ -98,11 +100,12 @@ cp .env.example .env
 docker-compose up --build
 ```
 
-## Agent Capabilities (27 Tools)
+## Agent Capabilities (30 Tools)
 
 | Tool | Description |
 |------|-------------|
-| `spawn_entity` | Create platforms, ramps, collectibles, obstacles, triggers, decorations (with shape property) |
+| `compose` | Compose anything — known prefabs, cached creations, or new recipes with multi-entity groups |
+| `destroy_prefab` | Destroy all entities in a composed group |
 | `modify_entity` | Update position, size, color, movement of entities |
 | `destroy_entity` | Remove entities from the world |
 | `set_physics` | Change gravity, friction, bounce globally |
@@ -111,7 +114,7 @@ docker-compose up --build
 | `create_challenge` | Create reach/collect/survive/time_trial objectives |
 | `get_challenge_status` | Check challenge progress |
 | `announce` | Send announcements to all players |
-| `start_game` | Launch a mini-game (reach, collect, survival) |
+| `start_game` | Launch a mini-game (reach, collect, survival, king, hot_potato, race) with optional template |
 | `end_game` | End current mini-game |
 | `get_game_state` | Check game phase and timer |
 | `get_game_types` | List available mini-game types |
@@ -122,7 +125,7 @@ docker-compose up --build
 | `add_trick` | Inject tricks mid-game (time/score/death triggers) |
 | `get_context` | Unified polling: players, chat, events, game state |
 | `clear_world` | Remove all entities from the world |
-| `load_template` | Spawn a pre-built arena layout |
+| `load_template` | Spawn a pre-built arena layout (16 templates) |
 | `set_respawn` | Set player respawn position |
 | `set_floor` | Change floor type (solid, none, lava) |
 | `set_environment` | Change sky color, fog, lighting |
@@ -130,6 +133,7 @@ docker-compose up --build
 | `start_building` | Enter building phase between games |
 | `check_bribes` | View pending player bribes |
 | `honor_bribe` | Acknowledge and act on a player bribe |
+| `spawn_prefab` | **Deprecated** — redirects to compose |
 
 ## API Endpoints
 
@@ -137,23 +141,27 @@ docker-compose up --build
 GET  /api/health              - Server health check
 GET  /api/stats               - Aggregate stats (games, players, uptime)
 GET  /api/world/state         - Full world state
-POST /api/world/spawn         - Create entity
+POST /api/world/compose       - Compose anything (prefabs, cached, or new recipes)
+POST /api/world/spawn         - BLOCKED — returns 400 redirecting to compose
+POST /api/world/spawn-prefab  - BLOCKED — returns 400 redirecting to compose
+POST /api/world/destroy-group - Destroy all entities in a group
 POST /api/world/modify        - Update entity
 POST /api/world/destroy       - Remove entity
 POST /api/world/floor         - Set floor type (solid/none/lava)
 POST /api/world/environment   - Change sky, fog, lighting
 POST /api/physics/set         - Change physics
 GET  /api/players             - Player positions
-POST /api/game/start          - Start mini-game
+POST /api/game/start          - Start mini-game (with optional template param)
 POST /api/game/end            - End current game
 POST /api/game/trick          - Add trick mid-game
 GET  /api/game/state          - Game state
 GET  /api/leaderboard         - Top 10 players
 GET  /api/chat/messages       - Chat messages
-POST /api/chat/send           - Agent sends message
-POST /api/spell/cast          - Cast spell effect
-POST /api/announce            - Global announcement
-GET  /api/agent/context       - Unified agent context (includes pendingWelcomes, suggestedGameTypes)
+POST /api/chat/send           - Agent sends message (3s rate limit)
+POST /api/chat/bridge         - External platform chat (Twitch/Discord/Telegram)
+POST /api/spell/cast          - Cast spell effect (playing phase only, 10s cooldown)
+POST /api/announce            - Global announcement (5s rate limit)
+GET  /api/agent/context       - Unified agent context (gameHistory, variety hints)
 POST /api/agent/pause         - Kill switch — pause agent
 POST /api/agent/resume        - Resume agent
 GET  /api/agent/status        - Agent status (phase, drama, paused)
@@ -174,18 +182,23 @@ POST /api/ai-players/toggle   - Enable/disable AI bots
 |------|---------|
 | `src/server/index.js` | Express API (50+ endpoints) + Colyseus server + game loop |
 | `src/server/WorldState.js` | Source of truth: entities, players, physics, chat, leaderboard, spectator mgmt |
-| `src/server/GameRoom.js` | Colyseus room: player sync, chat, ready, mid-game spectator detection |
+| `src/server/GameRoom.js` | Colyseus room: player sync, chat, mid-game spectator detection |
 | `src/server/MiniGame.js` | Mini-game base class with trick system, random obstacles, time randomization |
 | `src/server/AgentLoop.js` | Drama score, phase tracking, player welcome system, cooldown guard |
 | `src/server/AgentBridge.js` | OpenClaw CLI bridge with welcome prompts + variety hints |
+| `src/server/Composer.js` | Compose system — recipe validation, disk cache, prefab resolution |
+| `src/server/Prefabs.js` | 23 named entity presets with behaviors (patrol, chase, pendulum, etc.) |
+| `src/server/ArenaTemplates.js` | 16 pre-built arena layouts with per-template randomization |
 | `src/server/AIPlayer.js` | Virtual AI players with personality types |
-| `src/server/ArenaTemplates.js` | 5 pre-built arena layouts |
 | `src/server/blockchain/ChainInterface.js` | Blockchain abstraction + bribe system |
-| `src/server/games/` | ReachGoal, CollectGame, Survival (randomized params) |
+| `src/server/games/` | ReachGoal, CollectGame, Survival, KingOfHill, HotPotato, Race |
 | `src/server/db.js` | PostgreSQL persistence with graceful fallback |
-| `src/client/main.js` | Three.js client: rendering, input, camera, mobile touch, spectator UI |
-| `index.html` | Game HTML with chat, leaderboard, announcements |
-| `config/openclaw/game-world-skill.js` | Chaos Magician agent skill (27 tools) |
+| `src/client/main.js` | Three.js client: rendering, physics, player controls, mobile touch, spectator UI |
+| `src/client/ToonMaterials.js` | Cel-shaded material factory with gradient maps and emissive tuning |
+| `index.html` | Game HTML with chat, leaderboard, announcements, bribe modal |
+| `agent-runner.js` | Standalone agent loop (sole agent system, runs on VPS host) |
+| `chat-bridge.js` | Twitch/Discord/Telegram chat bridge |
+| `config/openclaw/game-world-skill.js` | Chaos Magician agent skill (30 tools) |
 | `config/openclaw/game-player-skill.js` | External agent player skill (8 tools) |
 
 ## License
