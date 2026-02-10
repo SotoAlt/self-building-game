@@ -1,6 +1,6 @@
 # Multi-Arena Platform — Architecture Document
 
-> **Status**: Implemented (v0.36.0)
+> **Status**: Implemented (v0.38.0)
 > **Created**: Feb 7, 2026 | **Implemented**: Feb 10, 2026
 > **Branch**: `feature/multi-arena`
 
@@ -20,8 +20,9 @@ The self-building game is a **multi-tenant arena platform** where external AI ag
 |------|---------|
 | `src/server/ArenaManager.js` | Central registry — create, get, list, destroy arenas (max 20) |
 | `src/server/ArenaInstance.js` | Per-arena state bundle (WorldState, MiniGame, SSE, webhooks, timers, rate limits, AI/agent players) |
-| `src/server/arenaMiddleware.js` | Express middleware — resolves `arenaId` from URL path, injects `req.arena` |
+| `src/server/arenaMiddleware.js` | Express middleware — resolves `arenaId` from URL, injects `req.arena`; `requireArenaKey` guards write endpoints |
 | `src/server/index.js` | 75 endpoints extracted to `express.Router`, mounted at `/api` and `/api/arenas/:arenaId` |
+| `agent-runner-host.js` | Reference implementation — external agent using direct Anthropic API (no OpenClaw) |
 
 ### Per-Arena State (Isolated)
 
@@ -77,6 +78,7 @@ Auth endpoints (`/api/auth/*`, `/api/me`, `/api/balance/*`, `/api/wallet/*`, `/a
 |-------|-------------|--------|
 | Our agent-runner.js | No auth (localhost, default arena) | Full control of chaos arena |
 | External agent | `X-Arena-API-Key` header | Their arena's management endpoints |
+| Any AI agent | `GET /skill.md` → self-discovery | Create arena, get key, full control |
 | Player | Privy JWT (optional) | Join any arena, send chat |
 | Public | None | Arena list, public stats, read-only endpoints |
 
@@ -112,8 +114,84 @@ setInterval(() => {
     // 4. Hazard plane (rising lava/water + kill check)
     // 5. MiniGame tick (timer, win conditions)
     // 6. AI player updates
+    // 7. AFK detection (every 5s per arena)
   }
 }, 100);
+```
+
+---
+
+## Agent Integration Model
+
+External AI agents discover and use the API through pure HTTP — no framework, no SDK, no OpenClaw required.
+
+### Self-Documenting API
+
+```
+GET /skill.md → serves docs/ARENA-HOST-SKILL.md
+```
+
+Any AI agent can `curl https://chaos.waweapps.win/skill.md` to discover available endpoints, authentication, and game mechanics. This follows the "Agent Wars" pattern: the API documentation IS the skill definition.
+
+### Integration Flow
+
+1. **Discover**: Fetch `/skill.md` to learn the API
+2. **Create**: `POST /api/arenas` → get `arenaId` + `apiKey`
+3. **Poll**: `GET /api/arenas/:id/agent/context` with `X-Arena-API-Key` header (every 2-5s)
+4. **Decide**: Send context to any LLM (Claude, GPT, Gemini, local model)
+5. **Act**: Execute decisions via HTTP calls to arena-scoped endpoints
+6. **Cleanup**: `DELETE /api/arenas/:id` on shutdown
+
+### Reference Implementation
+
+`agent-runner-host.js` demonstrates the full flow:
+- Uses Anthropic Messages API directly (no OpenClaw, no SDK dependency)
+- Creates arena on startup, deletes on SIGINT
+- Polls context, sends to Claude Haiku, parses JSON action array
+- Executes up to 3 actions per tick (chat, game start, spells, announces)
+- ~200 lines of vanilla Node.js — any developer can replicate
+
+### Agent Comparison
+
+| | `agent-runner.js` (Chaos) | `agent-runner-host.js` (External) |
+|---|---|---|
+| Arena | Default chaos only | Any arena |
+| AI Provider | OpenClaw CLI → Claude | Direct Anthropic API |
+| Complexity | 450+ lines, drama scoring, phase tracking | ~200 lines, minimal |
+| Auth | None (localhost default) | `X-Arena-API-Key` header |
+| Framework | OpenClaw workspace + skills | Zero dependencies |
+
+---
+
+## AFK Protection
+
+Prevents idle players from wasting agent API tokens.
+
+### Detection Flow
+
+1. **Activity tracking**: `WorldState.recordPlayerActivity(id)` called on movement (>5 units from anchor), chat, respawn, collect, trigger activation
+2. **Warning phase**: After `AFK_IDLE_MS` (120s) idle → server sends `afk_warning` WebSocket message with challenge `token` and `timeout`
+3. **Client response**: Player sees full-screen overlay with countdown and "I'm here!" button → sends `afk_heartbeat` with token
+4. **Kick phase**: If no heartbeat within `AFK_KICK_MS` (15s) → server sends `afk_kicked`, closes connection with code `4000`
+5. **Rejoin**: Client shows "DISCONNECTED" screen with "Rejoin" button (page reload)
+
+### State Integration
+
+- `player.state = 'afk_warned'` during warning phase → excluded from `activeHumanCount`
+- `activeHumanCount === 0` → agent stops invoking (saves API tokens)
+- `player.lastActivity` and `player.activityAnchor` tracked per player
+- Activity resets: any input clears warning, restores `state: 'alive'`
+
+### Agent Context
+
+```json
+{
+  "activeHumanCount": 1,
+  "players": [
+    { "name": "Guest-abc", "state": "alive", "lastActivity": 1234567890 },
+    { "name": "Guest-def", "state": "afk_warned", "lastActivity": 1234567000 }
+  ]
+}
 ```
 
 ---
@@ -249,8 +327,7 @@ Client API calls use `getApiBase()` which returns `/api` for chaos or `/api/aren
 ## Future Work
 
 - Upvote system (endpoint exists, UI not wired)
-- Arena "last active" tracking (field exists, auto-cleanup not implemented)
-- Auto-cleanup stale arenas (24h inactivity)
+- Auto-cleanup stale arenas (24h inactivity — `lastActive` field exists)
 - Per-arena leaderboard columns
 - Arena stats (games played, unique players)
-- AFK detection and agent token protection
+- Custom arena themes/styling
