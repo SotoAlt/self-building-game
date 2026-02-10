@@ -2,6 +2,29 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.34.0] - 2026-02-10
+
+### Added
+- **Chase group rendering** — chase entities (spider, shark, ghost, ufo, dragon) now visually move on the client; previously meshes stayed at spawn position while only server-side collisions worked
+- **Entity facing direction** — chasing and patrolling entities rotate to face their movement direction via `_facing` yaw computed server-side, smoothly interpolated client-side with `shortAngleDist()`
+- **Bob animation** — floating entities (ghost, ufo, fish) bob up and down with sine wave animation (0.4u amplitude, ~3.1s period)
+- **`isFloating` property** — propagated through `applyBehavior()` to all children in a group; added to ghost, ufo, fish prefab `defaultProperties`
+- **Chase speed auto-scaling** — Composer validates creature bounding size and auto-assigns speed: tiny (4), small (2.5), player-sized (1.5), giant (1)
+- **Behavior-category coherence** — Composer silently downgrades `decoration` + `chase`/`patrol` to `static`
+- **Bounding box warning** — Composer logs warning when recipe exceeds 20-unit radius
+- **Default chaseRadius** — chase recipes without explicit `chaseRadius` get 20 automatically
+- **`bobSpeed` and `bobHeight` property ranges** — validated in Composer (0.5-5 and 0.1-2 respectively)
+- **Size guide in agent prompts** — size categories (Tiny/Small/Player/Large/Giant) and behavior rules added to agent-runner, SOUL.md, SKILL.md
+
+### Fixed
+- **Chase groups invisible** — `assembleGroup()` and `updateEntity()` only handled `kinematic` groups, not `chase` — chase entities now included in group target position logic
+- **Transparent entity clipping** — `depthWrite: false` on transparent materials prevents z-buffer artifacts
+- **Emissive glow too dim** — emissive intensity increased 0.5 → 0.7 for eyes, flames, crystals
+
+### Changed
+- **`isFloating` pass-through** — Composer validates `isFloating` at both recipe and child-prop level
+- **Composer `computeMaxExtent()` + `chaseSpeedForSize()`** — extracted as helper functions from validateRecipe
+
 ## [0.32.0] - 2026-02-09
 
 ### Added

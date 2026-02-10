@@ -2,7 +2,7 @@
 
 Design document for new mechanics in the Self-Building Game. Organized by implementation priority — agent creative tools first, environment mechanics second, game types third, player abilities last.
 
-**Current state (v0.32.0)**: 6 game types (reach, collect, survival, king, hot_potato, race), 6 entity types (platform, ramp, collectible, obstacle, trigger, decoration), 23 shapes (8 basic + 16 templates), 25 prefabs (incl. conveyor_belt, wind_zone), 8 spells, 16 arena templates (incl. hex_a_gone, slime_climb, wind_tunnel, king_plateau, checkpoint_dash, race_circuit), breakable platforms, bounce pads, speed strips, ice surfaces, conveyor belts, wind zones, rising hazard plane, 4 random obstacle patterns, compose system with per-child rotation + material controls + disk-cached recipes, toon shading with ACES tone mapping, player rotation, per-template randomization, agent variety enforcement with game history tracking.
+**Current state (v0.34.0)**: 6 game types (reach, collect, survival, king, hot_potato, race), 6 entity types (platform, ramp, collectible, obstacle, trigger, decoration), 23 shapes (8 basic + 16 templates), 25 prefabs (incl. conveyor_belt, wind_zone), 8 spells, 16 arena templates (incl. hex_a_gone, slime_climb, wind_tunnel, king_plateau, checkpoint_dash, race_circuit), breakable platforms, bounce pads, speed strips, ice surfaces, conveyor belts, wind zones, rising hazard plane, 4 random obstacle patterns, compose system with per-child rotation + material controls + disk-cached recipes + chase speed auto-scaling + behavior-category coherence, toon shading with ACES tone mapping + transparency depth fix, entity facing rotation, floating bob animation, player rotation, per-template randomization, agent variety enforcement with game history tracking.
 
 ---
 
@@ -392,7 +392,8 @@ The game uses a cel-shaded visual style (Fall Guys / Splatoon aesthetic) via a p
 - **Hemisphere**: sky `0xb0d0ff` / ground `0x404030` at 0.6 — natural vertical gradient
 - **Directional**: white at 1.2, position `[50, 100, 50]`, 2048px shadow maps
 - **Tone mapping**: ACES Filmic at 1.3 exposure, sRGB color space
-- **Entity self-illumination**: default emissive 0.12 (emissive entities 0.5)
+- **Entity self-illumination**: default emissive 0.12 (emissive entities 0.7)
+- **Transparency**: transparent materials use `depthWrite: false` to prevent z-buffer clipping
 
 ### Outline System
 
@@ -409,6 +410,25 @@ Players face their movement direction using `Math.atan2` on velocity:
 - **Local player**: threshold `> 0.5` speed, 15 rad/s lerp rate via `shortAngleDist()` helper
 - **Remote players**: direction inferred from position delta before lerp, 0.15 lerp rate
 - **Shortest-path**: angle wrapping to `[-PI, PI]` prevents 360-degree spins
+
+### Entity Facing Direction (v0.34.0)
+
+Chase and patrol entities rotate to face their movement direction:
+
+- **Server**: `WorldState.updateChasingEntities()` computes `_facing = Math.atan2(dx, dz)` on the group leader
+- **Server**: `WorldState.updateKinematicEntities()` computes `_facing` from path direction, accounting for `_pathDirection` reversal
+- **Client**: group animation loop applies `shortAngleDist()` lerp at 0.12 rate (~5-frame smooth turn)
+- **Guard**: `!group.userData.rotating` prevents conflict with spinning entities (spinning_blade, crystal)
+
+### Floating Bob Animation (v0.34.0)
+
+Entities with `isFloating: true` bob up and down mid-air:
+
+- **Server property**: `isFloating` propagated from prefab/recipe `defaultProperties` to all children via `applyBehavior()`
+- **Prefabs**: ghost, ufo, fish have `isFloating: true` by default
+- **Client**: `Math.sin(Date.now() * 0.002) * 0.4` — 0.4 unit amplitude, ~3.1s period
+- **Base Y**: uses `targetPosition.y` when available (chase/patrol groups), falls back to current `position.y`
+- **Guard**: skipped for rotating groups
 
 ---
 
@@ -445,47 +465,37 @@ Players face their movement direction using `Math.atan2` on velocity:
 - [x] Compose-only enforcement — `spawn_entity` and `spawn_prefab` deprecated in agent prompts
 - [x] Agent successfully creating custom recipes (dragon, chaos_hounds, forest_upside_down, super_computer)
 
-### Phase 1.6: Compose Refinement (NEXT)
+### Phase 1.6: Compose Refinement ✅ COMPLETED (v0.34.0)
 
 **Priority**: HIGH — compose works but creations need to look and behave right.
 
 **Scope**: 1 session
 
 #### Enemy Behavior & Chase Logic
-- [ ] Ensure composed hazards with `behavior: "chase"` actually follow the nearest player — currently chase behavior is applied by `applyBehavior()` in Prefabs.js but needs validation that custom compose recipes properly inherit chase logic
-- [ ] Chase speed should scale with creature size — a giant monster should be slower but more threatening, a small spider should be faster
-- [ ] Chase radius should default based on category — hazards get `chaseRadius: 20` if not specified
-- [ ] Patrol behavior needs proper path logic for composed groups — currently patrols back-and-forth linearly, should support circular patrol and waypoints
+- [x] Chase group rendering fix — `assembleGroup()` and `updateEntity()` now handle `chase` groups alongside `kinematic`
+- [x] Chase speed auto-scales with creature size — Composer `chaseSpeedForSize()`: tiny=4, small=2.5, player=1.5, giant=1
+- [x] Chase radius defaults to 20 if not specified — Composer auto-assigns `chaseRadius: 20`
+- [ ] Circular patrol and waypoints — deferred (linear patrol is sufficient for current prefabs)
 
-#### Orientation & Rotation Validation
-- [ ] Composed entities should face their movement direction — a chasing creature should rotate to face the player, not slide sideways
-- [ ] Client-side: apply `lookAt()` or yaw rotation toward velocity direction for chasing/patrolling groups
-- [ ] Agent recipes with `rotation` on the root group should define the default facing — children rotate relative to parent
-- [ ] Validate rotation values in Composer.js — clamp to valid range, warn on nonsensical values (e.g. rotation on a sphere does nothing)
+#### Orientation & Rotation
+- [x] Server computes `_facing` yaw on chase group leaders (`Math.atan2(dx, dz)` in `updateChasingEntities`)
+- [x] Server computes `_facing` yaw on kinematic entities from path direction (accounts for `_pathDirection` reversal)
+- [x] Client smooth yaw rotation via `shortAngleDist()` lerp at 0.12 rate, guarded by `!rotating`
 
 #### Size Awareness & Scale Guidelines
-- [ ] Define size categories in agent prompt and SOUL.md:
-  - **Tiny**: 0.3-0.5 units (bugs, coins, crystals) — player is ~1.8 units tall
-  - **Small**: 0.5-1.5 units (spiders, barrels, mushrooms)
-  - **Player-sized**: 1.5-2.5 units (enemies, NPCs, furniture)
-  - **Large**: 3-6 units (vehicles, trees, small buildings)
-  - **Giant**: 8-15 units (bosses, towers, large structures)
-- [ ] Composer.js validation: warn if total bounding box exceeds 20 units in any dimension
-- [ ] Agent prompt: include player height reference ("player capsule is 1.8 units tall") so agent scales creatures appropriately
-- [ ] Prefab definitions should have consistent sizing — audit existing 23 prefabs for proper scale
+- [x] Size categories defined in agent-runner prompt, SOUL.md, and SKILL.md (Tiny/Small/Player/Large/Giant)
+- [x] Composer bounding box warning when recipe exceeds 20 units
+- [x] Player height reference in all agent prompts (1.8 units)
 
 #### Movement-to-Form Coherence
-- [ ] Creatures with legs (spider, chaos_hounds) should use patrol/chase — not static
-- [ ] Decorations (trees, towers, crystals) should be static or rotate — not chase
-- [ ] Composer.js: validate behavior matches category — `decoration` category rejects `chase` behavior, `hazard` category requires a movement behavior
-- [ ] Flying creatures (ufo, ghost, birds) should have Y-axis offset in patrol — patrol at elevated height, not ground level
-- [ ] Speed should match form — a boulder rolls slow (speed 2), a blade spins fast, a spider scurries (speed 5-8)
+- [x] Composer behavior-category coherence — `decoration` + `chase`/`patrol` silently downgraded to `static`
+- [x] Flying creatures (ghost, ufo, fish) get `isFloating: true` — bob animation via sine wave
+- [x] Chase speed auto-scales by size — behavior rules in agent prompts
 
 #### Visual Polish
-- [ ] Composed groups should cast unified shadows — verify `THREE.Group` shadow settings
-- [ ] Emissive children (eyes, flames, crystals) should be more visible — increase emissiveIntensity for `emissive: true`
-- [ ] Opacity children need `depthWrite: false` for proper transparency rendering
-- [ ] Add subtle bob animation for floating/flying composed entities (ghost, ufo, birds)
+- [x] Emissive intensity increased 0.5 → 0.7 for `emissive: true` entities (eyes, flames, crystals)
+- [x] Transparent materials use `depthWrite: false` — prevents z-buffer clipping artifacts
+- [x] Bob animation for floating groups — 0.4u amplitude, ~3.1s period, uses `targetPosition.y` as base
 
 ### Phase 2: Environment Mechanics ✅ COMPLETED (v0.26.0)
 
