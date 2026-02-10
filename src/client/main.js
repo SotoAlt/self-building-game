@@ -338,6 +338,7 @@ function setupMobileControls() {
       <button id="btn-jump" class="mobile-btn jump-btn">JUMP</button>
       <button id="btn-sprint" class="mobile-btn sprint-btn">SPRINT</button>
       <button id="btn-ready-mobile" class="mobile-btn ready-btn">READY</button>
+      <button id="btn-lb-mobile" class="mobile-btn lb-btn">LB</button>
     </div>
     <div id="joystick-visual" style="display:none">
       <div id="joystick-base"></div>
@@ -403,6 +404,7 @@ function setupMobileControls() {
     .jump-btn { background: rgba(46, 204, 113, 0.4); border-color: #2ecc71; }
     .sprint-btn { background: rgba(52, 152, 219, 0.4); border-color: #3498db; }
     .ready-btn { background: rgba(241, 196, 15, 0.4); border-color: #f1c40f; }
+    .lb-btn { background: rgba(155, 89, 182, 0.4); border-color: #9b59b6; width: 50px !important; height: 50px !important; font-size: 10px !important; }
     #chat-toggle-btn { display: none; }
     /* Mobile responsive adjustments */
     @media (max-width: 768px) {
@@ -414,7 +416,7 @@ function setupMobileControls() {
       #controls { display: none !important; }
       #game-status { padding: 8px; min-width: 100px; }
       #game-timer { font-size: 22px; }
-      #leaderboard-panel { width: 160px; top: 100px; }
+      #leaderboard-panel { width: 90vw; max-width: 320px; }
       #bribe-panel { bottom: 10px; right: auto; left: 50%; transform: translateX(-50%); }
       .bribe-btn { padding: 8px 16px; font-size: 12px; }
       #ready-indicator { bottom: 45px; right: 10px; font-size: 11px; padding: 5px 8px; }
@@ -444,7 +446,7 @@ function setupMobileControls() {
       #game-status { padding: 6px 12px !important; min-width: 80px !important; top: 8px !important; }
       #game-timer { font-size: 18px !important; }
       #game-phase { font-size: 10px !important; }
-      #leaderboard-panel { width: 140px !important; top: 8px !important; font-size: 10px !important; }
+      #leaderboard-panel { width: 85vw !important; max-width: 300px !important; font-size: 12px !important; }
       #ui { max-width: 150px !important; padding: 6px !important; font-size: 10px !important; }
       #ui h1 { font-size: 12px !important; }
       #chat-panel {
@@ -588,6 +590,20 @@ function setupMobileControls() {
     updateReadyUI();
     readyBtn.classList.toggle('pressed', state.isReady);
   }, { passive: false });
+
+  // Leaderboard toggle button (mobile)
+  const lbBtn = document.getElementById('btn-lb-mobile');
+  if (lbBtn) {
+    lbBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const panel = document.getElementById('leaderboard-panel');
+      if (!panel) return;
+      const isVisible = panel.style.display === 'block';
+      panel.style.display = isVisible ? 'none' : 'block';
+      lbBtn.classList.toggle('pressed', !isVisible);
+      if (!isVisible) fetchLeaderboard();
+    }, { passive: false });
+  }
 
   // Attempt orientation lock
   if (screen.orientation?.lock) {
@@ -1717,6 +1733,19 @@ document.addEventListener('keydown', (e) => {
     sendToServer('ready', { ready: state.isReady });
     updateReadyUI();
   }
+
+  // L to toggle leaderboard
+  if (key === 'l') {
+    const panel = document.getElementById('leaderboard-panel');
+    if (!panel) return;
+
+    const isVisible = panel.style.display === 'block';
+    panel.style.display = isVisible ? 'none' : 'block';
+
+    if (!isVisible) {
+      fetchLeaderboard();
+    }
+  }
 });
 
 document.addEventListener('keyup', (e) => {
@@ -1856,17 +1885,16 @@ async function fetchLeaderboard() {
 }
 
 function updateLeaderboardUI(leaderboard) {
-  const panel = document.getElementById('leaderboard-panel');
   const entries = document.getElementById('leaderboard-entries');
-  if (!panel || !entries) return;
+  if (!entries) return;
 
+  // Just update content — TAB key controls visibility
+  entries.innerHTML = '';
   if (!leaderboard || leaderboard.length === 0) {
-    panel.style.display = 'none';
+    entries.innerHTML = '<div style="text-align:center;color:#888;padding:12px;">No games played yet</div>';
     return;
   }
 
-  panel.style.display = 'block';
-  entries.innerHTML = '';
   for (let i = 0; i < leaderboard.length; i++) {
     const entry = leaderboard[i];
     const row = document.createElement('div');
@@ -1884,7 +1912,11 @@ function updateLeaderboardUI(leaderboard) {
     wins.className = 'lb-wins';
     wins.textContent = `${entry.wins}W`;
 
-    row.append(rank, name, wins);
+    const games = document.createElement('span');
+    games.className = 'lb-games';
+    games.textContent = `${entry.gamesPlayed || 0}G`;
+
+    row.append(rank, name, wins, games);
     entries.appendChild(row);
   }
 }

@@ -89,10 +89,42 @@ function scheduleAutoStart() {
     const allTemplates = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell', 'hex_a_gone', 'slime_climb', 'wind_tunnel', 'treasure_trove', 'ice_rink', ...newTypeTemplates];
     const recentTemplates = worldState.gameHistory.slice(-3).map(g => g.template);
     const playedTypes = new Set(worldState.gameHistory.map(g => g.type));
-    // Strongly prefer unplayed new types
-    const unplayedNew = newTypeTemplates.filter(t => !recentTemplates.includes(t) && !playedTypes.has(t.includes('king') ? 'king' : t.includes('hot_potato') ? 'hot_potato' : 'race'));
-    const available = allTemplates.filter(t => !recentTemplates.includes(t));
-    const pool = unplayedNew.length > 0 ? unplayedNew : (available.length > 0 ? available : allTemplates);
+
+    function getTemplateGameType(templateName) {
+      if (templateName.includes('king')) return 'king';
+      if (templateName.includes('hot_potato')) return 'hot_potato';
+      if (templateName.includes('checkpoint') || templateName.includes('race_circuit')) return 'race';
+      if (templateName.includes('shrinking') || templateName.includes('hex_a_gone') || templateName.includes('ice_rink') || templateName === 'blank_canvas') return 'survival';
+      if (templateName.includes('floating') || templateName.includes('treasure')) return 'collect';
+      return 'reach';
+    }
+
+    function isTemplatePlayable(templateName, playerCount) {
+      const gameType = getTemplateGameType(templateName);
+      const minRequired = GAME_TYPES[gameType]?.minPlayers || 1;
+      return playerCount >= minRequired;
+    }
+
+    const playerCount = humanPlayers.length;
+    const playableTemplates = allTemplates.filter(t => isTemplatePlayable(t, playerCount));
+
+    const unplayedNewTemplates = newTypeTemplates.filter(t => {
+      const isPlayable = playableTemplates.includes(t);
+      const isNotRecent = !recentTemplates.includes(t);
+      const isUnplayedType = !playedTypes.has(getTemplateGameType(t));
+      return isPlayable && isNotRecent && isUnplayedType;
+    });
+
+    const availableTemplates = playableTemplates.filter(t => !recentTemplates.includes(t));
+
+    function selectTemplatePool() {
+      if (unplayedNewTemplates.length > 0) return unplayedNewTemplates;
+      if (availableTemplates.length > 0) return availableTemplates;
+      if (playableTemplates.length > 0) return playableTemplates;
+      return allTemplates;
+    }
+
+    const pool = selectTemplatePool();
     const template = pool[Math.floor(Math.random() * pool.length)];
     console.log(`[AutoStart] Agent didn't start a game in ${AUTO_START_DELAY / 1000}s — auto-starting with ${template}`);
     fetch(`http://localhost:${PORT}/api/game/start`, {
@@ -583,6 +615,17 @@ app.get('/api/game/types', (req, res) => {
 
 // Internal helper to create + start a MiniGame (used by /api/game/start)
 function startGameInternal(gameType, options, res) {
+  const gameTypeDef = GAME_TYPES[gameType];
+  const minRequired = gameTypeDef?.minPlayers || 1;
+  const humanPlayers = worldState.getPlayers().filter(p => p.type !== 'ai');
+
+  if (humanPlayers.length < minRequired) {
+    const gameName = gameTypeDef?.name || gameType;
+    return res.status(400).json({
+      error: `${gameName} requires ${minRequired}+ players (${humanPlayers.length} connected)`
+    });
+  }
+
   const { timeLimit, targetEntityId, goalPosition, collectibleCount, countdownTime } = options;
 
   try {

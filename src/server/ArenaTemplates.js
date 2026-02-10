@@ -482,7 +482,7 @@ export const TEMPLATES = {
     gameType: 'hot_potato',
     floorType: 'none',
     environment: { skyColor: '#0a0a1a', fogColor: '#0a0a1a', fogFar: 120, ambientColor: '#332233', ambientIntensity: 0.35, sunColor: '#ff6666', sunIntensity: 0.7 },
-    respawnPoint: [0, 4, 0],
+    respawnPoint: [0, 6, 0],
     goalPosition: null,
     entities: [
       // Central platform
