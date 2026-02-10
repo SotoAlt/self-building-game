@@ -2025,6 +2025,97 @@ function showConnectionWarning(disconnected) {
   }
 }
 
+// AFK Warning UI
+let _afkOverlay = null;
+let _afkCountdownInterval = null;
+
+function showAfkWarning(token, timeout) {
+  hideAfkWarning();
+
+  _afkOverlay = document.createElement('div');
+  _afkOverlay.id = 'afk-overlay';
+  _afkOverlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#ff6b6b;font-size:32px;font-weight:bold;margin-bottom:16px;text-shadow:0 0 20px rgba(255,107,107,0.5);';
+  title.textContent = 'ARE YOU STILL THERE?';
+
+  const countdown = document.createElement('div');
+  countdown.style.cssText = 'color:#fff;font-size:20px;margin-bottom:24px;';
+  let remaining = Math.ceil(timeout / 1000);
+  countdown.textContent = `You'll be kicked in ${remaining}s...`;
+  _afkCountdownInterval = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(_afkCountdownInterval);
+      countdown.textContent = 'Kicking...';
+    } else {
+      countdown.textContent = `You'll be kicked in ${remaining}s...`;
+    }
+  }, 1000);
+
+  const btn = document.createElement('button');
+  btn.style.cssText = 'padding:16px 48px;font-size:22px;font-weight:bold;background:#4caf50;color:#fff;border:none;border-radius:12px;cursor:pointer;transition:transform 0.1s;';
+  btn.textContent = "I'm here!";
+  btn.onmouseenter = () => btn.style.transform = 'scale(1.05)';
+  btn.onmouseleave = () => btn.style.transform = 'scale(1)';
+  btn.onclick = () => {
+    if (state.room) state.room.send('afk_heartbeat', { token });
+    hideAfkWarning();
+  };
+
+  _afkOverlay.appendChild(title);
+  _afkOverlay.appendChild(countdown);
+  _afkOverlay.appendChild(btn);
+  document.body.appendChild(_afkOverlay);
+
+  // Any keypress also dismisses (hideAfkWarning cleans up this listener)
+  const keyHandler = () => {
+    if (state.room) state.room.send('afk_heartbeat', { token });
+    hideAfkWarning();
+  };
+  document.addEventListener('keydown', keyHandler);
+  _afkOverlay._keyHandler = keyHandler;
+}
+
+function hideAfkWarning() {
+  if (_afkCountdownInterval) {
+    clearInterval(_afkCountdownInterval);
+    _afkCountdownInterval = null;
+  }
+  if (_afkOverlay) {
+    if (_afkOverlay._keyHandler) {
+      document.removeEventListener('keydown', _afkOverlay._keyHandler);
+    }
+    _afkOverlay.remove();
+    _afkOverlay = null;
+  }
+}
+
+function showAfkKickedScreen() {
+  hideAfkWarning();
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#ff6b6b;font-size:36px;font-weight:bold;margin-bottom:12px;';
+  title.textContent = 'DISCONNECTED';
+
+  const reason = document.createElement('div');
+  reason.style.cssText = 'color:#aaa;font-size:18px;margin-bottom:32px;';
+  reason.textContent = 'You were kicked for being AFK.';
+
+  const btn = document.createElement('button');
+  btn.style.cssText = 'padding:16px 48px;font-size:20px;font-weight:bold;background:#2196f3;color:#fff;border:none;border-radius:12px;cursor:pointer;';
+  btn.textContent = 'Rejoin';
+  btn.onclick = () => location.reload();
+
+  overlay.appendChild(title);
+  overlay.appendChild(reason);
+  overlay.appendChild(btn);
+  document.body.appendChild(overlay);
+}
+
 const MAX_VISIBLE_ANNOUNCEMENTS = 3;
 
 function enforceAnnouncementLimit(container) {
@@ -2250,6 +2341,10 @@ async function connectToServer() {
       console.warn('[Network] Disconnected from room, code:', code);
       state.room = null;
       state.connected = false;
+      if (code === 4000) {
+        showAfkKickedScreen();
+        return;
+      }
       showConnectionWarning(true);
       if (code !== 1000) {
         setTimeout(attemptReconnect, 1000);
@@ -2259,6 +2354,15 @@ async function connectToServer() {
     room.onError((code, message) => {
       console.error('[Network] Room error:', code, message);
     });
+
+    // AFK detection
+    room.onMessage('afk_warning', ({ token, timeout }) => {
+      showAfkWarning(token, timeout);
+    });
+    room.onMessage('afk_cleared', () => {
+      hideAfkWarning();
+    });
+    // Note: afk_kicked is handled via onLeave(4000) above to avoid double-overlay
 
     // Entity events
     room.onMessage('entity_spawned', (entity) => {

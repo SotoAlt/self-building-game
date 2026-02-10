@@ -28,7 +28,7 @@ import { getPrefabInfo } from './Prefabs.js';
 import { compose, loadCacheFromDisk, getComposerStats } from './Composer.js';
 import { randomizeTemplate } from './ArenaTemplates.js';
 import { ArenaManager } from './ArenaManager.js';
-import { createArenaMiddleware } from './arenaMiddleware.js';
+import { createArenaMiddleware, requireArenaKey } from './arenaMiddleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,6 +38,9 @@ const MIN_LOBBY_MS = 15000;
 const AUTO_START_DELAY = 45000;
 const ANNOUNCEMENT_COOLDOWN = 5000;
 const AGENT_CHAT_COOLDOWN = 3000;
+const AFK_IDLE_MS = 120000;
+const AFK_KICK_MS = 15000;
+const AFK_CHECK_INTERVAL = 5000;
 
 const NEW_TYPE_TEMPLATES = ['king_plateau', 'king_islands', 'hot_potato_arena', 'hot_potato_platforms', 'checkpoint_dash', 'race_circuit'];
 const ALL_TEMPLATES = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell', 'hex_a_gone', 'slime_climb', 'wind_tunnel', 'treasure_trove', 'ice_rink', ...NEW_TYPE_TEMPLATES];
@@ -60,6 +63,9 @@ const distPath = path.join(__dirname, '../../dist');
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(distPath));
 }
+
+// Self-documenting API — any AI agent can discover our API by fetching /skill.md
+app.get('/skill.md', (req, res) => res.sendFile(path.join(__dirname, '../../docs/ARENA-HOST-SKILL.md')));
 
 // ============================================
 // Global Singletons (shared across all arenas)
@@ -524,6 +530,18 @@ app.post('/api/arenas/:id/upvote', (req, res) => {
 
 const gameRouter = express.Router({ mergeParams: true });
 
+// Require API key for all write operations (POST/PATCH/DELETE) except player-facing endpoints.
+// Default arena (chaos) passes through automatically — requireArenaKey skips it.
+const PLAYER_PATHS = new Set(['/chat/send', '/chat/bridge', '/bribe', '/tokens/faucet',
+  '/agent-player/join', '/agent-player/move', '/agent-player/chat', '/agent-player/leave']);
+gameRouter.use((req, res, next) => {
+  if (req.method === 'GET') return next();
+  // Player-facing endpoints don't need arena key (have their own auth)
+  if (PLAYER_PATHS.has(req.path)) return next();
+  // Bribe honor needs key (agent operation)
+  requireArenaKey(req, res, next);
+});
+
 // Health check
 gameRouter.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now(), arenaId: req.arena.id });
@@ -537,7 +555,8 @@ gameRouter.get('/agent/context', (req, res) => {
   const sinceEvent = parseInt(req.query.since_event) || 0;
 
   const players = ws.getPlayers().map(p => ({
-    id: p.id, name: p.name, type: p.type, position: p.position, state: p.state
+    id: p.id, name: p.name, type: p.type, position: p.position, state: p.state,
+    lastActivity: p.lastActivity
   }));
 
   const allMessages = ws.getMessages(sinceMessage);
@@ -548,6 +567,7 @@ gameRouter.get('/agent/context', (req, res) => {
     arenaId: arena.id,
     players,
     playerCount: players.length,
+    activeHumanCount: ws.getActiveHumanCount(),
     gameState: ws.getGameState(),
     entities: Array.from(ws.entities.values()).map(e => ({
       id: e.id, type: e.type, position: e.position,
@@ -1703,6 +1723,42 @@ setInterval(() => {
     // 6. AI players
     for (const ai of arena.aiPlayers) {
       ai.update(delta);
+    }
+
+    // 7. AFK detection (throttled)
+    if (now - arena._lastAfkCheck >= AFK_CHECK_INTERVAL) {
+      arena._lastAfkCheck = now;
+      const room = arena.gameRoom;
+
+      for (const player of ws.players.values()) {
+        if (player.type === 'ai') continue;
+
+        // Kick phase: player was warned and didn't respond in time
+        if (player.state === 'afk_warned') {
+          if (now - player.afkWarningSentAt < AFK_KICK_MS) continue;
+          const client = room?.getClient(player.id);
+          if (client) {
+            client.send('afk_kicked', { reason: 'You were kicked for being AFK.' });
+            client.leave(4000);
+          }
+          console.log(`[AFK] Kicked ${player.name} from arena ${arena.id}`);
+          continue;
+        }
+
+        // Warning phase: player idle too long
+        if (player.state === 'dead') continue;
+        if (now - player.lastActivity < AFK_IDLE_MS) continue;
+
+        const token = Math.random().toString(36).slice(2, 10);
+        player.afkWarningToken = token;
+        player.afkWarningSentAt = now;
+        player.state = 'afk_warned';
+        const client = room?.getClient(player.id);
+        if (client) {
+          client.send('afk_warning', { token, timeout: AFK_KICK_MS });
+        }
+        console.log(`[AFK] Warning sent to ${player.name} in arena ${arena.id}`);
+      }
     }
   }
 }, 100);

@@ -392,7 +392,11 @@ export class WorldState {
       position: [...this.respawnPoint],
       velocity: [0, 0, 0],
       state: initialState,
-      joinedAt: Date.now()
+      joinedAt: Date.now(),
+      lastActivity: Date.now(),
+      activityAnchor: [...this.respawnPoint],
+      afkWarningToken: null,
+      afkWarningSentAt: null,
     };
 
     // Reset lobby timer when first human joins an empty lobby
@@ -427,7 +431,17 @@ export class WorldState {
     const player = this.players.get(id);
     if (!player) return null;
 
-    if (updates.position) player.position = [...updates.position];
+    if (updates.position) {
+      player.position = [...updates.position];
+
+      // Check displacement from anchor for AFK detection (>5 units = real movement)
+      const [ax, ay, az] = player.activityAnchor;
+      const [px, py, pz] = player.position;
+      const dist = Math.sqrt((px - ax) ** 2 + (py - ay) ** 2 + (pz - az) ** 2);
+      if (dist > 5) {
+        this._markActive(player);
+      }
+    }
     if (updates.velocity) player.velocity = [...updates.velocity];
     if (updates.state) player.state = updates.state;
 
@@ -440,6 +454,30 @@ export class WorldState {
       this.players.delete(id);
       console.log(`[WorldState] Player left: ${player.name}`);
     }
+  }
+
+  recordPlayerActivity(id) {
+    const player = this.players.get(id);
+    if (!player) return;
+    this._markActive(player);
+  }
+
+  _markActive(player) {
+    player.lastActivity = Date.now();
+    player.activityAnchor = [...player.position];
+    if (player.state === 'afk_warned') {
+      player.state = 'alive';
+      player.afkWarningToken = null;
+      player.afkWarningSentAt = null;
+    }
+  }
+
+  getActiveHumanCount() {
+    let count = 0;
+    for (const p of this.players.values()) {
+      if (p.type !== 'ai' && p.state !== 'afk_warned') count++;
+    }
+    return count;
   }
 
   getPlayers() {

@@ -81,6 +81,8 @@ export class GameRoom extends Room {
       if (now - lastDeath < 2000) return; // rate limit
       this._deathTimestamps.set(client.sessionId, now);
 
+      this.worldState.recordPlayerActivity(client.sessionId);
+
       const player = this.worldState.players.get(client.sessionId);
       const name = player?.name || client.sessionId.slice(0, 8);
       this.worldState.updatePlayer(client.sessionId, { state: 'dead' });
@@ -110,6 +112,7 @@ export class GameRoom extends Room {
     this.onMessage('respawn', (client) => {
       if (!this.worldState) return;
 
+      this.worldState.recordPlayerActivity(client.sessionId);
       const player = this.worldState.players.get(client.sessionId);
       const name = player?.name || client.sessionId.slice(0, 8);
       const rp = this.worldState.respawnPoint || [0, 2, 0];
@@ -142,6 +145,8 @@ export class GameRoom extends Room {
     this.onMessage('collect', (client, data) => {
       if (!this.worldState) return;
 
+      this.worldState.recordPlayerActivity(client.sessionId);
+
       // Only allow collecting entities that still exist
       const entity = this.worldState.entities.get(data.entityId);
       if (!entity || entity.type !== 'collectible') return;
@@ -167,6 +172,8 @@ export class GameRoom extends Room {
 
     // Trigger activation (for goals, checkpoints)
     this.onMessage('trigger_activated', (client, data) => {
+      if (!this.worldState) return;
+      this.worldState.recordPlayerActivity(client.sessionId);
       console.log(`[GameRoom] Trigger activated: ${data.entityId} by ${client.sessionId}`);
 
       this.broadcast('trigger_activated', {
@@ -200,6 +207,7 @@ export class GameRoom extends Room {
       }
       this._chatRateLimit.set(client.sessionId, now);
 
+      this.worldState.recordPlayerActivity(client.sessionId);
       const player = this.worldState.players.get(client.sessionId);
       const sender = player?.name || client.sessionId.slice(0, 8);
 
@@ -214,6 +222,7 @@ export class GameRoom extends Room {
     // Breakable platform step notification
     this.onMessage('platform_step', (client, { entityId }) => {
       if (!this.worldState) return;
+      this.worldState.recordPlayerActivity(client.sessionId);
       const started = this.worldState.startBreaking(entityId);
       if (!started) return;
 
@@ -221,8 +230,26 @@ export class GameRoom extends Room {
       this.broadcast('platform_cracking', { id: entityId, breakAt: info.breakAt });
     });
 
+    // AFK heartbeat response — player clicked "I'm here!"
+    this.onMessage('afk_heartbeat', (client, data) => {
+      if (!this.worldState) return;
+      const player = this.worldState.players.get(client.sessionId);
+      if (!player || player.state !== 'afk_warned') return;
+      if (data.token !== player.afkWarningToken) return;
+
+      this.worldState.recordPlayerActivity(client.sessionId);
+      client.send('afk_cleared');
+    });
+
     // Placeholder for future server-side physics (clients handle physics currently)
     this.setSimulationInterval(() => {}, 1000 / 60);
+  }
+
+  getClient(sessionId) {
+    for (const client of this.clients) {
+      if (client.sessionId === sessionId) return client;
+    }
+    return null;
   }
 
   onJoin(client, options) {

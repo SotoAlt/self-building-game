@@ -65,6 +65,7 @@ export class ArenaInstance {
     // Tick timestamps
     this.lastStateBroadcast = 0;
     this.lastHazardBroadcast = 0;
+    this._lastAfkCheck = 0;
   }
 
   broadcastToRoom(event, data) {

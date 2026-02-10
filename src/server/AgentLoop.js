@@ -88,14 +88,6 @@ export class AgentLoop {
     return this.worldState.players.size;
   }
 
-  get humanPlayerCount() {
-    let count = 0;
-    for (const p of this.worldState.players.values()) {
-      if (p.type !== 'ai') count++;
-    }
-    return count;
-  }
-
   pause() {
     this.paused = true;
     console.log('[AgentLoop] Paused — agent will not invoke');
@@ -108,9 +100,9 @@ export class AgentLoop {
 
   async tick() {
     try {
-      // Don't invoke if paused or no human players
+      // Don't invoke if paused or no active human players
       if (this.paused) return;
-      if (this.humanPlayerCount === 0) return;
+      if (this.worldState.getActiveHumanCount() === 0) return;
 
       if (Date.now() - this.lastInvokeTime < MIN_INVOKE_INTERVAL) return;
 
