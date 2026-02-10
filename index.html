@@ -108,7 +108,7 @@
     }
     #announcements {
       position: fixed;
-      top: 60px;
+      top: 120px;
       left: 50%;
       transform: translateX(-50%);
       z-index: 200;
@@ -360,23 +360,6 @@
     .lb-name { flex: 1; }
     .lb-wins { color: #2ecc71; width: 50px; text-align: right; font-weight: bold; }
     .lb-games { color: #95a5a6; width: 50px; text-align: right; font-size: 12px; }
-    /* Ready indicator */
-    #ready-indicator {
-      position: fixed;
-      bottom: 70px;
-      right: 20px;
-      z-index: 100;
-      background: rgba(0, 0, 0, 0.6);
-      padding: 6px 12px;
-      border-radius: 6px;
-      color: rgba(255,255,255,0.4);
-      font-size: 11px;
-    }
-    #ready-indicator.is-ready {
-      color: #2ecc71;
-      border: 1px solid #2ecc71;
-      background: rgba(46,204,113,0.15);
-    }
     /* Game status phase variants */
     #game-status.building { border: 2px solid #9b59b6; animation: statusPulse 1.5s ease-in-out infinite; }
     #game-status.lobby { border: 2px solid rgba(155,89,182,0.6); }
@@ -958,7 +941,7 @@
     <input id="chat-input" placeholder="Chat... (@agent to tag)" maxlength="200" />
   </div>
   <div id="controls" style="display:none">
-    WASD: Move | Space: Jump | Click: Mouse Look | L: Leaderboard | R: Ready | Enter: Chat
+    WASD: Move | Space: Jump | Click: Mouse Look | L: Leaderboard | Enter: Chat
   </div>
   <div id="toast-container"></div>
   <div id="announcements"></div>
@@ -1037,7 +1020,6 @@
       <div id="bribe-options-list"></div>
     </div>
   </div>
-  <div id="ready-indicator">Press R to ready up</div>
   <div id="debug-panel" style="display:none">
     <div style="font-weight:bold; margin-bottom:6px;">Debug</div>
     <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11px;">

@@ -208,36 +208,6 @@ export class GameRoom extends Room {
       this.broadcast('platform_cracking', { id: entityId, breakAt: info.breakAt });
     });
 
-    // Player ready toggle
-    this.onMessage('ready', (client, data) => {
-      if (!this.worldState) return;
-
-      const ready = !!data.ready;
-      const player = this.worldState.setPlayerReady(client.sessionId, ready);
-      if (!player) return;
-
-      // Auto-ready all AI bots when a human readies up
-      if (ready) {
-        for (const [id, p] of this.worldState.players) {
-          if (p.type === 'ai' && !p.ready) {
-            this.worldState.setPlayerReady(id, true);
-            this.broadcast('player_ready', { id, name: p.name, ready: true });
-          }
-        }
-      }
-
-      this.broadcast('player_ready', {
-        id: client.sessionId,
-        name: player.name,
-        ready
-      });
-
-      if (ready) {
-        const { ready: readyHumans, total: totalHumans } = this.worldState.getHumanReadyCount();
-        this._systemMessage(`${player.name} is ready (${readyHumans}/${totalHumans} players)`);
-      }
-    });
-
     // Set simulation interval (physics tick)
     this.setSimulationInterval((deltaTime) => {
       // Server-side physics updates could go here

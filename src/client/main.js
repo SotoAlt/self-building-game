@@ -48,7 +48,6 @@ const state = {
   gameState: { phase: 'lobby' },
   announcements: new Map(),
   connected: false,
-  isReady: false,
   chatFocused: false,
   activeEffects: [],
   respawnPoint: [0, 2, 0],
@@ -180,7 +179,7 @@ ground.receiveShadow = true;
 scene.add(ground);
 
 // Grid helper
-const gridHelper = new THREE.GridHelper(200, 50, 0x444444, 0x333333);
+const gridHelper = new THREE.GridHelper(200, 50, 0x555555, 0x444444);
 scene.add(gridHelper);
 
 // Sky gradient dome
@@ -337,7 +336,6 @@ function setupMobileControls() {
     <div id="mobile-buttons">
       <button id="btn-jump" class="mobile-btn jump-btn">JUMP</button>
       <button id="btn-sprint" class="mobile-btn sprint-btn">SPRINT</button>
-      <button id="btn-ready-mobile" class="mobile-btn ready-btn">READY</button>
       <button id="btn-lb-mobile" class="mobile-btn lb-btn">LB</button>
     </div>
     <div id="joystick-visual" style="display:none">
@@ -403,7 +401,6 @@ function setupMobileControls() {
     }
     .jump-btn { background: rgba(46, 204, 113, 0.4); border-color: #2ecc71; }
     .sprint-btn { background: rgba(52, 152, 219, 0.4); border-color: #3498db; }
-    .ready-btn { background: rgba(241, 196, 15, 0.4); border-color: #f1c40f; }
     .lb-btn { background: rgba(155, 89, 182, 0.4); border-color: #9b59b6; width: 50px !important; height: 50px !important; font-size: 10px !important; }
     #chat-toggle-btn { display: none; }
     /* Mobile responsive adjustments */
@@ -419,9 +416,8 @@ function setupMobileControls() {
       #leaderboard-panel { width: 90vw; max-width: 320px; }
       #bribe-panel { bottom: 10px; right: auto; left: 50%; transform: translateX(-50%); }
       .bribe-btn { padding: 8px 16px; font-size: 12px; }
-      #ready-indicator { bottom: 45px; right: 10px; font-size: 11px; padding: 5px 8px; }
       .announcement { font-size: 14px; padding: 10px 20px; }
-      #announcements { top: 40px; }
+      #announcements { top: 100px; }
       #chat-toggle-btn {
         display: block;
         position: fixed; bottom: 10px; left: 10px;
@@ -454,10 +450,9 @@ function setupMobileControls() {
         bottom: 80px !important; left: 10px !important;
       }
       #chat-messages { max-height: 100px !important; }
-      #announcements { top: 8px !important; }
+      #announcements { top: 70px !important; }
       .announcement { font-size: 12px !important; padding: 6px 14px !important; }
       #bribe-panel { bottom: 80px !important; }
-      #ready-indicator { bottom: 80px !important; }
       #chat-toggle-btn { bottom: 80px !important; left: 10px !important; }
     }
   `;
@@ -565,7 +560,6 @@ function setupMobileControls() {
   // Action buttons
   const jumpBtn = document.getElementById('btn-jump');
   const sprintBtn = document.getElementById('btn-sprint');
-  const readyBtn = document.getElementById('btn-ready-mobile');
 
   jumpBtn.addEventListener('touchstart', (e) => {
     e.preventDefault();
@@ -581,14 +575,6 @@ function setupMobileControls() {
     e.preventDefault();
     keys.shift = !keys.shift;
     sprintBtn.classList.toggle('pressed', keys.shift);
-  }, { passive: false });
-
-  readyBtn.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    state.isReady = !state.isReady;
-    sendToServer('ready', { ready: state.isReady });
-    updateReadyUI();
-    readyBtn.classList.toggle('pressed', state.isReady);
   }, { passive: false });
 
   // Leaderboard toggle button (mobile)
@@ -1727,13 +1713,6 @@ document.addEventListener('keydown', (e) => {
     spectatorFollowIndex = key === '0' ? -1 : parseInt(key) - 1;
   }
 
-  // R to toggle ready
-  if (key === 'r') {
-    state.isReady = !state.isReady;
-    sendToServer('ready', { ready: state.isReady });
-    updateReadyUI();
-  }
-
   // L to toggle leaderboard
   if (key === 'l') {
     const panel = document.getElementById('leaderboard-panel');
@@ -1918,23 +1897,6 @@ function updateLeaderboardUI(leaderboard) {
 
     row.append(rank, name, wins, games);
     entries.appendChild(row);
-  }
-}
-
-// ============================================
-// Ready System
-// ============================================
-
-function updateReadyUI() {
-  const indicator = document.getElementById('ready-indicator');
-  if (!indicator) return;
-
-  if (state.isReady) {
-    indicator.textContent = 'READY';
-    indicator.classList.add('is-ready');
-  } else {
-    indicator.textContent = 'Press R to ready up';
-    indicator.classList.remove('is-ready');
   }
 }
 
@@ -2355,10 +2317,6 @@ async function connectToServer() {
       const player = state.players.get(data.id);
       const name = player?.name || data.id?.slice(0, 8) || 'Player';
       addKillFeedEntry(`${name} died`);
-    });
-
-    room.onMessage('player_ready', ({ name, ready }) => {
-      console.log(`[Event] ${name} is ${ready ? 'ready' : 'not ready'}`);
     });
 
     // Chat
@@ -3175,9 +3133,6 @@ function setupSpectatorOverlay() {
   // Hide player-only UI
   const controls = document.getElementById('controls');
   if (controls) controls.style.display = 'none';
-  const readyInd = document.getElementById('ready-indicator');
-  if (readyInd) readyInd.style.display = 'none';
-
   // Show spectator-only overlay elements
   const overlay = document.getElementById('spectator-overlay');
   if (overlay) overlay.style.display = 'block';

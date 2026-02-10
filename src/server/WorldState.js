@@ -392,7 +392,6 @@ export class WorldState {
       position: [...this.respawnPoint],
       velocity: [0, 0, 0],
       state: initialState,
-      ready: false,
       joinedAt: Date.now()
     };
 
@@ -714,27 +713,6 @@ export class WorldState {
       ? this.messages.filter(m => m.id > since)
       : this.messages;
     return msgs.slice(-limit);
-  }
-
-  // ============================================
-  // Player Ready
-  // ============================================
-
-  setPlayerReady(id, ready) {
-    const player = this.players.get(id);
-    if (!player) return null;
-    player.ready = ready;
-    return player;
-  }
-
-  getReadyCount() {
-    return Array.from(this.players.values()).filter(p => p.ready).length;
-  }
-
-  getHumanReadyCount() {
-    const humans = Array.from(this.players.values()).filter(p => p.type !== 'ai');
-    const readyHumans = humans.filter(p => p.ready);
-    return { ready: readyHumans.length, total: humans.length };
   }
 
   // ============================================

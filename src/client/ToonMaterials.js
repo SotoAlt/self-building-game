@@ -58,7 +58,7 @@ export function createEntityToonMaterial(entity) {
   // Nudge surfaces whose luminance is too close to the ground (~0.24) for visibility
   if (isSurface && !props.emissive) {
     const lum = color.r * 0.299 + color.g * 0.587 + color.b * 0.114;
-    if (Math.abs(lum - 0.24) < 0.12) {
+    if (Math.abs(lum - 0.24) < 0.18) {
       color.offsetHSL(0, 0.1, 0.15);
     }
   }
@@ -68,7 +68,7 @@ export function createEntityToonMaterial(entity) {
 
   let emissiveIntensity = 0.12;
   if (props.emissive) emissiveIntensity = 0.7;
-  else if (isSurface) emissiveIntensity = 0.2;
+  else if (isSurface) emissiveIntensity = 0.35;
 
   const matOpts = {
     color,
@@ -110,7 +110,7 @@ export function createGroundToonMaterial() {
     color: 0x2d3436,
     gradientMap: GRADIENT_4,
     emissive: 0x2d3436,
-    emissiveIntensity: 0.08,
+    emissiveIntensity: 0.15,
   });
 }
 

@@ -251,8 +251,7 @@ app.get('/api/agent/context', (req, res) => {
     name: p.name,
     type: p.type,
     position: p.position,
-    state: p.state,
-    ready: p.ready
+    state: p.state
   }));
 
   const allMessages = worldState.getMessages(sinceMessage);
@@ -262,7 +261,6 @@ app.get('/api/agent/context', (req, res) => {
   res.json({
     players,
     playerCount: players.length,
-    readyCount: worldState.getReadyCount(),
     gameState: worldState.getGameState(),
     entities: Array.from(worldState.entities.values()).map(e => ({
       id: e.id,
@@ -1349,8 +1347,7 @@ app.get('/api/public/state', (req, res) => {
   const players = worldState.getPlayers().map(p => ({
     name: p.name,
     type: p.type,
-    state: p.state,
-    ready: p.ready
+    state: p.state
   }));
 
   res.json({
@@ -1489,24 +1486,6 @@ app.post('/api/agent-player/chat', (req, res) => {
   broadcastToRoom('chat_message', message);
 
   res.json({ success: true, message });
-});
-
-app.post('/api/agent-player/ready', (req, res) => {
-  const { playerId } = req.body;
-  if (!playerId) {
-    return res.status(400).json({ error: 'Missing required: playerId' });
-  }
-
-  if (!requireAgentPlayer(playerId, res)) return;
-
-  const player = worldState.players.get(playerId);
-  if (!player) {
-    return res.status(404).json({ error: 'Player not found' });
-  }
-
-  player.ready = !player.ready;
-  broadcastToRoom('player_ready', { id: playerId, ready: player.ready });
-  res.json({ success: true, ready: player.ready });
 });
 
 app.post('/api/agent-player/leave', (req, res) => {
