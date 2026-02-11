@@ -133,7 +133,7 @@ async function callClaude(userMessage) {
 async function executeActions(actions) {
   for (const action of actions.slice(0, 3)) {
     try {
-      const result = await api(action.method, action.path, action.body);
+      await api(action.method, action.path, action.body);
       console.log(`  ${action.method} ${action.path} → OK`);
       if (action.path === '/game/start' && action.body?.template) {
         lastTemplate = action.body.template;

@@ -1733,31 +1733,28 @@ setInterval(() => {
       for (const player of ws.players.values()) {
         if (player.type === 'ai') continue;
 
-        // Kick phase: player was warned and didn't respond in time
         if (player.state === 'afk_warned') {
-          if (now - player.afkWarningSentAt < AFK_KICK_MS) continue;
+          // Kick: player was warned and didn't respond in time
+          if (now - player.afkWarningSentAt >= AFK_KICK_MS) {
+            const client = room?.getClient(player.id);
+            if (client) {
+              client.send('afk_kicked', { reason: 'You were kicked for being AFK.' });
+              client.leave(4000);
+            }
+            console.log(`[AFK] Kicked ${player.name} from arena ${arena.id}`);
+          }
+        } else if (player.state !== 'dead' && now - player.lastActivity >= AFK_IDLE_MS) {
+          // Warn: player idle too long
+          const token = Math.random().toString(36).slice(2, 10);
+          player.afkWarningToken = token;
+          player.afkWarningSentAt = now;
+          player.state = 'afk_warned';
           const client = room?.getClient(player.id);
           if (client) {
-            client.send('afk_kicked', { reason: 'You were kicked for being AFK.' });
-            client.leave(4000);
+            client.send('afk_warning', { token, timeout: AFK_KICK_MS });
           }
-          console.log(`[AFK] Kicked ${player.name} from arena ${arena.id}`);
-          continue;
+          console.log(`[AFK] Warning sent to ${player.name} in arena ${arena.id}`);
         }
-
-        // Warning phase: player idle too long
-        if (player.state === 'dead') continue;
-        if (now - player.lastActivity < AFK_IDLE_MS) continue;
-
-        const token = Math.random().toString(36).slice(2, 10);
-        player.afkWarningToken = token;
-        player.afkWarningSentAt = now;
-        player.state = 'afk_warned';
-        const client = room?.getClient(player.id);
-        if (client) {
-          client.send('afk_warning', { token, timeout: AFK_KICK_MS });
-        }
-        console.log(`[AFK] Warning sent to ${player.name} in arena ${arena.id}`);
       }
     }
   }

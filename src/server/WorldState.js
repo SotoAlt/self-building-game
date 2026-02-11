@@ -401,8 +401,8 @@ export class WorldState {
 
     // Reset lobby timer when first human joins an empty lobby
     if (type === 'human' && this.gameState.phase === 'lobby') {
-      const existingHumans = Array.from(this.players.values()).filter(p => p.type === 'human').length;
-      if (existingHumans === 0) {
+      const hasExistingHumans = Array.from(this.players.values()).some(p => p.type === 'human');
+      if (!hasExistingHumans) {
         this.lobbyEnteredAt = Date.now();
       }
     }
