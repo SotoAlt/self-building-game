@@ -1853,6 +1853,11 @@ function displayChatMessage(msg) {
     showAgentThinking();
   }
 
+  // 3D chat bubble above player head (only for in-game players)
+  if (msg.senderType === 'player' && msg.senderId) {
+    showChatBubble(msg.senderId, msg.text);
+  }
+
   // Auto-scroll
   container.scrollTop = container.scrollHeight;
 }
@@ -1964,6 +1969,92 @@ function rebuildNameSprite(mesh, name) {
   mesh.userData.playerName = name;
 }
 
+function disposeBubbleSprite(mesh, sprite) {
+  if (sprite.material?.map) sprite.material.map.dispose();
+  if (sprite.material) sprite.material.dispose();
+  mesh.remove(sprite);
+}
+
+function createChatBubbleSprite(text) {
+  const MAX_CHARS = 50;
+  const display = text.length > MAX_CHARS ? text.slice(0, MAX_CHARS - 1) + '\u2026' : text;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+
+  const pointerH = 12;
+  const bodyH = canvas.height - pointerH;
+  const borderRadius = 16;
+  const centerX = canvas.width / 2;
+
+  // Rounded rect background with pointer
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.beginPath();
+  ctx.moveTo(borderRadius, 0);
+  ctx.lineTo(canvas.width - borderRadius, 0);
+  ctx.quadraticCurveTo(canvas.width, 0, canvas.width, borderRadius);
+  ctx.lineTo(canvas.width, bodyH - borderRadius);
+  ctx.quadraticCurveTo(canvas.width, bodyH, canvas.width - borderRadius, bodyH);
+  ctx.lineTo(centerX + 10, bodyH);
+  ctx.lineTo(centerX, bodyH + pointerH);
+  ctx.lineTo(centerX - 10, bodyH);
+  ctx.lineTo(borderRadius, bodyH);
+  ctx.quadraticCurveTo(0, bodyH, 0, bodyH - borderRadius);
+  ctx.lineTo(0, borderRadius);
+  ctx.quadraticCurveTo(0, 0, borderRadius, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = '#111';
+  ctx.font = '22px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(display, centerX, bodyH / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(4, 1, 1);
+  sprite.position.y = 3.0;
+  sprite.userData.isChatBubble = true;
+  sprite.userData.chatExpiry = Date.now() + 4000;
+  sprite.renderOrder = 999;
+  return sprite;
+}
+
+function showChatBubble(senderId, text) {
+  const isLocalPlayer = state.room && senderId === state.room.sessionId;
+  const mesh = isLocalPlayer ? playerMesh : remotePlayers.get(senderId);
+  if (!mesh) return;
+
+  const existing = mesh.children.find(c => c.userData.isChatBubble);
+  if (existing) disposeBubbleSprite(mesh, existing);
+
+  mesh.add(createChatBubbleSprite(text));
+}
+
+function updateChatBubbles() {
+  const now = Date.now();
+  const meshes = [playerMesh, ...remotePlayers.values()];
+  for (const mesh of meshes) {
+    if (!mesh) continue;
+    const bubble = mesh.children.find(c => c.userData.isChatBubble);
+    if (!bubble) continue;
+    const remaining = bubble.userData.chatExpiry - now;
+    if (remaining <= 0) {
+      disposeBubbleSprite(mesh, bubble);
+    } else if (remaining < 500) {
+      bubble.material.opacity = remaining / 500;
+    }
+  }
+}
+
 function updateRemotePlayer(player) {
   let mesh = remotePlayers.get(player.id);
 
@@ -1971,7 +2062,6 @@ function updateRemotePlayer(player) {
     mesh = createRemotePlayerMesh(player);
     remotePlayers.set(player.id, mesh);
     scene.add(mesh);
-    console.log(`[Remote] Added player: ${player.name || player.id}`);
   } else if (player.name && mesh.userData.playerName !== player.name) {
     rebuildNameSprite(mesh, player.name);
   }
@@ -2855,6 +2945,7 @@ function animate() {
   updateEnvironmentEffects(delta, camera.position);
   updateParticles();
   updateOutlineObjects(entityMeshes, groupParents, playerMesh, remotePlayers);
+  updateChatBubbles();
 
   if (isInSpectatorMode()) updateCamera();
 

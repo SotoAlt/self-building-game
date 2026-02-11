@@ -212,10 +212,8 @@ export class GameRoom extends Room {
       const sender = player?.name || client.sessionId.slice(0, 8);
 
       const message = this.worldState.addMessage(sender, 'player', text);
-      const requestType = detectRequest(text);
-      if (requestType) {
-        message.requestType = requestType;
-      }
+      message.senderId = client.sessionId;
+      message.requestType = detectRequest(text);
       this.broadcast('chat_message', message);
     });
 

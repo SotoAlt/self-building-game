@@ -22,9 +22,7 @@ export async function initPrivy(appId, clientId) {
   }
   try {
     bridge = await mountPrivyBridge(appId, clientId);
-    if (bridge) {
-      console.log('[Auth] Privy bridge ready, authenticated:', bridge.authenticated);
-    } else {
+    if (!bridge) {
       console.warn('[Auth] Privy bridge failed to mount');
     }
   } catch (e) {
@@ -74,11 +72,11 @@ export async function ensureEmbeddedWallet() {}
 export async function exchangeForBackendToken() {
   if (!bridge) return null;
 
-  const privyToken = await bridge.getAccessToken();
-  if (!privyToken) {
-    console.warn('[Auth] No Privy access token available');
-    return null;
-  }
+  const privyToken = await Promise.race([
+    bridge.getAccessToken(),
+    new Promise(resolve => setTimeout(() => resolve(null), 5000))
+  ]);
+  if (!privyToken) return null;
 
   const res = await fetch(`${API_URL}/api/auth/privy`, {
     method: 'POST',
