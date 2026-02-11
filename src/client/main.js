@@ -3810,7 +3810,6 @@ async function init() {
   if (isDebug) document.getElementById('ui').style.display = 'block';
   const controlsEl = document.getElementById('controls');
   controlsEl.style.display = 'block';
-  setTimeout(() => controlsEl.classList.add('faded'), 10_000); // fade after 10s
   document.getElementById('chat-panel').style.display = 'flex';
 
   // Profile button & wallet panel
