@@ -161,6 +161,13 @@ export class HotPotato extends MiniGame {
   }
 
   _eliminateCursed() {
+    if (!this.isActive) return;
+    const playerData = this.players.get(this.cursedPlayerId);
+    if (!playerData?.alive) {
+      this._scheduleNextRound();
+      return;
+    }
+
     const player = this.worldState.players.get(this.cursedPlayerId);
     const name = player?.name || 'Player';
 
@@ -179,15 +186,14 @@ export class HotPotato extends MiniGame {
   onPlayerDeath(playerId) {
     if (!this.isActive) return;
 
+    const wasCursed = playerId === this.cursedPlayerId;
+    if (wasCursed) this.cursedPlayerId = null;
+
     this.eliminatePlayer(playerId);
     const player = this.worldState.players.get(playerId);
     this.announce(`${player?.name || 'Player'} ELIMINATED!`, 'system');
 
-    // If dead player was cursed, reset curse and schedule next round
-    if (playerId === this.cursedPlayerId) {
-      this.cursedPlayerId = null;
-      this._scheduleNextRound();
-    }
+    if (wasCursed) this._scheduleNextRound();
   }
 
   checkWinCondition() {

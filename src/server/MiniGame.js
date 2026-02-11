@@ -161,6 +161,13 @@ export class MiniGame {
       return;
     }
 
+    // End if all players eliminated or disconnected
+    const anyAlive = Array.from(this.players.values()).some(p => p.alive);
+    if (!anyAlive && this.players.size > 0) {
+      this.end('draw');
+      return;
+    }
+
     // Process tricks
     this.processTricks(elapsed);
 
@@ -197,24 +204,26 @@ export class MiniGame {
   // Mark player as eliminated
   eliminatePlayer(playerId) {
     const player = this.players.get(playerId);
-    if (player) {
-      player.alive = false;
-      this.losers.push(playerId);
+    if (!player || !player.alive) return; // Already eliminated or unknown
+    player.alive = false;
+    this.losers.push(playerId);
 
-      // Check if only one player left
-      const alivePlayers = Array.from(this.players.values()).filter(p => p.alive);
-      if (alivePlayers.length <= 1 && this.players.size > 1) {
-        const winner = Array.from(this.players.entries()).find(([id, p]) => p.alive);
-        if (winner) {
-          this.end('win', winner[0]);
-        }
+    // Check if only one player left
+    const alivePlayers = Array.from(this.players.values()).filter(p => p.alive);
+    if (alivePlayers.length <= 1 && this.players.size > 1) {
+      const winner = Array.from(this.players.entries()).find(([id, p]) => p.alive);
+      if (winner) {
+        this.end('win', winner[0]);
       }
     }
   }
 
   // End the game
   end(result, winnerId = null) {
-    if (!this.isActive) return;
+    if (!this.isActive) {
+      console.log(`[MiniGame] end() called but already inactive (result: ${result})`);
+      return;
+    }
 
     this.isActive = false;
     console.log(`[MiniGame] Ended: ${result}${winnerId ? ` (winner: ${winnerId})` : ''}`);
@@ -286,6 +295,10 @@ export class MiniGame {
       }
       case 'timeout':
         return 'TIME UP!';
+      case 'draw':
+        return 'DRAW!';
+      case 'ended':
+        return 'Game Over!';
       case 'cancelled':
         return 'Game cancelled';
       default:

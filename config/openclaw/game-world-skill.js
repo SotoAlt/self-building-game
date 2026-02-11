@@ -227,7 +227,7 @@ async function start_game({ type, template, timeLimit, goalPosition, collectible
  * Tool: end_game
  * End the current mini-game. Only works during countdown or playing phases.
  */
-async function end_game({ result = 'cancelled', winnerId }) {
+async function end_game({ result = 'ended', winnerId }) {
   // Pre-flight: reject if no active game
   const state = await gameRequest('/api/game/state');
   if (state.success && state.gameState) {

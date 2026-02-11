@@ -939,21 +939,22 @@ gameRouter.post('/game/end', (req, res) => {
     return res.status(400).json({ error: `No active game to end (phase: ${phase})` });
   }
 
-  const { result, winnerId } = req.body;
+  const { winnerId } = req.body;
+  const endResult = req.body.result || 'ended';
   const hadMiniGame = arena.currentMiniGame?.isActive;
 
   if (hadMiniGame) {
-    arena.currentMiniGame.end(result || 'cancelled', winnerId);
+    arena.currentMiniGame.end(endResult, winnerId);
   } else {
-    ws.endGame(result || 'cancelled', winnerId);
+    ws.endGame(endResult, winnerId);
     if (arena.agentLoop) arena.agentLoop.onGameEnded();
   }
 
   const winnerPlayer = winnerId ? ws.players.get(winnerId) : null;
-  const endText = winnerPlayer ? `Game ended - Winner: ${winnerPlayer.name}` : `Game ended: ${result || 'cancelled'}`;
+  const endText = winnerPlayer ? `Game ended - Winner: ${winnerPlayer.name}` : `Game ended: ${endResult}`;
   const endMsg = ws.addMessage('System', 'system', endText);
   arena.broadcastToRoom('chat_message', endMsg);
-  ws.addEvent('game_end', { result: result || 'cancelled', winnerId });
+  ws.addEvent('game_end', { result: endResult, winnerId });
 
   res.json({ success: true, gameState: ws.getGameState() });
 });
