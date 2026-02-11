@@ -178,33 +178,34 @@ function doStartGame(arena, gameType, options) {
 
   const gameTypeDef = GAME_TYPES[gameType];
   const minRequired = gameTypeDef?.minPlayers || 1;
-  const humanPlayers = ws.getPlayers().filter(p => p.type !== 'ai');
+  const humanCount = ws.getPlayers().filter(p => p.type !== 'ai').length;
 
-  if (humanPlayers.length < minRequired) {
+  if (humanCount < minRequired) {
     const gameName = gameTypeDef?.name || gameType;
-    return { success: false, status: 400, error: `${gameName} requires ${minRequired}+ players (${humanPlayers.length} connected)` };
+    return { success: false, status: 400, error: `${gameName} requires ${minRequired}+ players (${humanCount} connected)` };
   }
 
-  const { timeLimit, targetEntityId, goalPosition, collectibleCount, countdownTime } = options;
+  // Cancel auto-start timer -- a game is starting
+  clearTimeout(arena.autoStartTimer);
+  ws.autoStartTargetTime = null;
 
   try {
-    arena.currentMiniGame = createGameSync(gameType, ws, broadcast, {
-      timeLimit, targetEntityId, goalPosition, collectibleCount, countdownTime
-    });
+    const game = createGameSync(gameType, ws, broadcast, options);
 
-    arena.currentMiniGame.onEnd = () => {
+    game.onEnd = () => {
       if (arena.agentLoop) arena.agentLoop.onGameEnded();
       arena.currentMiniGame = null;
     };
 
-    arena.currentMiniGame.start();
+    arena.currentMiniGame = game;
+    game.start();
     broadcast('game_state_changed', ws.getGameState());
 
     const startMsg = ws.addMessage('System', 'system', `Game started: ${gameType}`);
     broadcast('chat_message', startMsg);
-    ws.addEvent('game_start', { type: gameType, gameId: arena.currentMiniGame.id });
+    ws.addEvent('game_start', { type: gameType, gameId: game.id });
 
-    return { success: true, gameId: arena.currentMiniGame.id, gameState: ws.getGameState() };
+    return { success: true, gameId: game.id, gameState: ws.getGameState() };
   } catch (error) {
     return { success: false, status: 400, error: error.message };
   }

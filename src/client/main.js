@@ -825,29 +825,73 @@ function scheduleGroupAssembly(groupId) {
   }, DEBOUNCE_MS));
 }
 
+function createBeveledBox(sx, sy, sz) {
+  const bevel = Math.min(sx, sy, sz) * 0.08;
+  const hx = sx / 2 - bevel;
+  const hz = sz / 2 - bevel;
+
+  // Rounded-rectangle cross-section (XZ plane)
+  const profile = new THREE.Shape();
+  profile.moveTo(-hx, -hz);
+  profile.lineTo(hx, -hz);
+  profile.quadraticCurveTo(hx + bevel, -hz, hx + bevel, -hz + bevel);
+  profile.lineTo(hx + bevel, hz);
+  profile.quadraticCurveTo(hx + bevel, hz + bevel, hx, hz + bevel);
+  profile.lineTo(-hx, hz + bevel);
+  profile.quadraticCurveTo(-hx - bevel, hz + bevel, -hx - bevel, hz);
+  profile.lineTo(-hx - bevel, -hz + bevel);
+  profile.quadraticCurveTo(-hx - bevel, -hz, -hx, -hz);
+
+  const geo = new THREE.ExtrudeGeometry(profile, {
+    depth: sy,
+    bevelEnabled: true,
+    bevelSize: bevel,
+    bevelThickness: bevel,
+    bevelSegments: 2,
+  });
+
+  // Extrude goes along Z; rotate so height is along Y and center vertically
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, -sy / 2, 0);
+  return geo;
+}
+
 function getGeometry(entity) {
   const shape = entity.properties?.shape;
   const [sx, sy, sz] = entity.size || [1, 1, 1];
 
-  // Collectibles default to sphere when no explicit shape is set
-  if (!shape && entity.type === 'collectible') {
-    return new THREE.SphereGeometry(0.5, 16, 16);
+  // Type-based defaults when no explicit shape is set
+  if (!shape) {
+    if (entity.type === 'collectible') {
+      return new THREE.IcosahedronGeometry(0.5, 0);
+    }
+    if (entity.type === 'trigger' && entity.properties?.isGoal) {
+      return new THREE.TorusGeometry(Math.max(sx, sz) / 2, Math.min(sx, sz) / 6, 12, 32);
+    }
+    if (entity.type === 'platform' || entity.type === 'ramp') {
+      return createBeveledBox(sx, sy, sz);
+    }
+    return new THREE.BoxGeometry(sx, sy, sz);
   }
 
-  // Check geometry templates (lathe, extrude, tube shapes)
-  if (shape && GEOMETRY_TEMPLATES[shape]) {
+  // Named templates (lathe, extrude, tube shapes defined in GeometryTemplates)
+  if (GEOMETRY_TEMPLATES[shape]) {
     return GEOMETRY_TEMPLATES[shape](sx, sy, sz);
   }
 
+  // Primitive shapes
+  const maxDim = Math.max(sx, sy, sz) / 2;
   switch (shape) {
-    case 'sphere': return new THREE.SphereGeometry(Math.max(sx, sy, sz) / 2, 16, 16);
-    case 'cylinder': return new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 16);
-    case 'cone': return new THREE.ConeGeometry(sx / 2, sy, 16);
-    case 'pyramid': return new THREE.ConeGeometry(sx / 2, sy, 4);
-    case 'torus': return new THREE.TorusGeometry(sx / 2, Math.min(sx, sz) / 6, 8, 24);
-    case 'dodecahedron': return new THREE.DodecahedronGeometry(Math.max(sx, sy, sz) / 2);
-    case 'ring': return new THREE.TorusGeometry(sx / 2, 0.15, 8, 32);
-    default: return new THREE.BoxGeometry(sx, sy, sz);
+    case 'sphere':       return new THREE.SphereGeometry(maxDim, 16, 16);
+    case 'cylinder':     return new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 16);
+    case 'cone':         return new THREE.ConeGeometry(sx / 2, sy, 16);
+    case 'pyramid':      return new THREE.ConeGeometry(sx / 2, sy, 4);
+    case 'torus':        return new THREE.TorusGeometry(sx / 2, Math.min(sx, sz) / 6, 8, 24);
+    case 'dodecahedron': return new THREE.DodecahedronGeometry(maxDim);
+    case 'icosahedron':  return new THREE.IcosahedronGeometry(maxDim, 0);
+    case 'octahedron':   return new THREE.OctahedronGeometry(maxDim);
+    case 'ring':         return new THREE.TorusGeometry(sx / 2, 0.15, 8, 32);
+    default:             return new THREE.BoxGeometry(sx, sy, sz);
   }
 }
 

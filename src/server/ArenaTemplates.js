@@ -81,14 +81,14 @@ export const TEMPLATES = {
       { type: 'decoration', position: [5, 5, 2], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
       { type: 'decoration', position: [-6, 14, 3], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
       { type: 'decoration', position: [1, 28, 1], size: [0.8, 1.2, 0.8], properties: { shape: 'dodecahedron', color: '#9b59b6', emissive: true } },
-      // Stone pillars framing the base
-      { type: 'decoration', position: [7, 3, 7], size: [0.6, 5, 0.6], properties: { shape: 'cylinder', color: '#5a6a7a' } },
-      { type: 'decoration', position: [-7, 3, -7], size: [0.6, 5, 0.6], properties: { shape: 'cylinder', color: '#5a6a7a' } },
-      { type: 'decoration', position: [7, 3, -7], size: [0.6, 5, 0.6], properties: { shape: 'cylinder', color: '#5a6a7a' } },
-      { type: 'decoration', position: [-7, 3, 7], size: [0.6, 5, 0.6], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      // Stone columns framing the base
+      { type: 'decoration', position: [7, 3, 7], size: [0.6, 5, 0.6], properties: { shape: 'column', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-7, 3, -7], size: [0.6, 5, 0.6], properties: { shape: 'column', color: '#5a6a7a' } },
+      { type: 'decoration', position: [7, 3, -7], size: [0.6, 5, 0.6], properties: { shape: 'column', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-7, 3, 7], size: [0.6, 5, 0.6], properties: { shape: 'column', color: '#5a6a7a' } },
       // Floating crystals
-      { type: 'decoration', position: [3, 12, 4], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#3498db', emissive: true, rotating: true, speed: 0.6 } },
-      { type: 'decoration', position: [-4, 20, -2], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#2980b9', emissive: true, rotating: true, speed: 0.8 } },
+      { type: 'decoration', position: [3, 12, 4], size: [0.5, 0.8, 0.5], properties: { shape: 'star', color: '#3498db', emissive: true, rotating: true, speed: 0.6 } },
+      { type: 'decoration', position: [-4, 20, -2], size: [0.6, 1, 0.6], properties: { shape: 'vase', color: '#2980b9', emissive: true, rotating: true, speed: 0.8 } },
     ]
   },
 
@@ -133,15 +133,15 @@ export const TEMPLATES = {
       // Moving platform to reach center bonus
       { type: 'platform', position: [0, 8, 0], size: [2, 0.5, 2], properties: { color: '#9b59b6', kinematic: true, path: [[0, 8, 0], [0, 11, 0]], speed: 0.5 } },
       // Trees and mushrooms on islands
-      { type: 'decoration', position: [2, 6.5, -17], size: [0.3, 2, 0.3], properties: { shape: 'cylinder', color: '#5d4037' } },
-      { type: 'decoration', position: [2, 8, -17], size: [1.5, 1.5, 1.5], properties: { shape: 'sphere', color: '#27ae60' } },
+      { type: 'decoration', position: [2, 6.5, -17], size: [0.3, 2, 0.3], properties: { shape: 'column', color: '#5d4037' } },
+      { type: 'decoration', position: [2, 8, -17], size: [1.5, 1.5, 1.5], properties: { shape: 'dome', color: '#27ae60' } },
       { type: 'decoration', position: [-17, 8.5, -1], size: [0.3, 0.8, 0.3], properties: { shape: 'cylinder', color: '#f5f5dc' } },
-      { type: 'decoration', position: [-17, 9.2, -1], size: [0.8, 0.4, 0.8], properties: { shape: 'sphere', color: '#e74c3c' } },
-      { type: 'decoration', position: [16, 9.5, 2], size: [0.6, 0.9, 0.6], properties: { shape: 'dodecahedron', color: '#9b59b6', emissive: true } },
-      // Glowing orbs under bridges
-      { type: 'decoration', position: [0, 3, -9], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#8e44ad', emissive: true } },
-      { type: 'decoration', position: [9, 4, 0], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#8e44ad', emissive: true } },
-      { type: 'decoration', position: [-9, 3.5, 0], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#8e44ad', emissive: true } },
+      { type: 'decoration', position: [-17, 9.2, -1], size: [0.8, 0.4, 0.8], properties: { shape: 'mushroom_cap', color: '#e74c3c' } },
+      { type: 'decoration', position: [16, 9.5, 2], size: [0.6, 0.9, 0.6], properties: { shape: 'teardrop', color: '#9b59b6', emissive: true } },
+      // Tentacles under bridges
+      { type: 'decoration', position: [0, 3, -9], size: [0.4, 1.5, 0.4], properties: { shape: 'tentacle', color: '#8e44ad', emissive: true } },
+      { type: 'decoration', position: [9, 4, 0], size: [0.4, 1.5, 0.4], properties: { shape: 'tentacle', color: '#8e44ad', emissive: true } },
+      { type: 'decoration', position: [-9, 3.5, 0], size: [0.4, 1.5, 0.4], properties: { shape: 'tentacle', color: '#8e44ad', emissive: true } },
     ]
   },
 
@@ -185,17 +185,19 @@ export const TEMPLATES = {
       { type: 'decoration', position: [-4, 1.5, 20], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
       { type: 'decoration', position: [3, 1.5, -18], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff4400', emissive: true } },
       { type: 'decoration', position: [-3, 1.5, -18], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff4400', emissive: true } },
+      // Arch gateway at goal
+      { type: 'decoration', position: [0, 5, -37], size: [5, 4, 1], properties: { shape: 'arch', color: '#bdc3c7' } },
       // Warning flag at goal
-      { type: 'decoration', position: [3, 6.5, -40], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
+      { type: 'decoration', position: [3, 6.5, -40], size: [0.1, 2, 0.1], properties: { shape: 'column', color: '#bdc3c7' } },
       { type: 'decoration', position: [3.4, 7.2, -40], size: [0.6, 0.4, 0.05], properties: { color: '#e74c3c' } },
-      // Lava pillars
-      { type: 'decoration', position: [5, 3, 10], size: [0.8, 5, 0.8], properties: { shape: 'cylinder', color: '#4a2020' } },
-      { type: 'decoration', position: [-5, 3, 10], size: [0.8, 5, 0.8], properties: { shape: 'cylinder', color: '#4a2020' } },
-      { type: 'decoration', position: [5, 3, -30], size: [0.8, 5, 0.8], properties: { shape: 'cylinder', color: '#4a2020' } },
-      { type: 'decoration', position: [-5, 3, -30], size: [0.8, 5, 0.8], properties: { shape: 'cylinder', color: '#4a2020' } },
+      // Lava horn spikes
+      { type: 'decoration', position: [5, 3, 10], size: [0.8, 5, 0.8], properties: { shape: 'horn', color: '#4a2020' } },
+      { type: 'decoration', position: [-5, 3, 10], size: [0.8, 5, 0.8], properties: { shape: 'horn', color: '#4a2020' } },
+      { type: 'decoration', position: [5, 3, -30], size: [0.8, 5, 0.8], properties: { shape: 'horn', color: '#4a2020' } },
+      { type: 'decoration', position: [-5, 3, -30], size: [0.8, 5, 0.8], properties: { shape: 'horn', color: '#4a2020' } },
       // Ember orbs
-      { type: 'decoration', position: [5, 6, 10], size: [0.5, 0.5, 0.5], properties: { shape: 'sphere', color: '#ff4400', emissive: true, rotating: true, speed: 0.5 } },
-      { type: 'decoration', position: [-5, 6, -30], size: [0.5, 0.5, 0.5], properties: { shape: 'sphere', color: '#ff4400', emissive: true, rotating: true, speed: 0.7 } },
+      { type: 'decoration', position: [5, 6, 10], size: [0.5, 0.5, 0.5], properties: { shape: 'bell', color: '#ff4400', emissive: true, rotating: true, speed: 0.5 } },
+      { type: 'decoration', position: [-5, 6, -30], size: [0.5, 0.5, 0.5], properties: { shape: 'bell', color: '#ff4400', emissive: true, rotating: true, speed: 0.7 } },
     ]
   },
 
@@ -223,11 +225,11 @@ export const TEMPLATES = {
       // Obstacles that sweep the arena
       { type: 'obstacle', position: [0, 1.5, 8], size: [20, 2, 1], properties: { color: '#e74c3c', kinematic: true, path: [[0, 1.5, 8], [0, 1.5, -8]], speed: 0.3 } },
       { type: 'obstacle', position: [8, 1.5, 0], size: [1, 2, 20], properties: { color: '#e74c3c', kinematic: true, path: [[8, 1.5, 0], [-8, 1.5, 0]], speed: 0.25 } },
-      // Pillar top crystals
-      { type: 'decoration', position: [12, 6, 12], size: [0.6, 0.9, 0.6], properties: { shape: 'dodecahedron', color: '#e74c3c', emissive: true, rotating: true, speed: 0.5 } },
-      { type: 'decoration', position: [-12, 6, -12], size: [0.6, 0.9, 0.6], properties: { shape: 'dodecahedron', color: '#e74c3c', emissive: true, rotating: true, speed: 0.5 } },
-      // Center orb
-      { type: 'decoration', position: [0, 6, 0], size: [1, 1, 1], properties: { shape: 'sphere', color: '#e67e22', emissive: true, rotating: true, speed: 0.3 } },
+      // Pillar top decorations
+      { type: 'decoration', position: [12, 6, 12], size: [0.6, 0.9, 0.6], properties: { shape: 'star', color: '#e74c3c', emissive: true, rotating: true, speed: 0.5 } },
+      { type: 'decoration', position: [-12, 6, -12], size: [0.6, 0.9, 0.6], properties: { shape: 'horn', color: '#e74c3c', emissive: true, rotating: true, speed: 0.5 } },
+      // Center cross marker
+      { type: 'decoration', position: [0, 6, 0], size: [1, 1, 1], properties: { shape: 'cross', color: '#e67e22', emissive: true, rotating: true, speed: 0.3 } },
     ]
   },
 
@@ -265,13 +267,13 @@ export const TEMPLATES = {
       // Goal
       { type: 'platform', position: [0, 38, -25], size: [4, 1, 4], properties: { color: '#f1c40f' } },
       { type: 'trigger', position: [0, 40, -25], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } },
-      // Floating neon orbs along the path
-      { type: 'decoration', position: [5, 5, 22], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#e74c3c', emissive: true } },
-      { type: 'decoration', position: [-4, 8, 14], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#e67e22', emissive: true } },
-      { type: 'decoration', position: [6, 11, 10], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#f1c40f', emissive: true } },
+      // Floating neon shapes along the path
+      { type: 'decoration', position: [5, 5, 22], size: [0.4, 0.6, 0.4], properties: { shape: 'teardrop', color: '#e74c3c', emissive: true } },
+      { type: 'decoration', position: [-4, 8, 14], size: [0.4, 0.6, 0.4], properties: { shape: 'flask', color: '#e67e22', emissive: true } },
+      { type: 'decoration', position: [6, 11, 10], size: [0.4, 0.6, 0.4], properties: { shape: 'star', color: '#f1c40f', emissive: true } },
       { type: 'decoration', position: [-5, 14, 6], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#2ecc71', emissive: true } },
-      { type: 'decoration', position: [4, 25, -10], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#3498db', emissive: true } },
-      { type: 'decoration', position: [-4, 35, -22], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#9b59b6', emissive: true } },
+      { type: 'decoration', position: [4, 25, -10], size: [0.4, 0.6, 0.4], properties: { shape: 'heart', color: '#3498db', emissive: true } },
+      { type: 'decoration', position: [-4, 35, -22], size: [0.4, 0.6, 0.4], properties: { shape: 'star', color: '#9b59b6', emissive: true } },
     ]
   },
 
@@ -290,13 +292,13 @@ export const TEMPLATES = {
     entities: [
       ...generateHexAGoneEntities(),
       // Floating crystals above arena
-      { type: 'decoration', position: [0, 15, 0], size: [1.2, 1.8, 1.2], properties: { shape: 'dodecahedron', color: '#9b59b6', emissive: true, rotating: true, speed: 0.5 } },
-      { type: 'decoration', position: [6, 14, 4], size: [0.8, 1.2, 0.8], properties: { shape: 'dodecahedron', color: '#8e44ad', emissive: true, rotating: true, speed: 0.8 } },
-      { type: 'decoration', position: [-5, 13, -5], size: [0.8, 1.2, 0.8], properties: { shape: 'dodecahedron', color: '#a569bd', emissive: true, rotating: true, speed: 0.7 } },
-      // Additional floating crystals at edges
-      { type: 'decoration', position: [8, 12, 0], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#bb88dd', emissive: true, rotating: true, speed: 0.6 } },
-      { type: 'decoration', position: [-8, 12, 0], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#bb88dd', emissive: true, rotating: true, speed: 0.9 } },
-      { type: 'decoration', position: [0, 11, 8], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#cc99ee', emissive: true, rotating: true, speed: 0.4 } },
+      { type: 'decoration', position: [0, 15, 0], size: [1.2, 1.8, 1.2], properties: { shape: 'teardrop', color: '#9b59b6', emissive: true, rotating: true, speed: 0.5 } },
+      { type: 'decoration', position: [6, 14, 4], size: [0.8, 2, 0.8], properties: { shape: 'tentacle', color: '#8e44ad', emissive: true, rotating: true, speed: 0.8 } },
+      { type: 'decoration', position: [-5, 13, -5], size: [0.8, 2, 0.8], properties: { shape: 'tentacle', color: '#a569bd', emissive: true, rotating: true, speed: 0.7 } },
+      // Additional floating shapes at edges
+      { type: 'decoration', position: [8, 12, 0], size: [0.5, 0.8, 0.5], properties: { shape: 'flask', color: '#bb88dd', emissive: true, rotating: true, speed: 0.6 } },
+      { type: 'decoration', position: [-8, 12, 0], size: [0.5, 0.8, 0.5], properties: { shape: 'star', color: '#bb88dd', emissive: true, rotating: true, speed: 0.9 } },
+      { type: 'decoration', position: [0, 11, 8], size: [0.5, 1.2, 0.5], properties: { shape: 'tentacle', color: '#cc99ee', emissive: true, rotating: true, speed: 0.4 } },
     ],
   },
 
@@ -344,9 +346,9 @@ export const TEMPLATES = {
       { type: 'decoration', position: [4.4, 2.2, 15], size: [0.6, 0.4, 0.05], properties: { color: '#ff6600' } },
       { type: 'decoration', position: [-3, 19.5, -22], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
       { type: 'decoration', position: [-2.6, 20.2, -22], size: [0.6, 0.4, 0.05], properties: { color: '#ff6600' } },
-      // Lava pillars along climb
-      { type: 'decoration', position: [5, 5, 8], size: [0.6, 4, 0.6], properties: { shape: 'cylinder', color: '#3a1010' } },
-      { type: 'decoration', position: [-5, 12, -9], size: [0.6, 4, 0.6], properties: { shape: 'cylinder', color: '#3a1010' } },
+      // Lava horn spikes along climb
+      { type: 'decoration', position: [5, 5, 8], size: [0.6, 4, 0.6], properties: { shape: 'horn', color: '#3a1010' } },
+      { type: 'decoration', position: [-5, 12, -9], size: [0.8, 1.2, 0.8], properties: { shape: 'mushroom_cap', color: '#3a1010' } },
     ]
   },
 
@@ -389,13 +391,13 @@ export const TEMPLATES = {
       { type: 'platform', position: [0, 7, -40], size: [5, 1, 5], properties: { color: '#f1c40f' } },
       { type: 'trigger', position: [0, 9, -40], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } },
       // Banners and wind streamers
-      { type: 'decoration', position: [4, 4.5, 30], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
+      { type: 'decoration', position: [4, 4.5, 30], size: [0.1, 2, 0.1], properties: { shape: 'column', color: '#bdc3c7' } },
       { type: 'decoration', position: [4.4, 5.2, 30], size: [0.6, 0.4, 0.05], properties: { color: '#3498db' } },
-      { type: 'decoration', position: [-2, 5, 8], size: [0.1, 1.5, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
+      { type: 'decoration', position: [-2, 5, 8], size: [0.1, 1.5, 0.1], properties: { shape: 'column', color: '#bdc3c7' } },
       { type: 'decoration', position: [-1.6, 5.7, 8], size: [0.5, 0.3, 0.05], properties: { color: '#87ceeb' } },
-      // Ice crystals
-      { type: 'decoration', position: [4, 5, -2], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#b3e5fc', emissive: true, rotating: true, speed: 0.4 } },
-      { type: 'decoration', position: [-3, 8, -26], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#b3e5fc', emissive: true, rotating: true, speed: 0.6 } },
+      // Ice stars
+      { type: 'decoration', position: [4, 5, -2], size: [0.5, 0.8, 0.5], properties: { shape: 'star', color: '#b3e5fc', emissive: true, rotating: true, speed: 0.4 } },
+      { type: 'decoration', position: [-3, 8, -26], size: [0.5, 0.8, 0.5], properties: { shape: 'star', color: '#b3e5fc', emissive: true, rotating: true, speed: 0.6 } },
     ]
   },
 
@@ -446,9 +448,11 @@ export const TEMPLATES = {
       { type: 'decoration', position: [-14, 2, -14], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
       { type: 'decoration', position: [14, 2, -14], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
       { type: 'decoration', position: [-14, 2, 14], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
-      // Wooden pillars
-      { type: 'decoration', position: [14, 2, 0], size: [0.5, 3, 0.5], properties: { shape: 'cylinder', color: '#5d4037' } },
-      { type: 'decoration', position: [-14, 2, 0], size: [0.5, 3, 0.5], properties: { shape: 'cylinder', color: '#5d4037' } },
+      // Wooden props
+      { type: 'decoration', position: [14, 2, 0], size: [0.5, 3, 0.5], properties: { shape: 'column', color: '#5d4037' } },
+      { type: 'decoration', position: [-14, 2, 0], size: [0.5, 3, 0.5], properties: { shape: 'vase', color: '#5d4037' } },
+      // Treasure dome
+      { type: 'decoration', position: [0, 6.5, 0], size: [3, 1.5, 3], properties: { shape: 'dome', color: '#ffaa44', emissive: true } },
     ]
   },
 
@@ -480,16 +484,16 @@ export const TEMPLATES = {
       { type: 'trigger', position: [-14, 3, 0], size: [4, 6, 30], properties: { color: '#87ceeb', isWind: true, windForce: [-6, 0, 0], opacity: 0.08 } },
       { type: 'trigger', position: [0, 3, 14], size: [30, 6, 4], properties: { color: '#87ceeb', isWind: true, windForce: [0, 0, 6], opacity: 0.08 } },
       { type: 'trigger', position: [0, 3, -14], size: [30, 6, 4], properties: { color: '#87ceeb', isWind: true, windForce: [0, 0, -6], opacity: 0.08 } },
-      // Center crystal
-      { type: 'decoration', position: [0, 8, 0], size: [1.5, 1.5, 1.5], properties: { shape: 'dodecahedron', color: '#aaddff', emissive: true, rotating: true, speed: 0.3 } },
-      // Ice pillars at corners
-      { type: 'decoration', position: [14, 3, 14], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#b3e5fc' } },
-      { type: 'decoration', position: [-14, 3, -14], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#b3e5fc' } },
-      { type: 'decoration', position: [14, 3, -14], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#b3e5fc' } },
-      { type: 'decoration', position: [-14, 3, 14], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#b3e5fc' } },
-      // Small crystals on ice
-      { type: 'decoration', position: [6, 1.5, 6], size: [0.4, 0.6, 0.4], properties: { shape: 'dodecahedron', color: '#e0f7fa', emissive: true } },
-      { type: 'decoration', position: [-6, 1.5, -6], size: [0.4, 0.6, 0.4], properties: { shape: 'dodecahedron', color: '#e0f7fa', emissive: true } },
+      // Center star crystal
+      { type: 'decoration', position: [0, 8, 0], size: [1.5, 1.5, 1.5], properties: { shape: 'star', color: '#aaddff', emissive: true, rotating: true, speed: 0.3 } },
+      // Ice columns at corners
+      { type: 'decoration', position: [14, 3, 14], size: [0.5, 5, 0.5], properties: { shape: 'column', color: '#b3e5fc' } },
+      { type: 'decoration', position: [-14, 3, -14], size: [0.5, 5, 0.5], properties: { shape: 'column', color: '#b3e5fc' } },
+      { type: 'decoration', position: [14, 3, -14], size: [0.5, 5, 0.5], properties: { shape: 'column', color: '#b3e5fc' } },
+      { type: 'decoration', position: [-14, 3, 14], size: [0.5, 5, 0.5], properties: { shape: 'column', color: '#b3e5fc' } },
+      // Small teardrop crystals on ice
+      { type: 'decoration', position: [6, 1.5, 6], size: [0.4, 0.6, 0.4], properties: { shape: 'teardrop', color: '#e0f7fa', emissive: true } },
+      { type: 'decoration', position: [-6, 1.5, -6], size: [0.4, 0.6, 0.4], properties: { shape: 'teardrop', color: '#e0f7fa', emissive: true } },
     ]
   },
 
@@ -525,13 +529,13 @@ export const TEMPLATES = {
       // Patrolling obstacles on ramps
       { type: 'obstacle', position: [0, 2.5, 7], size: [2, 1.5, 1], properties: { color: '#e74c3c', kinematic: true, path: [[-3, 2.5, 7], [3, 2.5, 7]], speed: 1.2 } },
       { type: 'obstacle', position: [7, 2.5, 0], size: [1, 1.5, 2], properties: { color: '#e74c3c', kinematic: true, path: [[7, 2.5, -3], [7, 2.5, 3]], speed: 1 } },
-      // Crown decoration
-      { type: 'decoration', position: [0, 8, 0], size: [1, 1.5, 1], properties: { shape: 'dodecahedron', color: '#f1c40f', emissive: true, rotating: true, speed: 0.5 } },
-      // Column pillars at hill base
-      { type: 'decoration', position: [5, 3, 5], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
-      { type: 'decoration', position: [-5, 3, 5], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
-      { type: 'decoration', position: [5, 3, -5], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
-      { type: 'decoration', position: [-5, 3, -5], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      // Crown star decoration
+      { type: 'decoration', position: [0, 8, 0], size: [1, 1.5, 1], properties: { shape: 'star', color: '#f1c40f', emissive: true, rotating: true, speed: 0.5 } },
+      // Stone pillars at hill base
+      { type: 'decoration', position: [5, 3, 5], size: [0.5, 5, 0.5], properties: { shape: 'column', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-5, 3, 5], size: [0.5, 5, 0.5], properties: { shape: 'column', color: '#5a6a7a' } },
+      { type: 'decoration', position: [5, 3, -5], size: [0.5, 5, 0.5], properties: { shape: 'column', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-5, 3, -5], size: [0.5, 5, 0.5], properties: { shape: 'cross', color: '#5a6a7a' } },
       // Flags at mini-hills
       { type: 'decoration', position: [14, 3.5, 12], size: [0.1, 3, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
       { type: 'decoration', position: [14.4, 4.5, 12], size: [0.6, 0.4, 0.05], properties: { color: '#e67e22' } },
@@ -567,14 +571,14 @@ export const TEMPLATES = {
       // Wind on bridges
       { type: 'trigger', position: [3, 6, -10], size: [4, 5, 8], properties: { color: '#87ceeb', isWind: true, windForce: [5, 0, 0], opacity: 0.08 } },
       { type: 'trigger', position: [-3, 6, 10], size: [4, 5, 8], properties: { color: '#87ceeb', isWind: true, windForce: [-5, 0, 0], opacity: 0.08 } },
-      // Crown above center
-      { type: 'decoration', position: [0, 10, 0], size: [1.2, 1.8, 1.2], properties: { shape: 'dodecahedron', color: '#f1c40f', emissive: true, rotating: true, speed: 0.4 } },
-      // Glowing orbs under bridges
-      { type: 'decoration', position: [0, 2, -10], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#8e44ad', emissive: true } },
-      { type: 'decoration', position: [0, 2, 10], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#8e44ad', emissive: true } },
+      // Crown star above center
+      { type: 'decoration', position: [0, 10, 0], size: [1.2, 1.8, 1.2], properties: { shape: 'star', color: '#f1c40f', emissive: true, rotating: true, speed: 0.4 } },
+      // Domes sheltering bridges
+      { type: 'decoration', position: [0, 5.5, -10], size: [2, 1, 2], properties: { shape: 'dome', color: '#8e44ad', emissive: true } },
+      { type: 'decoration', position: [0, 5.5, 10], size: [2, 1, 2], properties: { shape: 'dome', color: '#8e44ad', emissive: true } },
       // Columns on islands
-      { type: 'decoration', position: [3, 7, -20], size: [0.4, 4, 0.4], properties: { shape: 'cylinder', color: '#5a6a7a' } },
-      { type: 'decoration', position: [-3, 7, 20], size: [0.4, 4, 0.4], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      { type: 'decoration', position: [3, 7, -20], size: [0.4, 4, 0.4], properties: { shape: 'column', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-3, 7, 20], size: [0.4, 4, 0.4], properties: { shape: 'column', color: '#5a6a7a' } },
     ]
   },
 
@@ -606,13 +610,13 @@ export const TEMPLATES = {
       { type: 'trigger', position: [-10, 1, 0], size: [3, 1, 3], properties: { color: '#2ecc71', isSpeedBoost: true } },
       // Moving obstacles that converge
       { type: 'obstacle', position: [0, 1.5, 0], size: [16, 1.5, 1], properties: { color: '#e74c3c', rotating: true, speed: 1.5 } },
-      // Curse orb above
-      { type: 'decoration', position: [0, 8, 0], size: [1.5, 1.5, 1.5], properties: { shape: 'sphere', color: '#e74c3c', emissive: true, rotating: true, speed: 1 } },
-      // Pillar top flames
-      { type: 'decoration', position: [6, 6, 6], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff4400', emissive: true } },
-      { type: 'decoration', position: [-6, 6, -6], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff4400', emissive: true } },
-      { type: 'decoration', position: [6, 6, -6], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff4400', emissive: true } },
-      { type: 'decoration', position: [-6, 6, 6], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff4400', emissive: true } },
+      // Curse heart above
+      { type: 'decoration', position: [0, 8, 0], size: [1.5, 1.5, 1.5], properties: { shape: 'heart', color: '#e74c3c', emissive: true, rotating: true, speed: 1 } },
+      // Pillar top warning bells
+      { type: 'decoration', position: [6, 6, 6], size: [0.4, 0.6, 0.4], properties: { shape: 'bell', color: '#ff4400', emissive: true } },
+      { type: 'decoration', position: [-6, 6, -6], size: [0.4, 0.6, 0.4], properties: { shape: 'bell', color: '#ff4400', emissive: true } },
+      { type: 'decoration', position: [6, 6, -6], size: [0.4, 0.6, 0.4], properties: { shape: 'bell', color: '#ff4400', emissive: true } },
+      { type: 'decoration', position: [-6, 6, 6], size: [0.4, 0.6, 0.4], properties: { shape: 'bell', color: '#ff4400', emissive: true } },
     ]
   },
 
@@ -647,10 +651,10 @@ export const TEMPLATES = {
       { type: 'platform', position: [8, 6.3, 8], size: [3.5, 0.2, 3.5], properties: { color: '#b3e5fc', isIce: true } },
       // Obstacle
       { type: 'obstacle', position: [0, 3.5, 0], size: [6, 1, 1], properties: { color: '#e74c3c', rotating: true, speed: 2 } },
-      // Floating orbs between platforms
-      { type: 'decoration', position: [5, 4, 5], size: [0.3, 0.3, 0.3], properties: { shape: 'sphere', color: '#ff6666', emissive: true } },
-      { type: 'decoration', position: [-5, 5, -5], size: [0.3, 0.3, 0.3], properties: { shape: 'sphere', color: '#ff6666', emissive: true } },
-      { type: 'decoration', position: [0, 7, 0], size: [0.8, 0.8, 0.8], properties: { shape: 'sphere', color: '#e74c3c', emissive: true, rotating: true, speed: 0.8 } },
+      // Floating shapes between platforms
+      { type: 'decoration', position: [5, 4, 5], size: [0.4, 0.4, 0.3], properties: { shape: 'heart', color: '#ff6666', emissive: true } },
+      { type: 'decoration', position: [-5, 5, -5], size: [0.4, 0.6, 0.4], properties: { shape: 'bell', color: '#ff6666', emissive: true } },
+      { type: 'decoration', position: [0, 7, 0], size: [0.8, 0.8, 0.8], properties: { shape: 'heart', color: '#e74c3c', emissive: true, rotating: true, speed: 0.8 } },
     ]
   },
 
@@ -693,13 +697,15 @@ export const TEMPLATES = {
       { type: 'platform', position: [0, 8, -30], size: [4, 1, 4], properties: { color: '#f1c40f' } },
       { type: 'trigger', position: [0, 10, -30], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 5, rotating: true, speed: 1 } },
       // Start flag
-      { type: 'decoration', position: [4, 1.5, 30], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
+      { type: 'decoration', position: [4, 1.5, 30], size: [0.1, 2, 0.1], properties: { shape: 'column', color: '#bdc3c7' } },
       { type: 'decoration', position: [4.4, 2.2, 30], size: [0.6, 0.4, 0.05], properties: { color: '#2ecc71' } },
-      // Guiding orbs along the path
-      { type: 'decoration', position: [3, 2, 16], size: [0.3, 0.3, 0.3], properties: { shape: 'sphere', color: '#2ecc71', emissive: true } },
-      { type: 'decoration', position: [-1, 3, 8], size: [0.3, 0.3, 0.3], properties: { shape: 'sphere', color: '#95a5a6', emissive: true } },
-      { type: 'decoration', position: [1, 5, -8], size: [0.3, 0.3, 0.3], properties: { shape: 'sphere', color: '#95a5a6', emissive: true } },
-      { type: 'decoration', position: [-1, 7, -24], size: [0.3, 0.3, 0.3], properties: { shape: 'sphere', color: '#9b59b6', emissive: true } },
+      // Arch gateway at start
+      { type: 'decoration', position: [0, 1, 27], size: [6, 3, 0.8], properties: { shape: 'arch', color: '#2ecc71' } },
+      // Directional arrows along the path
+      { type: 'decoration', position: [3, 2, 16], size: [0.4, 0.6, 0.3], properties: { shape: 'arrow', color: '#2ecc71', emissive: true } },
+      { type: 'decoration', position: [-1, 3, 8], size: [0.4, 0.6, 0.3], properties: { shape: 'arrow', color: '#95a5a6', emissive: true } },
+      { type: 'decoration', position: [1, 5, -8], size: [0.4, 0.6, 0.3], properties: { shape: 'arrow', color: '#95a5a6', emissive: true } },
+      { type: 'decoration', position: [-1, 7, -24], size: [0.5, 0.8, 0.3], properties: { shape: 'star', color: '#9b59b6', emissive: true } },
     ]
   },
 
@@ -738,15 +744,17 @@ export const TEMPLATES = {
       { type: 'obstacle', position: [15, 1.5, 0], size: [1, 2, 6], properties: { color: '#e74c3c', kinematic: true, path: [[15, 1.5, -3], [15, 1.5, 3]], speed: 1 } },
       { type: 'obstacle', position: [-15, 1.5, 0], size: [1, 2, 6], properties: { color: '#e74c3c', kinematic: true, path: [[-15, 1.5, 3], [-15, 1.5, -3]], speed: 1.2 } },
       // Center decoration
-      { type: 'decoration', position: [0, 5, 0], size: [2, 3, 2], properties: { shape: 'dodecahedron', color: '#9b59b6', emissive: true, rotating: true, speed: 0.3 } },
+      { type: 'decoration', position: [0, 5, 0], size: [2, 3, 2], properties: { shape: 'star', color: '#9b59b6', emissive: true, rotating: true, speed: 0.3 } },
+      // Start/finish arch
+      { type: 'decoration', position: [0, 1, 15], size: [6, 4, 1], properties: { shape: 'arch', color: '#2ecc71' } },
       // Corner columns
-      { type: 'decoration', position: [20, 3, 20], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
-      { type: 'decoration', position: [-20, 3, 20], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
-      { type: 'decoration', position: [20, 3, -20], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
-      { type: 'decoration', position: [-20, 3, -20], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
-      // Column-top orbs
-      { type: 'decoration', position: [20, 6, 20], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#9b59b6', emissive: true } },
-      { type: 'decoration', position: [-20, 6, -20], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#9b59b6', emissive: true } },
+      { type: 'decoration', position: [20, 3, 20], size: [0.5, 5, 0.5], properties: { shape: 'column', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-20, 3, 20], size: [0.5, 5, 0.5], properties: { shape: 'column', color: '#5a6a7a' } },
+      { type: 'decoration', position: [20, 3, -20], size: [0.5, 5, 0.5], properties: { shape: 'column', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-20, 3, -20], size: [0.5, 5, 0.5], properties: { shape: 'column', color: '#5a6a7a' } },
+      // Column-top arrows
+      { type: 'decoration', position: [20, 6, 20], size: [0.5, 0.8, 0.4], properties: { shape: 'arrow', color: '#9b59b6', emissive: true } },
+      { type: 'decoration', position: [-20, 6, -20], size: [0.5, 0.8, 0.4], properties: { shape: 'arrow', color: '#9b59b6', emissive: true } },
     ]
   },
 
