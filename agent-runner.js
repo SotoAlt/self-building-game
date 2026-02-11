@@ -108,9 +108,9 @@ function detectPhase(context) {
 
 const PHASE_INTERVALS = {
   welcome: 25000,
-  lobby: 20000,
+  lobby: 8000,
   gaming: 30000,
-  intermission: 25000,
+  intermission: 8000,
   escalation: 25000,
   finale: 20000,
 };

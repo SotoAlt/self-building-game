@@ -434,7 +434,7 @@ export class MiniGame {
       survival: [60000, 120000],
       king: [60000, 120000],
       hot_potato: [90000, 150000],
-      race: [60000, 100000]
+      race: [90000, 150000]
     };
     const [min, max] = ranges[type] || [45000, 75000];
     return min + Math.floor(Math.random() * (max - min));

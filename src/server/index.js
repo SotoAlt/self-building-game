@@ -34,8 +34,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3000;
-const MIN_LOBBY_MS = 15000;
-const AUTO_START_DELAY = 45000;
+const MIN_LOBBY_MS = 5000;
+const AUTO_START_DELAY = 20000;
+const MIN_GAME_DURATION_MS = 30000;
 const ANNOUNCEMENT_COOLDOWN = 5000;
 const AGENT_CHAT_COOLDOWN = 3000;
 const AFK_IDLE_MS = 120000;
@@ -938,6 +939,17 @@ gameRouter.post('/game/end', (req, res) => {
 
   if (phase !== 'countdown' && phase !== 'playing') {
     return res.status(400).json({ error: `No active game to end (phase: ${phase})` });
+  }
+
+  // Prevent premature ending — games must run at least MIN_GAME_DURATION_MS
+  const miniGame = arena.currentMiniGame;
+  if (miniGame?.isActive && miniGame.startTime && req.body.result !== 'win') {
+    const elapsed = Date.now() - miniGame.startTime;
+    if (elapsed < MIN_GAME_DURATION_MS) {
+      return res.status(400).json({
+        error: `Game just started ${Math.round(elapsed / 1000)}s ago — let it play out!`
+      });
+    }
   }
 
   const { winnerId } = req.body;

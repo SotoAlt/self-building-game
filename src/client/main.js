@@ -890,7 +890,7 @@ function getGeometry(entity) {
     case 'dodecahedron': return new THREE.DodecahedronGeometry(maxDim);
     case 'icosahedron':  return new THREE.IcosahedronGeometry(maxDim, 0);
     case 'octahedron':   return new THREE.OctahedronGeometry(maxDim);
-    case 'ring':         return new THREE.TorusGeometry(sx / 2, 0.15, 8, 32);
+    case 'ring':         return new THREE.TorusGeometry(sx / 2, Math.max(0.2, sx / 8), 8, 32);
     default:             return new THREE.BoxGeometry(sx, sy, sz);
   }
 }

@@ -679,7 +679,6 @@ export class WorldState {
   }
 
   resetGameState() {
-    const { cooldownUntil } = this.gameState;
     // Clean world for lobby — clear all entities, reset physics/floor/environment
     this.clearEntities();
     this.gameState = {
@@ -688,7 +687,7 @@ export class WorldState {
       gameType: null,
       startTime: null,
       timeLimit: null,
-      cooldownUntil,
+      cooldownUntil: 0,
       winners: [],
       losers: []
     };

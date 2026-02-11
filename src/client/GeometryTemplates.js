@@ -15,7 +15,7 @@ import * as THREE from 'three';
 const SEGMENTS = 16;
 
 function lathe(points, sx, sy, sz) {
-  const pts = points.map(([r, h]) => new THREE.Vector2(r * sx * 0.5, h * sy));
+  const pts = points.map(([r, h]) => new THREE.Vector2(r * sx, h * sy));
   const geo = new THREE.LatheGeometry(pts, SEGMENTS);
   if (Math.abs(sz / sx - 1) > 0.05) {
     geo.scale(1, 1, sz / sx);
@@ -26,12 +26,12 @@ function lathe(points, sx, sy, sz) {
 function extrude(shape, sx, sy, sz) {
   const settings = { depth: sz * 0.5, bevelEnabled: false };
   const geo = new THREE.ExtrudeGeometry(shape, settings);
-  geo.scale(sx * 0.5, sy * 0.5, 1);
+  geo.scale(sx * 0.8, sy * 0.8, 1);
   geo.translate(0, 0, -sz * 0.25);
   return geo;
 }
 
-function tube(curve, sx, sy, sz, radiusScale = 0.15) {
+function tube(curve, sx, sy, sz, radiusScale = 0.3) {
   const radius = Math.min(sx, sz) * radiusScale;
   return new THREE.TubeGeometry(curve, 32, radius, 8, false);
 }
