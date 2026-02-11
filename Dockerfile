@@ -22,6 +22,7 @@ COPY package*.json .npmrc ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY src ./src
+COPY docs ./docs
 
 ENV NODE_ENV=production
 ENV PORT=3000
