@@ -1,8 +1,8 @@
 # Multi-Arena Platform — Architecture Document
 
-> **Status**: Implemented (v0.38.0)
-> **Created**: Feb 7, 2026 | **Implemented**: Feb 10, 2026
-> **Branch**: `feature/multi-arena`
+> **Status**: Deployed to production (v0.38.0)
+> **Created**: Feb 7, 2026 | **Implemented**: Feb 10, 2026 | **Deployed**: Feb 11, 2026
+> **Branch**: Merged to `main` (PR #1)
 
 ---
 

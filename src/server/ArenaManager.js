@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { ArenaInstance } from './ArenaInstance.js';
 
 const MAX_ARENAS = 20;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 export class ArenaManager {
   constructor() {
@@ -85,6 +86,19 @@ export class ArenaManager {
       if (arena.apiKey === apiKey) return arena;
     }
     return null;
+  }
+
+  findStaleArenas(maxInactiveMs = ONE_DAY_MS) {
+    const now = Date.now();
+    const stale = [];
+    for (const arena of this.arenas.values()) {
+      if (arena.isDefault) continue;
+      if (arena.worldState.players.size > 0) continue;
+      if (now - arena.lastActive > maxInactiveMs) {
+        stale.push(arena.id);
+      }
+    }
+    return stale;
   }
 
   loadFromDB(rows) {

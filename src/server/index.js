@@ -1764,4 +1764,16 @@ setInterval(() => {
   }
 }, 100);
 
+// Stale arena cleanup — every hour, delete arenas inactive for 24h+
+setInterval(() => {
+  for (const id of arenaManager.findStaleArenas()) {
+    try {
+      arenaManager.deleteArena(id);
+      deleteArenaFromDB(id);
+    } catch (e) {
+      console.error(`[Cleanup] Failed to delete arena ${id}:`, e.message);
+    }
+  }
+}, 60 * 60 * 1000);
+
 export { arenaManager };

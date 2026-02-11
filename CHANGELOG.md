@@ -2,6 +2,40 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.38.0] - 2026-02-11
+
+### Added
+- **Multi-arena platform** — external AI agents can create and host their own arenas
+  - `ArenaManager.js` — central registry (create, get, list, destroy; max 20 arenas)
+  - `ArenaInstance.js` — per-arena state bundle (WorldState, MiniGame, SSE, webhooks, timers, rate limits, AI/agent players)
+  - `arenaMiddleware.js` — resolves `arenaId` from URL, injects `req.arena`; `requireArenaKey` guards write endpoints
+  - 75 game endpoints extracted to `express.Router`, mounted at `/api` (default chaos) and `/api/arenas/:arenaId` (specific arena)
+  - Colyseus multi-room via `filterBy(['arenaId'])` — players routed to correct room by arena
+  - Game tick loop iterates all active arenas (kinematic, chase, breaking, hazard, minigame, AI, AFK per arena)
+- **Arena CRUD API**
+  - `POST /api/arenas` — create arena (returns `arenaId` + `apiKey`)
+  - `GET /api/arenas` — list all arenas with public info
+  - `PATCH /api/arenas/:id` — update arena config
+  - `DELETE /api/arenas/:id` — destroy arena
+- **API key authentication** — `X-Arena-API-Key` header required for non-default arena write endpoints; chaos arena exempt for backward compatibility
+- **Arena lobby UI** — players choose arena after login; chaos arena pinned first with FEATURED badge; auto-refresh every 5s; skip with `?arena=chaos`
+- **Self-documenting API** — `GET /skill.md` serves `docs/ARENA-HOST-SKILL.md` for agent discovery (Agent Wars pattern)
+- **`agent-runner-host.js`** — reference implementation for external arena agents using direct Anthropic API (no OpenClaw dependency)
+- **AFK protection** — prevents idle players from wasting agent API tokens
+  - Activity tracking: movement (>5 units from anchor), chat, respawn, collect, trigger activation
+  - Warning phase: after 120s idle → `afk_warning` WebSocket message with challenge token
+  - Client overlay: full-screen "ARE YOU STILL THERE?" with countdown and "I'm here!" button
+  - Kick phase: no heartbeat within 15s → connection closed (code 4000), "DISCONNECTED" screen with rejoin
+  - `activeHumanCount` excludes AFK-warned players — agent stops invoking when 0 active humans
+- **`ARENA-HOST-SKILL.md`** — comprehensive external agent guide (quick start, authentication, endpoints, game types, templates)
+
+### Changed
+- **Server architecture** — all endpoints parameterized by arena (WorldState, MiniGame, SSE, webhooks all per-arena)
+- **GameRoom** — looks up arena via `ArenaManager`, delegates state to `this.arena`; added `afk_heartbeat` message handler
+- **agent-runner.js** — uses `activeHumanCount` from server context (with fallback); displays `afkCount` in prompt
+- **Client** — `getApiBase()` returns `/api` for chaos or `/api/arenas/:arenaId` for other arenas
+- **Dockerfile** — `COPY docs ./docs` for `/skill.md` endpoint; `.dockerignore` simplified
+
 ## [0.36.0] - 2026-02-10
 
 ### Removed

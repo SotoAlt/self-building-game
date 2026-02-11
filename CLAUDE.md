@@ -6,24 +6,22 @@ An AI agent ("Chaos Magician") builds a 3D multiplayer game in real-time while p
 
 ## Current Phase
 
-**Production v0.32.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
+**Production v0.38.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
 
 ## Architecture
 
 ```
 Browser Client (Three.js + Colyseus)
     |
-    | WebSocket (real-time sync)
+    | WebSocket (real-time sync, filtered by arenaId)
     |
 Game Server (Express + Colyseus, port 3000)
-    |           |            |
-    | HTTP API  | PostgreSQL | SSE Stream
-    |           |            |
-OpenClaw Agent (Chaos Magician)
-    |
-    | AgentLoop.js (in-server, drama-based scheduling)
-    |
-Claude (Anthropic) via OpenClaw Gateway
+    |           |            |            |
+    | HTTP API  | PostgreSQL | SSE Stream | ArenaManager (multi-tenant)
+    |           |            |            |
+    ├── Chaos Arena (agent-runner.js → OpenClaw → Claude)
+    ├── External Arena 1 (any AI agent → HTTP API)
+    └── External Arena N ...
 ```
 
 **Stack**: Three.js + Colyseus + Express + OpenClaw + PostgreSQL
@@ -34,9 +32,12 @@ Claude (Anthropic) via OpenClaw Gateway
 /self-building-game
 ├── src/
 │   ├── server/
-│   │   ├── index.js          # Express API (50+ endpoints) + Colyseus setup
-│   │   ├── WorldState.js     # Entities, players, leaderboard, spells, events, spectator mgmt
-│   │   ├── GameRoom.js       # WebSocket message handlers, mid-game spectator detection
+│   │   ├── index.js          # Express API (75+ endpoints) + Colyseus setup
+│   │   ├── ArenaManager.js   # Central arena registry — create, get, list, destroy (max 20)
+│   │   ├── ArenaInstance.js  # Per-arena state bundle (WorldState, MiniGame, SSE, webhooks, timers)
+│   │   ├── arenaMiddleware.js# Route resolution + API key auth middleware
+│   │   ├── WorldState.js     # Entities, players, leaderboard, spells, AFK tracking, activity
+│   │   ├── GameRoom.js       # WebSocket handlers, mid-game spectator, AFK heartbeat
 │   │   ├── MiniGame.js       # Game lifecycle, trick system, scoring, random obstacles
 │   │   ├── AgentLoop.js      # Drama score, phase detection, agent scheduling, player welcomes
 │   │   ├── AgentBridge.js    # OpenClaw CLI invocation
@@ -56,9 +57,10 @@ Claude (Anthropic) via OpenClaw Gateway
 │   ├── game-world-skill.md   # SKILL.md — tool descriptions OpenClaw reads to know available tools
 │   ├── game-player-skill.js  # 8 external agent player tools
 │   └── SOUL.md               # Chaos Magician personality
-├── docs/                     # PRD, CONCEPT, ROADMAP, STACK-EVALUATION
-├── index.html                # Game UI (login, chat, leaderboard, spectator)
-├── agent-runner.js           # Standalone agent loop (sole agent system, runs on host)
+├── docs/                     # PRD, CONCEPT, ROADMAP, MULTI-ARENA-DESIGN, ARENA-HOST-SKILL
+├── index.html                # Game UI (login, arena lobby, chat, leaderboard, spectator)
+├── agent-runner.js           # Chaos arena agent loop (sole agent system, runs on host)
+├── agent-runner-host.js      # Reference: external arena agent (direct Anthropic API, no OpenClaw)
 ├── chat-bridge.js            # Twitch/Discord/Telegram chat bridge
 ├── deploy.sh                 # Production deployment script
 ├── docker-compose.yml        # Game server + PostgreSQL + nginx + certbot
@@ -77,13 +79,19 @@ npm run build        # Build client for production
 
 ## Key API Endpoints
 
+All game endpoints available at both `/api/...` (default chaos arena) and `/api/arenas/:arenaId/...` (specific arena).
+
 | Endpoint | Purpose |
 |----------|---------|
+| **Arena Management** | |
+| `POST /api/arenas` | Create arena (returns `arenaId` + `apiKey`) |
+| `GET /api/arenas` | List all arenas with public info |
+| `DELETE /api/arenas/:id` | Destroy arena (requires API key) |
+| `GET /skill.md` | Self-documenting API guide for external agents |
+| **Game Endpoints** (arena-scoped) | |
 | `GET /api/agent/context` | Full game state for agent decisions |
 | `POST /api/game/start` | Start a mini-game |
 | `POST /api/world/compose` | Compose anything — prefabs, cached, or new recipes |
-| `POST /api/world/spawn` | **BLOCKED** — returns 400 redirecting to compose |
-| `POST /api/world/spawn-prefab` | **BLOCKED** — returns 400 redirecting to compose |
 | `POST /api/world/destroy-group` | Destroy all entities in a group |
 | `POST /api/spell/cast` | Cast spell on players |
 | `POST /api/agent/pause` | Kill switch — pause agent |
@@ -101,7 +109,7 @@ npm run build        # Build client for production
 - **@mention fast-track**: 3s minimum for `@agent` mentions (vs 15s standard minimum)
 - **Audience pacing**: 30s minimum for audience-only chat (no in-game players)
 - **Session phases**: welcome → warmup → gaming → intermission → escalation → finale
-- **Agent auto-pauses** when 0 human players connected
+- **Agent auto-pauses** when 0 active humans connected (`activeHumanCount` excludes AFK-warned players)
 - **Player welcome system**: detects joins, queues `pendingWelcomes`, greets by name
 - **Cooldown guard**: agent skips invocation during 15s post-game cooldown
 - **Spell cooldown**: 10s between casts (server-enforced via `WorldState.SPELL_COOLDOWN`)
@@ -115,7 +123,18 @@ npm run build        # Build client for production
 - **Personality**: Chaos magic apprentice — short messages, twists player requests, tool honesty
 - Model: Claude (Anthropic) via OpenClaw
 
-## Game Types (v0.32.0)
+## Multi-Arena Platform (v0.38.0)
+
+- **Multi-tenant**: External AI agents create arenas via `POST /api/arenas`, get `apiKey`, act as game master
+- **Per-arena isolation**: Each arena has its own WorldState, MiniGame, SSE, webhooks, timers, AI/agent players
+- **Self-documenting API**: `GET /skill.md` — any AI agent can discover the API (no SDK needed)
+- **API key auth**: `X-Arena-API-Key` header on write endpoints; chaos arena exempt (backward compat)
+- **Arena lobby**: Players choose arena after login; chaos pinned with FEATURED badge; `?arena=chaos` skips
+- **AFK protection**: 120s idle → warning overlay → 15s kick countdown → disconnected with rejoin option
+- **Reference agent**: `agent-runner-host.js` — external agent using direct Anthropic API (no OpenClaw)
+- **Max 20 arenas**, arena configs persisted in PostgreSQL `arenas` table
+
+## Game Types (v0.38.0)
 
 | Type | Description | Win Condition | Min Players |
 |------|-------------|---------------|-------------|
@@ -126,7 +145,7 @@ npm run build        # Build client for production
 | `hot_potato` | Pass the curse before sub-timer expires | Last standing after multi-round elimination | 2 |
 | `race` | Hit checkpoints in order | First to complete all checkpoints or most at timeout | 1 |
 
-## Game Flow (v0.32.0)
+## Game Flow (v0.38.0)
 
 - **Atomic game start**: `start_game({ template })` loads arena + starts game in one call (no separate load_template step)
 - **45s auto-start**: if agent doesn't start a game within 45s of lobby, a random template auto-starts (prefers unplayed new game types)
