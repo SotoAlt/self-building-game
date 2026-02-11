@@ -323,6 +323,7 @@ async function executeAutoBribe(arena, bribeType, bribeId) {
     case 'extra_time': {
       if (arena.currentMiniGame?.isActive) {
         arena.currentMiniGame.timeLimit += 15000;
+        ws.gameState.timeLimit += 15000;
         broadcast('announcement', ws.announce('EXTRA TIME! +15 seconds!', 'system', 5000));
       } else {
         broadcast('announcement', ws.announce('The Magician pockets the bribe... extra time next game!', 'agent', 5000));
@@ -910,10 +911,21 @@ gameRouter.post('/game/start', (req, res) => {
         });
       }
 
+      // Check min-players BEFORE loading template to prevent map flash
+      const gameType = type || tmpl.gameType || 'reach';
+      const gameTypeDef = GAME_TYPES[gameType];
+      const minRequired = gameTypeDef?.minPlayers || 1;
+      const humanCount = ws.getPlayers().filter(p => p.type !== 'ai').length;
+      if (humanCount < minRequired) {
+        const gameName = gameTypeDef?.name || gameType;
+        return res.status(400).json({
+          error: `${gameName} requires ${minRequired}+ players (${humanCount} connected)`
+        });
+      }
+
       applyTemplate(arena, tmpl);
       ws.setLastTemplate(template);
 
-      const gameType = type || tmpl.gameType || 'reach';
       const result = doStartGame(arena, gameType, req.body);
       if (!result.success) {
         return res.status(result.status || 400).json({ error: result.error });
