@@ -826,7 +826,7 @@ function scheduleGroupAssembly(groupId) {
 }
 
 function createBeveledBox(sx, sy, sz) {
-  const bevel = Math.min(sx, sy, sz) * 0.08;
+  const bevel = Math.max(0.12, Math.min((sx + sz) / 2 * 0.06, sy * 0.4));
   const hx = sx / 2 - bevel;
   const hz = sz / 2 - bevel;
 

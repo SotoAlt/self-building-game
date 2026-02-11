@@ -448,6 +448,10 @@ function invokeAgent(message) {
         reject(err);
       } else {
         console.log(`[Agent] Response received (${output.length} chars)`);
+        if (output.length < 500) {
+          console.log(`[Agent] Content: ${output}`);
+        }
+        if (stderr) console.warn(`[Agent] stderr: ${stderr.slice(0, 300)}`);
         resolve(output);
       }
     });

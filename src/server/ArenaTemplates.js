@@ -699,8 +699,6 @@ export const TEMPLATES = {
       // Start flag
       { type: 'decoration', position: [4, 1.5, 30], size: [0.1, 2, 0.1], properties: { shape: 'column', color: '#bdc3c7' } },
       { type: 'decoration', position: [4.4, 2.2, 30], size: [0.6, 0.4, 0.05], properties: { color: '#2ecc71' } },
-      // Arch gateway at start
-      { type: 'decoration', position: [0, 1, 27], size: [6, 3, 0.8], properties: { shape: 'arch', color: '#2ecc71' } },
       // Directional arrows along the path
       { type: 'decoration', position: [3, 2, 16], size: [0.4, 0.6, 0.3], properties: { shape: 'arrow', color: '#2ecc71', emissive: true } },
       { type: 'decoration', position: [-1, 3, 8], size: [0.4, 0.6, 0.3], properties: { shape: 'arrow', color: '#95a5a6', emissive: true } },
