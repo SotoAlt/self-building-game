@@ -116,10 +116,11 @@ const PHASE_INTERVALS = {
 };
 
 function shouldInvoke(phase, drama, context) {
-  const humanCount = (context.players || []).filter(p => p.type !== 'ai').length;
+  // Use activeHumanCount from server (excludes AFK-warned players), fallback to manual filter
+  const humanCount = context.activeHumanCount ?? (context.players || []).filter(p => p.type !== 'ai').length;
   const hasAudienceChat = getNewAudienceMessages(context).length > 0;
   const hasPlayerMentions = getNewPlayerMentions(context).length > 0;
-  // Allow invocation if humans are in-game OR audience is chatting
+  // Allow invocation if active humans are in-game OR audience is chatting
   if (humanCount === 0 && !hasAudienceChat && !hasPlayerMentions) return false;
 
   const elapsed = Date.now() - lastInvokeTime;
@@ -309,8 +310,9 @@ function buildPrompt(phase, context, drama) {
     finale: `**Phase: FINALE** — Grand finale! Maximum chaos. Epic commentary. Make it memorable! Use start_game({ template: '...', type: '...' }) for the final showdown!`
   };
 
-  // Chat-only mode: audience is chatting but no one is in-game
-  const humanCount = (context.players || []).filter(p => p.type !== 'ai').length;
+  // Chat-only mode: audience is chatting but no active humans in-game
+  const humanCount = context.activeHumanCount ?? (context.players || []).filter(p => p.type !== 'ai').length;
+  const afkCount = (context.players || []).filter(p => p.state === 'afk_warned').length;
   const bridgeOnly = humanCount === 0 && getNewAudienceMessages(context).length > 0;
 
   if (bridgeOnly) {
@@ -334,7 +336,7 @@ function buildPrompt(phase, context, drama) {
 
   // World state
   parts.push(`\n**World State**:`);
-  parts.push(`- Players: ${context.playerCount} online`);
+  parts.push(`- Players: ${context.playerCount} online (${humanCount} active${afkCount > 0 ? `, ${afkCount} AFK` : ''})`);
   if (context.players?.length > 0) {
     parts.push(`- Player list: ${context.players.map(p => `${p.name} (${p.state})`).join(', ')}`);
   }

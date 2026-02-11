@@ -36,6 +36,14 @@ const urlParams = new URLSearchParams(window.location.search);
 const isSpectator = urlParams.get('spectator') === 'true';
 const isDebug = urlParams.get('debug') === 'true';
 
+// Arena selection — defaults to 'chaos', updated after lobby
+let selectedArenaId = urlParams.get('arena') || 'chaos';
+// API base path — scoped to selected arena
+function getApiBase() {
+  if (selectedArenaId === 'chaos') return `${API_URL}/api`;
+  return `${API_URL}/api/arenas/${selectedArenaId}`;
+}
+
 // ============================================
 // Game State
 // ============================================
@@ -1855,7 +1863,7 @@ function displayChatMessage(msg) {
 
 async function fetchLeaderboard() {
   try {
-    const response = await fetch(`${API_URL}/api/leaderboard`);
+    const response = await fetch(`${getApiBase()}/leaderboard`);
     const data = await response.json();
     updateLeaderboardUI(data.leaderboard);
   } catch (e) {
@@ -2015,6 +2023,97 @@ function showConnectionWarning(disconnected) {
   } else if (banner) {
     banner.remove();
   }
+}
+
+// AFK Warning UI
+let _afkOverlay = null;
+let _afkCountdownInterval = null;
+
+function showAfkWarning(token, timeout) {
+  hideAfkWarning();
+
+  _afkOverlay = document.createElement('div');
+  _afkOverlay.id = 'afk-overlay';
+  _afkOverlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#ff6b6b;font-size:32px;font-weight:bold;margin-bottom:16px;text-shadow:0 0 20px rgba(255,107,107,0.5);';
+  title.textContent = 'ARE YOU STILL THERE?';
+
+  const countdown = document.createElement('div');
+  countdown.style.cssText = 'color:#fff;font-size:20px;margin-bottom:24px;';
+  let remaining = Math.ceil(timeout / 1000);
+  countdown.textContent = `You'll be kicked in ${remaining}s...`;
+  _afkCountdownInterval = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(_afkCountdownInterval);
+      countdown.textContent = 'Kicking...';
+    } else {
+      countdown.textContent = `You'll be kicked in ${remaining}s...`;
+    }
+  }, 1000);
+
+  const btn = document.createElement('button');
+  btn.style.cssText = 'padding:16px 48px;font-size:22px;font-weight:bold;background:#4caf50;color:#fff;border:none;border-radius:12px;cursor:pointer;transition:transform 0.1s;';
+  btn.textContent = "I'm here!";
+  btn.onmouseenter = () => btn.style.transform = 'scale(1.05)';
+  btn.onmouseleave = () => btn.style.transform = 'scale(1)';
+  btn.onclick = () => {
+    if (state.room) state.room.send('afk_heartbeat', { token });
+    hideAfkWarning();
+  };
+
+  _afkOverlay.appendChild(title);
+  _afkOverlay.appendChild(countdown);
+  _afkOverlay.appendChild(btn);
+  document.body.appendChild(_afkOverlay);
+
+  // Any keypress also dismisses (hideAfkWarning cleans up this listener)
+  const keyHandler = () => {
+    if (state.room) state.room.send('afk_heartbeat', { token });
+    hideAfkWarning();
+  };
+  document.addEventListener('keydown', keyHandler);
+  _afkOverlay._keyHandler = keyHandler;
+}
+
+function hideAfkWarning() {
+  if (_afkCountdownInterval) {
+    clearInterval(_afkCountdownInterval);
+    _afkCountdownInterval = null;
+  }
+  if (_afkOverlay) {
+    if (_afkOverlay._keyHandler) {
+      document.removeEventListener('keydown', _afkOverlay._keyHandler);
+    }
+    _afkOverlay.remove();
+    _afkOverlay = null;
+  }
+}
+
+function showAfkKickedScreen() {
+  hideAfkWarning();
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'color:#ff6b6b;font-size:36px;font-weight:bold;margin-bottom:12px;';
+  title.textContent = 'DISCONNECTED';
+
+  const reason = document.createElement('div');
+  reason.style.cssText = 'color:#aaa;font-size:18px;margin-bottom:32px;';
+  reason.textContent = 'You were kicked for being AFK.';
+
+  const btn = document.createElement('button');
+  btn.style.cssText = 'padding:16px 48px;font-size:20px;font-weight:bold;background:#2196f3;color:#fff;border:none;border-radius:12px;cursor:pointer;';
+  btn.textContent = 'Rejoin';
+  btn.onclick = () => location.reload();
+
+  overlay.appendChild(title);
+  overlay.appendChild(reason);
+  overlay.appendChild(btn);
+  document.body.appendChild(overlay);
 }
 
 const MAX_VISIBLE_ANNOUNCEMENTS = 3;
@@ -2208,7 +2307,7 @@ function applyWorldState(worldData) {
 
 async function fetchInitialState() {
   try {
-    const response = await fetch(`${API_URL}/api/world/state`);
+    const response = await fetch(`${getApiBase()}/world/state`);
     const data = await response.json();
     applyWorldState(data);
     console.log(`[Init] Loaded ${data.entities.length} entities`);
@@ -2224,7 +2323,7 @@ async function connectToServer() {
     const client = new Client(SERVER_URL);
     const user = authUser?.user;
     const playerName = user?.twitterUsername || user?.name || `Player-${Date.now().toString(36)}`;
-    const joinOptions = { name: playerName };
+    const joinOptions = { name: playerName, arenaId: selectedArenaId };
 
     if (authUser?.token) {
       joinOptions.token = authUser.token;
@@ -2242,6 +2341,10 @@ async function connectToServer() {
       console.warn('[Network] Disconnected from room, code:', code);
       state.room = null;
       state.connected = false;
+      if (code === 4000) {
+        showAfkKickedScreen();
+        return;
+      }
       showConnectionWarning(true);
       if (code !== 1000) {
         setTimeout(attemptReconnect, 1000);
@@ -2251,6 +2354,15 @@ async function connectToServer() {
     room.onError((code, message) => {
       console.error('[Network] Room error:', code, message);
     });
+
+    // AFK detection
+    room.onMessage('afk_warning', ({ token, timeout }) => {
+      showAfkWarning(token, timeout);
+    });
+    room.onMessage('afk_cleared', () => {
+      hideAfkWarning();
+    });
+    // Note: afk_kicked is handled via onLeave(4000) above to avoid double-overlay
 
     // Entity events
     room.onMessage('entity_spawned', (entity) => {
@@ -2775,7 +2887,7 @@ window.addEventListener('resize', () => {
 // ============================================
 async function pollForUpdates() {
   try {
-    const response = await fetch(`${API_URL}/api/world/state`);
+    const response = await fetch(`${getApiBase()}/world/state`);
     const data = await response.json();
 
     state.physics = data.physics;
@@ -2953,7 +3065,7 @@ function setupBribeUI() {
   setInterval(updateBalance, 30000);
 
   // Fetch bribe options
-  fetch(`${API_URL}/api/bribe/options`)
+  fetch(`${getApiBase()}/bribe/options`)
     .then(r => r.json())
     .then(data => {
       bribeOptions = data.options;
@@ -3110,7 +3222,7 @@ function setupBribeUI() {
       const token = getToken();
       if (token) headers.Authorization = `Bearer ${token}`;
 
-      const res = await fetch(`${API_URL}/api/bribe`, {
+      const res = await fetch(`${getApiBase()}/bribe`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -3140,7 +3252,7 @@ function setupSpectatorOverlay() {
   // Poll drama score
   setInterval(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/agent/drama`);
+      const res = await fetch(`${getApiBase()}/agent/drama`);
       const data = await res.json();
       const meter = document.getElementById('drama-fill');
       const label = document.getElementById('drama-value');
@@ -3188,8 +3300,8 @@ function setupDebugPanel() {
   async function refreshStatus() {
     try {
       const [aiRes, agentRes] = await Promise.all([
-        fetch(`${API_URL}/api/ai/status`),
-        fetch(`${API_URL}/api/agent/status`)
+        fetch(`${getApiBase()}/ai/status`),
+        fetch(`${getApiBase()}/agent/status`)
       ]);
       const aiData = await aiRes.json();
       const agentData = await agentRes.json();
@@ -3200,14 +3312,14 @@ function setupDebugPanel() {
   }
 
   aiToggle.addEventListener('change', async () => {
-    const endpoint = aiToggle.checked ? '/api/ai/enable' : '/api/ai/disable';
-    await fetch(`${API_URL}${endpoint}`, { method: 'POST' });
+    const suffix = aiToggle.checked ? '/ai/enable' : '/ai/disable';
+    await fetch(`${getApiBase()}${suffix}`, { method: 'POST' });
     refreshStatus();
   });
 
   agentToggle.addEventListener('change', async () => {
-    const endpoint = agentToggle.checked ? '/api/agent/resume' : '/api/agent/pause';
-    await fetch(`${API_URL}${endpoint}`, { method: 'POST' });
+    const suffix = agentToggle.checked ? '/agent/resume' : '/agent/pause';
+    await fetch(`${getApiBase()}${suffix}`, { method: 'POST' });
     refreshStatus();
   });
 
@@ -3480,6 +3592,88 @@ function populateWalletPanel(user) {
 }
 
 // ============================================
+// Arena Lobby
+// ============================================
+let arenaRefreshInterval = null;
+
+async function showArenaLobby() {
+  const lobby = document.getElementById('arena-lobby');
+  const listEl = document.getElementById('arena-list');
+  if (!lobby || !listEl) {
+    // No lobby UI — just use default
+    return 'chaos';
+  }
+
+  lobby.style.display = 'flex';
+
+  async function loadArenas() {
+    try {
+      const res = await fetch(`${API_URL}/api/arenas`);
+      const data = await res.json();
+      return data.arenas || [];
+    } catch {
+      return [];
+    }
+  }
+
+  function renderArenas(arenas) {
+    if (arenas.length === 0) {
+      listEl.innerHTML = '<div class="arena-loading">No arenas available</div>';
+      return;
+    }
+
+    // Always pin default (chaos) arena at the top
+    arenas.sort((a, b) => {
+      if (a.isDefault) return -1;
+      if (b.isDefault) return 1;
+      return (b.playerCount || 0) - (a.playerCount || 0);
+    });
+
+    listEl.innerHTML = arenas.map(a => {
+      const badgeClass = a.phase || 'lobby';
+      const badgeText = a.phase === 'playing' ? 'LIVE' : (a.phase || 'LOBBY').toUpperCase();
+      const desc = a.description ? `<div class="arena-card-desc">${a.description}</div>` : '';
+      const defaultClass = a.isDefault ? ' default' : '';
+      return `
+        <div class="arena-card${defaultClass}" data-arena-id="${a.id}">
+          <div class="arena-card-header">
+            <span class="arena-card-name">${a.name || a.id}</span>
+            <span class="arena-card-badge ${badgeClass}">${badgeText}</span>
+          </div>
+          <div class="arena-card-meta">
+            <span>${a.playerCount || 0} players</span>
+            <span>${a.gameMasterName || 'Game Master'}</span>
+            ${a.gameType ? `<span>${a.gameType}</span>` : ''}
+          </div>
+          ${desc}
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Initial load
+  let arenas = await loadArenas();
+  renderArenas(arenas);
+
+  // Auto-refresh every 5s
+  arenaRefreshInterval = setInterval(async () => {
+    arenas = await loadArenas();
+    renderArenas(arenas);
+  }, 5000);
+
+  return new Promise((resolve) => {
+    listEl.addEventListener('click', (e) => {
+      const card = e.target.closest('.arena-card');
+      if (!card) return;
+      const arenaId = card.dataset.arenaId;
+      clearInterval(arenaRefreshInterval);
+      lobby.style.display = 'none';
+      resolve(arenaId);
+    });
+  });
+}
+
+// ============================================
 // Init
 // ============================================
 async function init() {
@@ -3491,6 +3685,13 @@ async function init() {
   } else {
     authUser = await startAuthFlow();
   }
+
+  // Arena selection — skip if arena is specified via URL param
+  if (!urlParams.get('arena') && !isSpectator) {
+    selectedArenaId = await showArenaLobby();
+  }
+  console.log(`[Game] Selected arena: ${selectedArenaId}`);
+
   await fetchInitialState();
   await connectToServer();
   if (!isSpectator) createPlayer();
@@ -3504,7 +3705,7 @@ async function init() {
 
   // Load existing chat history
   try {
-    const chatResp = await fetch(`${API_URL}/api/chat/messages`);
+    const chatResp = await fetch(`${getApiBase()}/chat/messages`);
     const chatData = await chatResp.json();
     for (const msg of chatData.messages) {
       displayChatMessage(msg);

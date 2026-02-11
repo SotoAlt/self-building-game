@@ -2,6 +2,15 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.36.0] - 2026-02-10
+
+### Removed
+- **Ready system** — removed entirely (was broken and overlapped bribe button). Deleted: `#ready-indicator` CSS/HTML, R key handler, mobile ready button, `setPlayerReady()`/`getReadyCount()`/`getHumanReadyCount()` methods, `ready` field from player state, `readyCount` from agent context, `/api/agent-player/ready` endpoint, `player_ready` WebSocket handler
+
+### Fixed
+- **Announcement/game-status overlap** — "TIME UP!" announcement at `top: 60px` overlapped "ENDED" game-status at `top: 20px`; moved `#announcements` to `top: 120px` (mobile: 100px, landscape: 70px)
+- **Platform visibility** — dark platforms were invisible against dark backgrounds; increased surface emissive intensity 0.2 → 0.35, ground emissive 0.08 → 0.15, widened luminance nudge range 0.12 → 0.18, brightened grid helper
+
 ## [0.34.0] - 2026-02-10
 
 ### Added
@@ -337,17 +346,16 @@ All notable changes to the Self-Building Game project.
   - `POST /api/agent-player/join` — register as player
   - `POST /api/agent-player/move` — submit movement
   - `POST /api/agent-player/chat` — send chat message
-  - `POST /api/agent-player/ready` — toggle ready state
   - `POST /api/agent-player/leave` — disconnect
   - `GET /api/agent-player/:id/state` — player-scoped state view
 - **Player Agent Skill** (`config/openclaw/game-player-skill.js`)
-  - 8 tools: join_game, move_to, send_chat, submit_bribe, get_game_state, get_my_position, get_leaderboard, ready_up
+  - 7 tools: join_game, move_to, send_chat, submit_bribe, get_game_state, get_my_position, get_leaderboard
   - Session-scoped player ID management
 - **Mobile Touch Controls**
   - Mobile detection via `ontouchstart` / screen width
   - Virtual joystick (left thumb area) with visual feedback ring
   - Touch-drag camera rotation (right side of screen)
-  - Action buttons: Jump, Sprint (toggle), Ready
+  - Action buttons: Jump, Sprint (toggle)
   - Pointer lock skipped on mobile
 - **Responsive UI**
   - CSS media queries for screens < 768px
@@ -491,8 +499,8 @@ All notable changes to the Self-Building Game project.
   - Agent calls game API via exec+curl (spawn arenas, start games, cast spells, chat)
   - Drama score drives agent invoke frequency and behavior
   - Session phases: welcome → warmup → gaming → intermission → escalation → finale
-- **AI bot auto-ready** — bots auto-ready when a human player readies up
-- **Human-only ready count** — ready display shows human players only
+- **AI bot auto-ready** — bots auto-ready when a human player readies up (removed in v0.36.0)
+- **Human-only ready count** — ready display shows human players only (removed in v0.36.0)
 
 ### Changed
 - `AgentBridge.js` rewritten: shells out to `openclaw agent` CLI instead of HTTP REST
@@ -504,8 +512,8 @@ All notable changes to the Self-Building Game project.
 ### Fixed
 - **Death/respawn loop** — ground collision now checked before void death to prevent frame-skip tunneling
 - **AI bot chat spam** — reduced chat frequency 10x and added 60s cooldown in lobby
-- **AI bots never ready** — bots auto-ready when any human readies up
-- **Ready count showing 1/3** — now shows human-only count
+- **AI bots never ready** — bots auto-ready when any human readies up (removed in v0.36.0)
+- **Ready count showing 1/3** — now shows human-only count (removed in v0.36.0)
 
 ## [0.5.0] - 2026-02-05
 
@@ -620,7 +628,7 @@ All notable changes to the Self-Building Game project.
   - `GET /api/chat/messages` and `POST /api/chat/send` endpoints
 - **Mouse look camera** with pointer lock and orbit zoom
 - **Camera-relative WASD movement**
-- **Player ready system** (R key toggle)
+- **Player ready system** (R key toggle) (removed in v0.36.0)
 - **Moving/kinematic platforms** with path waypoints
 - **Wall-slide collision** (separate X/Z push-out)
 - **Score & leaderboard** (top 10, wins tracking)

@@ -55,6 +55,20 @@ CREATE TABLE IF NOT EXISTS transactions (
   status         TEXT DEFAULT 'pending',
   created_at     TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS arenas (
+  id               TEXT PRIMARY KEY,
+  name             TEXT NOT NULL,
+  description      TEXT DEFAULT '',
+  creator_id       TEXT,
+  api_key          TEXT UNIQUE NOT NULL,
+  game_master_name TEXT DEFAULT 'Game Master',
+  config           JSONB DEFAULT '{}',
+  upvotes          INTEGER DEFAULT 0,
+  is_default       BOOLEAN DEFAULT FALSE,
+  created_at       TIMESTAMPTZ DEFAULT NOW(),
+  last_active      TIMESTAMPTZ DEFAULT NOW()
+);
 `;
 
 export async function initDB() {
@@ -295,6 +309,61 @@ export async function loadVerifiedTxHashes() {
   } catch (err) {
     console.error('[DB] loadVerifiedTxHashes error:', err.message);
     return [];
+  }
+}
+
+// --- Arenas ---
+
+export async function loadArenas() {
+  if (!dbAvailable) return [];
+  try {
+    const result = await pool.query(
+      `SELECT id, name, description, creator_id, api_key, game_master_name,
+              config, upvotes, is_default, created_at, last_active
+       FROM arenas WHERE is_default = FALSE
+       ORDER BY created_at ASC`
+    );
+    return result.rows;
+  } catch (err) {
+    console.error('[DB] loadArenas error:', err.message);
+    return [];
+  }
+}
+
+export async function saveArena(arena) {
+  if (!dbAvailable) return;
+  try {
+    await pool.query(
+      `INSERT INTO arenas (id, name, description, creator_id, api_key, game_master_name, config, upvotes, is_default, created_at, last_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (id) DO UPDATE SET
+         name = $2, description = $3, config = $7,
+         game_master_name = $6, upvotes = $8, last_active = $11`,
+      [
+        arena.id,
+        arena.name,
+        arena.description,
+        arena.creatorId || null,
+        arena.apiKey,
+        arena.gameMasterName,
+        JSON.stringify(arena.config || {}),
+        arena.upvotes || 0,
+        arena.isDefault || false,
+        new Date(arena.createdAt || Date.now()),
+        new Date(arena.lastActive || Date.now()),
+      ]
+    );
+  } catch (err) {
+    console.error('[DB] saveArena error:', err.message);
+  }
+}
+
+export async function deleteArenaFromDB(id) {
+  if (!dbAvailable) return;
+  try {
+    await pool.query('DELETE FROM arenas WHERE id = $1 AND is_default = FALSE', [id]);
+  } catch (err) {
+    console.error('[DB] deleteArenaFromDB error:', err.message);
   }
 }
 

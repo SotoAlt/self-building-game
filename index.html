@@ -106,6 +106,127 @@
       margin-top: 16px;
       min-height: 18px;
     }
+    /* Arena Lobby */
+    #arena-lobby {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a15 100%);
+    }
+    .lobby-container {
+      text-align: center;
+      padding: 30px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      backdrop-filter: blur(10px);
+      width: 460px;
+      max-width: 90vw;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .lobby-container h1 {
+      color: #fff;
+      font-size: 24px;
+      margin-bottom: 4px;
+    }
+    .lobby-subtitle {
+      color: rgba(255,255,255,0.5);
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+    .arena-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      text-align: left;
+    }
+    .arena-card {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    }
+    .arena-card:hover {
+      background: rgba(155,89,182,0.15);
+      border-color: rgba(155,89,182,0.5);
+      transform: scale(1.01);
+    }
+    .arena-card.default {
+      border-color: rgba(155,89,182,0.6);
+      background: linear-gradient(135deg, rgba(155,89,182,0.12), rgba(255,255,255,0.04));
+      position: relative;
+    }
+    .arena-card.default::before {
+      content: 'FEATURED';
+      position: absolute;
+      top: -1px;
+      right: 12px;
+      background: linear-gradient(135deg, #9b59b6, #8e44ad);
+      color: white;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 0 0 4px 4px;
+      letter-spacing: 1px;
+    }
+    .arena-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .arena-card-name {
+      font-size: 16px;
+      font-weight: 600;
+      color: white;
+    }
+    .arena-card-badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .arena-card-badge.playing {
+      background: rgba(46,204,113,0.2);
+      color: #2ecc71;
+    }
+    .arena-card-badge.lobby {
+      background: rgba(155,89,182,0.2);
+      color: #9b59b6;
+    }
+    .arena-card-badge.countdown {
+      background: rgba(243,156,18,0.2);
+      color: #f39c12;
+    }
+    .arena-card-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+    }
+    .arena-card-meta span {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .arena-card-desc {
+      font-size: 12px;
+      color: rgba(255,255,255,0.4);
+      margin-top: 4px;
+    }
+    .arena-loading {
+      color: rgba(255,255,255,0.4);
+      font-size: 14px;
+      padding: 20px;
+    }
     #announcements {
       position: fixed;
       top: 120px;
@@ -924,6 +1045,14 @@
         </button>
       </div>
       <p id="login-status" class="login-status"></p>
+    </div>
+  </div>
+  <div id="arena-lobby" style="display:none">
+    <div class="lobby-container">
+      <h1>Choose an Arena</h1>
+      <p class="lobby-subtitle">Pick your battleground</p>
+      <div id="arena-list" class="arena-list"></div>
+      <p id="arena-status" class="login-status"></p>
     </div>
   </div>
   <div id="ui" style="display:none">

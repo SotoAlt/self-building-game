@@ -1,7 +1,9 @@
 /**
- * Self-Building Game Server
+ * Self-Building Game Server — Multi-Arena Platform
  *
- * HTTP API for agent control + WebSocket for real-time sync
+ * HTTP API for agent control + WebSocket for real-time sync.
+ * Supports multiple concurrent arenas, each with its own world state,
+ * game lifecycle, SSE stream, and agent loop.
  */
 
 import express from 'express';
@@ -16,23 +18,43 @@ import { createServer } from 'http';
 import { GameRoom } from './GameRoom.js';
 import { WorldState } from './WorldState.js';
 import { createGameSync, GAME_TYPES } from './games/index.js';
-import { initDB, getStats, isDBAvailable, upsertUser, findUser, saveTransaction, getTransactionsByUser, findTransactionByTxHash, updateTransactionStatus, loadVerifiedTxHashes } from './db.js';
+import { initDB, getStats, upsertUser, findUser, saveTransaction, getTransactionsByUser, findTransactionByTxHash, updateTransactionStatus, loadVerifiedTxHashes, loadArenas, saveArena, deleteArenaFromDB } from './db.js';
 import { initAuth, verifyPrivyToken, signToken, requireAuth } from './auth.js';
 import { AgentLoop } from './AgentLoop.js';
 import { AIPlayer } from './AIPlayer.js';
 import { MockChainInterface } from './blockchain/ChainInterface.js';
 import { MonadChainInterface } from './blockchain/MonadChainInterface.js';
-import { spawnPrefab, getPrefabInfo } from './Prefabs.js';
+import { getPrefabInfo } from './Prefabs.js';
 import { compose, loadCacheFromDisk, getComposerStats } from './Composer.js';
-import { randomizeTemplate as globalRandomizeTemplate } from './ArenaTemplates.js';
+import { randomizeTemplate } from './ArenaTemplates.js';
+import { ArenaManager } from './ArenaManager.js';
+import { createArenaMiddleware, requireArenaKey } from './arenaMiddleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3000;
-const MIN_LOBBY_MS = 15000; // Minimum time in lobby before games/templates/spawns allowed
-const app = express();
+const MIN_LOBBY_MS = 15000;
+const AUTO_START_DELAY = 45000;
+const ANNOUNCEMENT_COOLDOWN = 5000;
+const AGENT_CHAT_COOLDOWN = 3000;
+const AFK_IDLE_MS = 120000;
+const AFK_KICK_MS = 15000;
+const AFK_CHECK_INTERVAL = 5000;
 
+const NEW_TYPE_TEMPLATES = ['king_plateau', 'king_islands', 'hot_potato_arena', 'hot_potato_platforms', 'checkpoint_dash', 'race_circuit'];
+const ALL_TEMPLATES = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell', 'hex_a_gone', 'slime_climb', 'wind_tunnel', 'treasure_trove', 'ice_rink', ...NEW_TYPE_TEMPLATES];
+
+function getTemplateGameType(templateName) {
+  if (templateName.includes('king')) return 'king';
+  if (templateName.includes('hot_potato')) return 'hot_potato';
+  if (templateName.includes('checkpoint') || templateName.includes('race_circuit')) return 'race';
+  if (templateName.includes('shrinking') || templateName.includes('hex_a_gone') || templateName.includes('ice_rink') || templateName === 'blank_canvas') return 'survival';
+  if (templateName.includes('floating') || templateName.includes('treasure')) return 'collect';
+  return 'reach';
+}
+
+const app = express();
 app.use(cors());
 app.use(express.json());
 
@@ -42,138 +64,13 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(distPath));
 }
 
-// World state (shared between HTTP API and game room)
-const worldState = new WorldState();
+// Self-documenting API — any AI agent can discover our API by fetching /skill.md
+app.get('/skill.md', (req, res) => res.sendFile(path.join(__dirname, '../../docs/ARENA-HOST-SKILL.md')));
 
-// Phase guard: reject requests during active games (countdown or playing)
-function rejectIfActiveGame(res) {
-  const phase = worldState.gameState.phase;
-  if (phase === 'countdown' || phase === 'playing') {
-    res.status(400).json({ error: `Cannot perform this action during ${phase} phase` });
-    return true;
-  }
-  return false;
-}
+// ============================================
+// Global Singletons (shared across all arenas)
+// ============================================
 
-// Lobby pacing guard: reject world-changing actions during minimum lobby time
-function rejectIfLobbyTimer(res) {
-  if (worldState.gameState.phase !== 'lobby') return false;
-  const timeSinceLobby = Date.now() - worldState.lobbyEnteredAt;
-  if (timeSinceLobby < MIN_LOBBY_MS) {
-    const remaining = Math.ceil((MIN_LOBBY_MS - timeSinceLobby) / 1000);
-    res.status(400).json({ error: `Lobby phase: ${remaining}s until games can start` });
-    return true;
-  }
-  return false;
-}
-
-// Auto-start timer — if agent doesn't start a game within 45s, auto-start one
-let autoStartTimer = null;
-const AUTO_START_DELAY = 45000;
-
-function scheduleAutoStart() {
-  clearTimeout(autoStartTimer);
-  worldState.autoStartTargetTime = Date.now() + AUTO_START_DELAY;
-  broadcastToRoom('lobby_countdown', {
-    targetTime: worldState.autoStartTargetTime,
-    duration: AUTO_START_DELAY,
-    lobbyReadyAt: worldState.lobbyEnteredAt + MIN_LOBBY_MS,
-  });
-  autoStartTimer = setTimeout(() => {
-    if (worldState.gameState.phase !== 'lobby') return;
-    const humanPlayers = worldState.getPlayers().filter(p => p.type !== 'ai');
-    if (humanPlayers.length === 0) return;
-
-    // Prefer new game types (king, hot_potato, race) that haven't been played yet
-    const newTypeTemplates = ['king_plateau', 'king_islands', 'hot_potato_arena', 'hot_potato_platforms', 'checkpoint_dash', 'race_circuit'];
-    const allTemplates = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell', 'hex_a_gone', 'slime_climb', 'wind_tunnel', 'treasure_trove', 'ice_rink', ...newTypeTemplates];
-    const recentTemplates = worldState.gameHistory.slice(-3).map(g => g.template);
-    const playedTypes = new Set(worldState.gameHistory.map(g => g.type));
-
-    function getTemplateGameType(templateName) {
-      if (templateName.includes('king')) return 'king';
-      if (templateName.includes('hot_potato')) return 'hot_potato';
-      if (templateName.includes('checkpoint') || templateName.includes('race_circuit')) return 'race';
-      if (templateName.includes('shrinking') || templateName.includes('hex_a_gone') || templateName.includes('ice_rink') || templateName === 'blank_canvas') return 'survival';
-      if (templateName.includes('floating') || templateName.includes('treasure')) return 'collect';
-      return 'reach';
-    }
-
-    function isTemplatePlayable(templateName, playerCount) {
-      const gameType = getTemplateGameType(templateName);
-      const minRequired = GAME_TYPES[gameType]?.minPlayers || 1;
-      return playerCount >= minRequired;
-    }
-
-    const playerCount = humanPlayers.length;
-    const playableTemplates = allTemplates.filter(t => isTemplatePlayable(t, playerCount));
-
-    const unplayedNewTemplates = newTypeTemplates.filter(t => {
-      const isPlayable = playableTemplates.includes(t);
-      const isNotRecent = !recentTemplates.includes(t);
-      const isUnplayedType = !playedTypes.has(getTemplateGameType(t));
-      return isPlayable && isNotRecent && isUnplayedType;
-    });
-
-    const availableTemplates = playableTemplates.filter(t => !recentTemplates.includes(t));
-
-    function selectTemplatePool() {
-      if (unplayedNewTemplates.length > 0) return unplayedNewTemplates;
-      if (availableTemplates.length > 0) return availableTemplates;
-      if (playableTemplates.length > 0) return playableTemplates;
-      return allTemplates;
-    }
-
-    const pool = selectTemplatePool();
-    const template = pool[Math.floor(Math.random() * pool.length)];
-    console.log(`[AutoStart] Agent didn't start a game in ${AUTO_START_DELAY / 1000}s — auto-starting with ${template}`);
-    fetch(`http://localhost:${PORT}/api/game/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ template })
-    }).catch(e => console.error('[AutoStart] Failed:', e.message));
-  }, AUTO_START_DELAY);
-}
-
-// Schedule auto-start when first human player joins during lobby
-worldState.onPlayerJoin = function onPlayerJoin(player) {
-  if (player.type === 'ai') return;
-  if (worldState.gameState.phase === 'lobby' && !worldState.autoStartTargetTime) {
-    scheduleAutoStart();
-  }
-};
-
-// Broadcast game state changes from internal transitions (countdown -> playing)
-worldState.onPhaseChange = function onPhaseChange(gameState) {
-  broadcastToRoom('game_state_changed', gameState);
-
-  if (gameState.phase === 'lobby') {
-    // Returning to lobby — sync clean world state and activate spectators
-    broadcastToRoom('world_cleared', {});
-    broadcastToRoom('physics_changed', worldState.physics);
-    broadcastToRoom('environment_changed', worldState.environment);
-    broadcastToRoom('floor_changed', { type: worldState.floorType });
-    broadcastToRoom('hazard_plane_changed', { ...worldState.hazardPlane });
-    broadcastToRoom('effects_cleared', {});
-
-    const activated = worldState.activateSpectators();
-    if (activated > 0) {
-      broadcastToRoom('player_activated', {});
-    }
-
-    // Schedule auto-start if agent is too slow
-    scheduleAutoStart();
-  } else {
-    // Game starting — cancel auto-start
-    clearTimeout(autoStartTimer);
-    worldState.autoStartTargetTime = null;
-  }
-};
-
-// Current mini-game instance
-let currentMiniGame = null;
-
-// Blockchain interface — real native MON on Monad when TREASURY_ADDRESS set, otherwise mock
 const isRealChain = !!process.env.TREASURY_ADDRESS;
 const chain = isRealChain
   ? new MonadChainInterface({
@@ -181,728 +78,6 @@ const chain = isRealChain
       treasuryAddress: process.env.TREASURY_ADDRESS
     })
   : new MockChainInterface();
-
-// ============================================
-// Auth Endpoints
-// ============================================
-
-// Exchange Privy token for backend JWT
-app.post('/api/auth/privy', async (req, res) => {
-  const { accessToken } = req.body;
-  if (!accessToken) return res.status(400).json({ error: 'Missing accessToken' });
-
-  const privyResult = await verifyPrivyToken(accessToken);
-  if (!privyResult) return res.status(401).json({ error: 'Invalid Privy token' });
-
-  const { privyUserId, twitterUsername, twitterAvatar, displayName, walletAddress } = privyResult;
-  const name = twitterUsername || displayName || `User-${privyUserId.slice(-6)}`;
-
-  // Fire-and-forget DB persistence
-  upsertUser(privyUserId, name, 'authenticated', { privyUserId, twitterUsername, twitterAvatar, walletAddress });
-
-  const token = signToken(privyUserId);
-  res.json({
-    token,
-    user: { id: privyUserId, name, type: 'authenticated', twitterUsername, twitterAvatar, walletAddress }
-  });
-});
-
-// Create anonymous guest session
-app.post('/api/auth/guest', (req, res) => {
-  const name = req.body.name || `Guest-${Date.now().toString(36)}`;
-  const guestId = `guest-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-
-  // Fire-and-forget DB persistence
-  upsertUser(guestId, name, 'guest');
-
-  const token = signToken(guestId);
-  res.json({ token, user: { id: guestId, name, type: 'guest' } });
-});
-
-// Get current user profile
-app.get('/api/me', requireAuth, async (req, res) => {
-  const user = await findUser(req.user.id);
-  if (!user) {
-    // JWT is valid but user not in DB (no DB configured or dev mode)
-    const id = req.user.id;
-    const type = id.startsWith('guest-') ? 'guest' : 'authenticated';
-    const name = id.startsWith('guest-') ? `Guest-${id.split('-')[1]}` : id;
-    return res.json({ id, name, type });
-  }
-  res.json(user);
-});
-
-// ============================================
-// HTTP API for Agent Control
-// ============================================
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: Date.now() });
-});
-
-// Unified agent context (replaces multiple polls)
-app.get('/api/agent/context', (req, res) => {
-  const sinceMessage = parseInt(req.query.since_message) || 0;
-  const sinceEvent = parseInt(req.query.since_event) || 0;
-
-  const players = worldState.getPlayers().map(p => ({
-    id: p.id,
-    name: p.name,
-    type: p.type,
-    position: p.position,
-    state: p.state
-  }));
-
-  const allMessages = worldState.getMessages(sinceMessage);
-  const audienceChat = allMessages.filter(m => m.senderType === 'audience');
-  const spectatorCount = players.filter(p => p.state === 'spectating').length;
-
-  res.json({
-    players,
-    playerCount: players.length,
-    gameState: worldState.getGameState(),
-    entities: Array.from(worldState.entities.values()).map(e => ({
-      id: e.id,
-      type: e.type,
-      position: e.position,
-      groupId: e.properties?.groupId || null
-    })),
-    availablePrefabs: getPrefabInfo(),
-    composerCache: getComposerStats(),
-    entityCount: worldState.entities.size,
-    physics: { ...worldState.physics },
-    activeEffects: worldState.getActiveEffects(),
-    recentChat: allMessages,
-    audienceChat,
-    audienceCount: spectatorCount + audienceChat.length,
-    recentEvents: worldState.getEvents(sinceEvent),
-    leaderboard: worldState.getLeaderboard(),
-    cooldownUntil: worldState.gameState.cooldownUntil,
-    lobbyReadyAt: worldState.lobbyEnteredAt + MIN_LOBBY_MS,
-    spellCooldownUntil: worldState.lastSpellCastTime + WorldState.SPELL_COOLDOWN,
-    environment: { ...worldState.environment },
-    hazardPlane: { ...worldState.hazardPlane },
-    pendingWelcomes: agentLoop.pendingWelcomes,
-    lastGameType: worldState.lastGameType || null,
-    lastGameEndTime: worldState.lastGameEndTime || null,
-    suggestedGameTypes: ['reach', 'collect', 'survival', 'king', 'hot_potato', 'race'].filter(t => t !== worldState.lastGameType),
-    gameHistory: worldState.gameHistory.map(g => ({ type: g.type, template: g.template })),
-    lastTemplate: worldState.lastTemplate || null
-  });
-});
-
-// Get full world state
-app.get('/api/world/state', (req, res) => {
-  res.json(worldState.getState());
-});
-
-// Spawn entity
-app.post('/api/world/spawn', (req, res) => {
-  // Redirect agent to use compose instead
-  return res.status(400).json({
-    error: 'DEPRECATED — use POST /api/world/compose instead. Example: POST /api/world/compose {"description":"spider","position":[5,1,0]}',
-    hint: 'compose handles ALL spawning — prefabs like spider, ghost, shark AND custom creations'
-  });
-});
-
-// Modify entity
-app.post('/api/world/modify', (req, res) => {
-  const { id, changes } = req.body;
-
-  if (!id || !changes) {
-    return res.status(400).json({ error: 'Missing required: id, changes' });
-  }
-
-  try {
-    const entity = worldState.modifyEntity(id, changes);
-    broadcastToRoom('entity_modified', entity);
-    res.json({ success: true, entity });
-  } catch (error) {
-    res.status(404).json({ success: false, error: error.message });
-  }
-});
-
-// Destroy entity
-app.post('/api/world/destroy', (req, res) => {
-  const { id } = req.body;
-
-  if (!id) {
-    return res.status(400).json({ error: 'Missing required: id' });
-  }
-
-  try {
-    worldState.destroyEntity(id);
-    broadcastToRoom('entity_destroyed', { id });
-    res.json({ success: true });
-  } catch (error) {
-    res.status(404).json({ success: false, error: error.message });
-  }
-});
-
-// Clear all entities
-app.post('/api/world/clear', (req, res) => {
-  if (rejectIfActiveGame(res)) return;
-  if (rejectIfLobbyTimer(res)) return;
-
-  const ids = worldState.clearEntities();
-  for (const id of ids) {
-    broadcastToRoom('entity_destroyed', { id });
-  }
-  broadcastToRoom('physics_changed', worldState.physics);
-  broadcastToRoom('environment_changed', worldState.environment);
-  res.json({ success: true, cleared: ids.length });
-});
-
-// Spawn prefab (grouped entity)
-app.post('/api/world/spawn-prefab', (req, res) => {
-  return res.status(400).json({
-    error: 'DEPRECATED — use POST /api/world/compose instead. Example: POST /api/world/compose {"description":"spider","position":[5,1,0]}',
-    hint: 'compose auto-resolves prefabs by name — spider, ghost, bounce_pad, etc.'
-  });
-});
-
-// Compose (spawn from description + optional recipe)
-app.post('/api/world/compose', (req, res) => {
-  if (rejectIfLobbyTimer(res)) return;
-
-  const { description, position, recipe, properties } = req.body;
-  if (!description || !position) {
-    return res.status(400).json({ error: 'Missing required: description, position' });
-  }
-
-  const result = compose(description, position, recipe, properties, worldState, broadcastToRoom);
-  if (!result.success) {
-    return res.status(400).json(result);
-  }
-
-  agentLoop.notifyAgentAction();
-  res.json(result);
-});
-
-// Destroy prefab group
-app.post('/api/world/destroy-group', (req, res) => {
-  const { groupId } = req.body;
-  if (!groupId) {
-    return res.status(400).json({ error: 'Missing required: groupId' });
-  }
-
-  const ids = worldState.destroyGroup(groupId);
-  if (ids.length === 0) {
-    return res.status(404).json({ error: `No entities found with groupId: ${groupId}` });
-  }
-
-  for (const id of ids) {
-    broadcastToRoom('entity_destroyed', { id });
-  }
-  res.json({ success: true, destroyed: ids.length, entityIds: ids });
-});
-
-// Set floor type
-app.post('/api/world/floor', (req, res) => {
-  const { type } = req.body;
-  try {
-    const floorType = worldState.setFloorType(type);
-    broadcastToRoom('floor_changed', { type: floorType });
-    res.json({ success: true, floorType });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-app.get('/api/world/floor', (req, res) => {
-  res.json({ floorType: worldState.floorType });
-});
-
-// Set hazard plane (rising lava/water)
-app.post('/api/world/hazard-plane', (req, res) => {
-  try {
-    const state = worldState.setHazardPlane(req.body);
-    broadcastToRoom('hazard_plane_changed', state);
-    res.json({ success: true, hazardPlane: state });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-app.get('/api/world/hazard-plane', (req, res) => {
-  res.json({ hazardPlane: { ...worldState.hazardPlane } });
-});
-
-// Set environment (sky, fog, lighting)
-app.post('/api/world/environment', (req, res) => {
-  try {
-    const env = worldState.setEnvironment(req.body);
-    broadcastToRoom('environment_changed', env);
-    res.json({ success: true, environment: env });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-app.get('/api/world/environment', (req, res) => {
-  res.json({ environment: { ...worldState.environment } });
-});
-
-// Set respawn point
-app.post('/api/world/respawn', (req, res) => {
-  const { position } = req.body;
-  if (!position || !Array.isArray(position) || position.length !== 3) {
-    return res.status(400).json({ error: 'Missing required: position [x,y,z]' });
-  }
-  const rp = worldState.setRespawnPoint(position);
-  broadcastToRoom('respawn_point_changed', { position: rp });
-  res.json({ success: true, respawnPoint: rp });
-});
-
-// Shared helper: clear world and apply a template (entities, respawn, floor, environment)
-function applyTemplate(tmpl, doRandomize = true) {
-  // Randomize positions/speeds so the same template feels different each play
-  const finalTmpl = doRandomize ? globalRandomizeTemplate(tmpl) : tmpl;
-  const cleared = worldState.clearEntities();
-  for (const id of cleared) broadcastToRoom('entity_destroyed', { id });
-
-  const spawned = [];
-  for (const entityDef of finalTmpl.entities) {
-    const entity = worldState.spawnEntity(entityDef.type, entityDef.position, entityDef.size, entityDef.properties || {});
-    broadcastToRoom('entity_spawned', entity);
-    spawned.push(entity.id);
-  }
-
-  if (finalTmpl.respawnPoint) {
-    worldState.setRespawnPoint(finalTmpl.respawnPoint);
-    broadcastToRoom('respawn_point_changed', { position: finalTmpl.respawnPoint });
-  }
-  if (finalTmpl.floorType) {
-    worldState.setFloorType(finalTmpl.floorType);
-    broadcastToRoom('floor_changed', { type: finalTmpl.floorType });
-  }
-  if (finalTmpl.environment) {
-    const env = worldState.setEnvironment(finalTmpl.environment);
-    broadcastToRoom('environment_changed', env);
-  }
-  if (finalTmpl.hazardPlane) {
-    worldState.setHazardPlane(finalTmpl.hazardPlane);
-    broadcastToRoom('hazard_plane_changed', { ...worldState.hazardPlane });
-  }
-
-  return spawned;
-}
-
-// Load arena template (blocked during lobby — use start_game with template param instead)
-app.post('/api/world/template', (req, res) => {
-  const phase = worldState.gameState.phase;
-  if (phase === 'lobby' || phase === 'building') {
-    return res.status(400).json({
-      error: 'Cannot load template during lobby. Use start_game with a template parameter instead. Example: POST /api/game/start { "template": "parkour_hell" }'
-    });
-  }
-  if (rejectIfActiveGame(res)) return;
-
-  const { name } = req.body;
-  if (!name) {
-    return res.status(400).json({ error: 'Missing required: name' });
-  }
-
-  // Dynamic import to avoid circular deps
-  import('./ArenaTemplates.js').then(({ TEMPLATES }) => {
-    const template = TEMPLATES[name];
-    if (!template) {
-      return res.status(404).json({
-        error: `Template not found: ${name}. Available: ${Object.keys(TEMPLATES).join(', ')}`
-      });
-    }
-
-    const spawned = applyTemplate(template);
-    worldState.lastTemplateLoadTime = Date.now();
-
-    res.json({
-      success: true,
-      template: name,
-      name: template.name,
-      gameType: template.gameType,
-      floorType: template.floorType || 'solid',
-      entitiesSpawned: spawned.length,
-      goalPosition: template.goalPosition || null
-    });
-  }).catch(err => {
-    res.status(500).json({ error: err.message });
-  });
-});
-
-// Set physics
-app.post('/api/physics/set', (req, res) => {
-  const { gravity, friction, bounce } = req.body;
-
-  try {
-    const physics = worldState.setPhysics({ gravity, friction, bounce });
-    broadcastToRoom('physics_changed', physics);
-    res.json({ success: true, physics });
-  } catch (error) {
-    res.status(400).json({ success: false, error: error.message });
-  }
-});
-
-// Get players
-app.get('/api/players', (req, res) => {
-  res.json({ players: worldState.getPlayers() });
-});
-
-// Create challenge
-app.post('/api/challenge/create', (req, res) => {
-  const { type, target, description, reward } = req.body;
-
-  if (!type) {
-    return res.status(400).json({ error: 'Missing required: type' });
-  }
-
-  try {
-    const challenge = worldState.createChallenge(type, target, description, reward);
-    broadcastToRoom('challenge_created', challenge);
-    res.json({ success: true, id: challenge.id, challenge });
-  } catch (error) {
-    res.status(400).json({ success: false, error: error.message });
-  }
-});
-
-// Get challenge status
-app.get('/api/challenge/status', (req, res) => {
-  res.json({ challenges: worldState.getChallenges() });
-});
-
-// ============================================
-// Announcements API
-// ============================================
-
-// Rate limit: announcements
-let lastAnnouncementTime = 0;
-const ANNOUNCEMENT_COOLDOWN = 5000;
-
-// Post announcement
-app.post('/api/announce', (req, res) => {
-  const now = Date.now();
-  if (now - lastAnnouncementTime < ANNOUNCEMENT_COOLDOWN) {
-    return res.status(429).json({ error: 'Announcement rate limit: wait before announcing again' });
-  }
-  lastAnnouncementTime = now;
-
-  const { text, type, duration } = req.body;
-
-  if (!text) {
-    return res.status(400).json({ error: 'Missing required: text' });
-  }
-
-  const announcement = worldState.announce(text, type || 'agent', duration || 5000);
-  broadcastToRoom('announcement', announcement);
-  res.json({ success: true, announcement });
-});
-
-// Get announcements
-app.get('/api/announcements', (req, res) => {
-  res.json({ announcements: worldState.getAnnouncements() });
-});
-
-// ============================================
-// Game State API
-// ============================================
-
-// Get available game types
-app.get('/api/game/types', (req, res) => {
-  res.json({ gameTypes: GAME_TYPES });
-});
-
-// Internal helper to create + start a MiniGame (used by /api/game/start)
-function startGameInternal(gameType, options, res) {
-  const gameTypeDef = GAME_TYPES[gameType];
-  const minRequired = gameTypeDef?.minPlayers || 1;
-  const humanPlayers = worldState.getPlayers().filter(p => p.type !== 'ai');
-
-  if (humanPlayers.length < minRequired) {
-    const gameName = gameTypeDef?.name || gameType;
-    return res.status(400).json({
-      error: `${gameName} requires ${minRequired}+ players (${humanPlayers.length} connected)`
-    });
-  }
-
-  const { timeLimit, targetEntityId, goalPosition, collectibleCount, countdownTime } = options;
-
-  try {
-    currentMiniGame = createGameSync(gameType, worldState, broadcastToRoom, {
-      timeLimit,
-      targetEntityId,
-      goalPosition,
-      collectibleCount,
-      countdownTime
-    });
-
-    if (gameRoom) {
-      gameRoom.currentMiniGame = currentMiniGame;
-    }
-
-    currentMiniGame.onEnd = () => {
-      agentLoop.onGameEnded();
-      currentMiniGame = null;
-      if (gameRoom) gameRoom.currentMiniGame = null;
-    };
-
-    currentMiniGame.start();
-
-    broadcastToRoom('game_state_changed', worldState.getGameState());
-
-    const startMsg = worldState.addMessage('System', 'system', `Game started: ${gameType}`);
-    broadcastToRoom('chat_message', startMsg);
-    worldState.addEvent('game_start', { type: gameType, gameId: currentMiniGame.id });
-
-    res.json({
-      success: true,
-      gameId: currentMiniGame.id,
-      gameState: worldState.getGameState()
-    });
-  } catch (error) {
-    res.status(400).json({ success: false, error: error.message });
-  }
-}
-
-// Start a game (optionally with a template that loads atomically)
-app.post('/api/game/start', (req, res) => {
-  const { type, template } = req.body;
-
-  if (!type && !template) {
-    return res.status(400).json({ error: 'Missing required: type or template' });
-  }
-
-  if (currentMiniGame?.isActive) {
-    return res.status(400).json({ error: 'A game is already in progress' });
-  }
-
-  const phase = worldState.gameState.phase;
-  if (phase !== 'lobby' && phase !== 'building') {
-    return res.status(400).json({ error: `Cannot start game during ${phase} phase` });
-  }
-
-  if (rejectIfLobbyTimer(res)) return;
-
-  if (worldState.isInCooldown()) {
-    const remaining = Math.ceil((worldState.gameState.cooldownUntil - Date.now()) / 1000);
-    return res.status(400).json({ error: `Cooldown active — wait ${remaining}s` });
-  }
-
-  // Reject if no human players are connected
-  const humanPlayers = worldState.getPlayers().filter(p => p.type !== 'ai');
-  if (humanPlayers.length === 0) {
-    return res.status(400).json({ error: 'Cannot start game: no players connected' });
-  }
-
-  if (template) {
-    // Atomic: load template + start game in one call
-    import('./ArenaTemplates.js').then(({ TEMPLATES }) => {
-      const tmpl = TEMPLATES[template];
-      if (!tmpl) {
-        return res.status(404).json({
-          error: `Template not found: ${template}. Available: ${Object.keys(TEMPLATES).join(', ')}`
-        });
-      }
-
-      applyTemplate(tmpl);
-      worldState.setLastTemplate(template);
-
-      const gameType = type || tmpl.gameType || 'reach';
-      startGameInternal(gameType, req.body, res);
-    }).catch(err => {
-      res.status(500).json({ error: err.message });
-    });
-  } else {
-    // No template — start with existing world state
-    startGameInternal(type, req.body, res);
-  }
-});
-
-// End current game
-app.post('/api/game/end', (req, res) => {
-  const phase = worldState.gameState.phase;
-  if (phase !== 'countdown' && phase !== 'playing') {
-    return res.status(400).json({ error: `No active game to end (phase: ${phase})` });
-  }
-
-  const { result, winnerId } = req.body;
-  const hadMiniGame = currentMiniGame?.isActive;
-
-  if (hadMiniGame) {
-    currentMiniGame.end(result || 'cancelled', winnerId);
-    // onEnd callback handles agentLoop.onGameEnded() + setting currentMiniGame = null
-  } else {
-    worldState.endGame(result || 'cancelled', winnerId);
-    agentLoop.onGameEnded();
-  }
-
-  // System message + event
-  const winnerPlayer = winnerId ? worldState.players.get(winnerId) : null;
-  const endText = winnerPlayer ? `Game ended - Winner: ${winnerPlayer.name}` : `Game ended: ${result || 'cancelled'}`;
-  const endMsg = worldState.addMessage('System', 'system', endText);
-  broadcastToRoom('chat_message', endMsg);
-  worldState.addEvent('game_end', { result: result || 'cancelled', winnerId });
-
-  res.json({ success: true, gameState: worldState.getGameState() });
-});
-
-// Get game state
-app.get('/api/game/state', (req, res) => {
-  res.json({ gameState: worldState.getGameState() });
-});
-
-// Record winner
-app.post('/api/game/winner', (req, res) => {
-  const { playerId } = req.body;
-
-  if (!playerId) {
-    return res.status(400).json({ error: 'Missing required: playerId' });
-  }
-
-  worldState.recordWinner(playerId);
-  res.json({ success: true, gameState: worldState.getGameState() });
-});
-
-// Add trick to current mini-game
-app.post('/api/game/trick', (req, res) => {
-  const { trigger, action, params } = req.body;
-
-  if (!trigger || !action) {
-    return res.status(400).json({ error: 'Missing required: trigger, action' });
-  }
-
-  if (!currentMiniGame?.isActive) {
-    return res.status(400).json({ error: 'No active game' });
-  }
-
-  const id = currentMiniGame.addTrick(trigger, action, params);
-  res.json({ success: true, trickId: id });
-});
-
-// Get current mini-game status
-app.get('/api/game/minigame', (req, res) => {
-  res.json({ miniGame: currentMiniGame?.getStatus() ?? null });
-});
-
-// ============================================
-// Chat API
-// ============================================
-
-// Get chat messages (agent polls this)
-app.get('/api/chat/messages', (req, res) => {
-  const since = parseInt(req.query.since) || 0;
-  const limit = parseInt(req.query.limit) || 20;
-  res.json({ messages: worldState.getMessages(since, limit) });
-});
-
-// Rate limit: agent chat
-let lastAgentChatTime = 0;
-const AGENT_CHAT_COOLDOWN = 3000;
-
-// Send chat message (agent sends via this)
-app.post('/api/chat/send', (req, res) => {
-  const now = Date.now();
-  if (now - lastAgentChatTime < AGENT_CHAT_COOLDOWN) {
-    return res.status(429).json({ error: 'Chat rate limit: wait before sending another message' });
-  }
-  lastAgentChatTime = now;
-
-  const { text } = req.body;
-  if (!text || String(text).trim().length === 0) {
-    return res.status(400).json({ error: 'Missing required: text' });
-  }
-
-  const message = worldState.addMessage('Chaos Magician', 'agent', String(text).trim());
-  broadcastToRoom('chat_message', message);
-  agentLoop.notifyAgentAction();
-  res.json({ success: true, message });
-});
-
-// Bridge chat (external platforms: Twitch, Discord, Telegram)
-app.post('/api/chat/bridge', (req, res) => {
-  const { sender, platform, text } = req.body;
-  if (!sender || !platform || !text) {
-    return res.status(400).json({ error: 'Missing required: sender, platform, text' });
-  }
-
-  const validPlatforms = ['twitch', 'discord', 'telegram'];
-  if (!validPlatforms.includes(platform)) {
-    return res.status(400).json({ error: `Invalid platform. Must be one of: ${validPlatforms.join(', ')}` });
-  }
-
-  const displayName = `[${platform}] ${sender}`;
-  const message = worldState.addMessage(displayName, 'audience', String(text).trim().slice(0, 200));
-  broadcastToRoom('chat_message', message);
-
-  res.json({ success: true, message });
-});
-
-// ============================================
-// Leaderboard API
-// ============================================
-
-app.get('/api/leaderboard', (req, res) => {
-  res.json({ leaderboard: worldState.getLeaderboard() });
-});
-
-// ============================================
-// Stats API
-// ============================================
-
-app.get('/api/stats', async (req, res) => {
-  const dbStats = await getStats();
-  res.json({
-    uptime: Math.floor(process.uptime()),
-    players: worldState.players.size,
-    entities: worldState.entities.size,
-    gamesPlayed: dbStats.totalGames ?? worldState.statistics.totalChallengesCompleted,
-    totalPlayers: dbStats.totalPlayers ?? worldState.statistics.playersOnline ?? 0,
-    dbConnected: dbStats.dbConnected
-  });
-});
-
-// ============================================
-// Spells API
-// ============================================
-
-app.post('/api/spell/cast', (req, res) => {
-  const phase = worldState.gameState.phase;
-  if (phase !== 'playing') {
-    return res.status(400).json({ error: `Cannot cast spells during ${phase} phase. Wait for a game to start.` });
-  }
-
-  const { type, duration } = req.body;
-  if (!type) {
-    return res.status(400).json({ error: 'Missing required: type' });
-  }
-
-  try {
-    const spell = worldState.castSpell(type, duration);
-    broadcastToRoom('spell_cast', spell);
-
-    const spellMsg = worldState.addMessage('System', 'system', `Spell active: ${spell.name}`);
-    broadcastToRoom('chat_message', spellMsg);
-    worldState.addEvent('spell_cast', { type, name: spell.name });
-    agentLoop.notifyAgentAction();
-
-    res.json({ success: true, spell });
-  } catch (error) {
-    res.status(400).json({ success: false, error: error.message });
-  }
-});
-
-app.post('/api/spell/clear', (req, res) => {
-  worldState.clearEffects();
-  broadcastToRoom('effects_cleared', {});
-  res.json({ success: true });
-});
-
-app.get('/api/spell/active', (req, res) => {
-  res.json({ effects: worldState.getActiveEffects() });
-});
-
-// ============================================
-// Bribe System
-// ============================================
 
 const BRIBE_OPTIONS = {
   spawn_obstacles: {
@@ -931,61 +106,224 @@ const BRIBE_OPTIONS = {
   }
 };
 
-async function executeAutoBribe(bribeType, bribeId) {
+// ============================================
+// Arena Manager
+// ============================================
+
+const arenaManager = new ArenaManager();
+const defaultArena = arenaManager.createDefaultArena();
+
+// ============================================
+// Helper Functions (arena-parameterized)
+// ============================================
+
+function rejectIfActiveGame(arena, res) {
+  const phase = arena.worldState.gameState.phase;
+  if (phase === 'countdown' || phase === 'playing') {
+    res.status(400).json({ error: `Cannot perform this action during ${phase} phase` });
+    return true;
+  }
+  return false;
+}
+
+function rejectIfLobbyTimer(arena, res) {
+  const ws = arena.worldState;
+  if (ws.gameState.phase !== 'lobby') return false;
+  const timeSinceLobby = Date.now() - ws.lobbyEnteredAt;
+  if (timeSinceLobby < MIN_LOBBY_MS) {
+    const remaining = Math.ceil((MIN_LOBBY_MS - timeSinceLobby) / 1000);
+    res.status(400).json({ error: `Lobby phase: ${remaining}s until games can start` });
+    return true;
+  }
+  return false;
+}
+
+function applyTemplate(arena, tmpl, doRandomize = true) {
+  const ws = arena.worldState;
+  const broadcast = arena.broadcastToRoom.bind(arena);
+  const finalTmpl = doRandomize ? randomizeTemplate(tmpl) : tmpl;
+  const cleared = ws.clearEntities();
+  for (const id of cleared) broadcast('entity_destroyed', { id });
+
+  const spawned = [];
+  for (const entityDef of finalTmpl.entities) {
+    const entity = ws.spawnEntity(entityDef.type, entityDef.position, entityDef.size, entityDef.properties || {});
+    broadcast('entity_spawned', entity);
+    spawned.push(entity.id);
+  }
+
+  if (finalTmpl.respawnPoint) {
+    ws.setRespawnPoint(finalTmpl.respawnPoint);
+    broadcast('respawn_point_changed', { position: finalTmpl.respawnPoint });
+  }
+  if (finalTmpl.floorType) {
+    ws.setFloorType(finalTmpl.floorType);
+    broadcast('floor_changed', { type: finalTmpl.floorType });
+  }
+  if (finalTmpl.environment) {
+    const env = ws.setEnvironment(finalTmpl.environment);
+    broadcast('environment_changed', env);
+  }
+  if (finalTmpl.hazardPlane) {
+    ws.setHazardPlane(finalTmpl.hazardPlane);
+    broadcast('hazard_plane_changed', { ...ws.hazardPlane });
+  }
+
+  return spawned;
+}
+
+function doStartGame(arena, gameType, options) {
+  const ws = arena.worldState;
+  const broadcast = arena.broadcastToRoom.bind(arena);
+
+  const gameTypeDef = GAME_TYPES[gameType];
+  const minRequired = gameTypeDef?.minPlayers || 1;
+  const humanPlayers = ws.getPlayers().filter(p => p.type !== 'ai');
+
+  if (humanPlayers.length < minRequired) {
+    const gameName = gameTypeDef?.name || gameType;
+    return { success: false, status: 400, error: `${gameName} requires ${minRequired}+ players (${humanPlayers.length} connected)` };
+  }
+
+  const { timeLimit, targetEntityId, goalPosition, collectibleCount, countdownTime } = options;
+
+  try {
+    arena.currentMiniGame = createGameSync(gameType, ws, broadcast, {
+      timeLimit, targetEntityId, goalPosition, collectibleCount, countdownTime
+    });
+
+    arena.currentMiniGame.onEnd = () => {
+      if (arena.agentLoop) arena.agentLoop.onGameEnded();
+      arena.currentMiniGame = null;
+    };
+
+    arena.currentMiniGame.start();
+    broadcast('game_state_changed', ws.getGameState());
+
+    const startMsg = ws.addMessage('System', 'system', `Game started: ${gameType}`);
+    broadcast('chat_message', startMsg);
+    ws.addEvent('game_start', { type: gameType, gameId: arena.currentMiniGame.id });
+
+    return { success: true, gameId: arena.currentMiniGame.id, gameState: ws.getGameState() };
+  } catch (error) {
+    return { success: false, status: 400, error: error.message };
+  }
+}
+
+function scheduleAutoStart(arena) {
+  clearTimeout(arena.autoStartTimer);
+  const ws = arena.worldState;
+  const delay = arena.config.autoStartDelay || AUTO_START_DELAY;
+
+  ws.autoStartTargetTime = Date.now() + delay;
+  arena.broadcastToRoom('lobby_countdown', {
+    targetTime: ws.autoStartTargetTime,
+    duration: delay,
+    lobbyReadyAt: ws.lobbyEnteredAt + MIN_LOBBY_MS,
+  });
+
+  arena.autoStartTimer = setTimeout(async () => {
+    if (ws.gameState.phase !== 'lobby') return;
+    const humanPlayers = ws.getPlayers().filter(p => p.type !== 'ai');
+    if (humanPlayers.length === 0) return;
+
+    const playerCount = humanPlayers.length;
+    const recentTemplates = ws.gameHistory.slice(-3).map(g => g.template);
+    const playedTypes = new Set(ws.gameHistory.map(g => g.type));
+
+    const playableTemplates = ALL_TEMPLATES.filter(t => {
+      const minRequired = GAME_TYPES[getTemplateGameType(t)]?.minPlayers || 1;
+      return playerCount >= minRequired;
+    });
+
+    const unplayedNewTemplates = NEW_TYPE_TEMPLATES.filter(t =>
+      playableTemplates.includes(t) &&
+      !recentTemplates.includes(t) &&
+      !playedTypes.has(getTemplateGameType(t))
+    );
+
+    const availableTemplates = playableTemplates.filter(t => !recentTemplates.includes(t));
+
+    // Prefer unplayed new types, then non-recent, then any playable, then all
+    const pool = unplayedNewTemplates.length > 0 ? unplayedNewTemplates
+      : availableTemplates.length > 0 ? availableTemplates
+      : playableTemplates.length > 0 ? playableTemplates
+      : ALL_TEMPLATES;
+
+    const template = pool[Math.floor(Math.random() * pool.length)];
+    console.log(`[AutoStart:${arena.id}] Agent didn't start a game in ${delay / 1000}s — auto-starting with ${template}`);
+
+    try {
+      const { TEMPLATES } = await import('./ArenaTemplates.js');
+      const tmpl = TEMPLATES[template];
+      if (!tmpl) return;
+      applyTemplate(arena, tmpl);
+      ws.setLastTemplate(template);
+      doStartGame(arena, tmpl.gameType || 'reach', {});
+    } catch (e) {
+      console.error(`[AutoStart:${arena.id}] Failed:`, e.message);
+    }
+  }, delay);
+}
+
+async function executeAutoBribe(arena, bribeType, bribeId) {
+  const ws = arena.worldState;
+  const broadcast = arena.broadcastToRoom.bind(arena);
+
   switch (bribeType) {
     case 'spawn_obstacles':
       for (let i = 0; i < 3; i++) {
         const x = (Math.random() - 0.5) * 30;
         const z = (Math.random() - 0.5) * 30;
-        const entity = worldState.spawnEntity('obstacle', [x, 2, z], [1.5, 2, 1.5], {
+        const entity = ws.spawnEntity('obstacle', [x, 2, z], [1.5, 2, 1.5], {
           color: '#e74c3c', rotating: true, speed: 3
         });
-        broadcastToRoom('entity_spawned', entity);
+        broadcast('entity_spawned', entity);
       }
       break;
 
     case 'lava_floor':
-      worldState.setFloorType('lava');
-      broadcastToRoom('floor_changed', { type: 'lava' });
+      ws.setFloorType('lava');
+      broadcast('floor_changed', { type: 'lava' });
       break;
 
     case 'random_spell': {
       const spellTypes = Object.keys(WorldState.SPELL_TYPES);
       const randomType = spellTypes[Math.floor(Math.random() * spellTypes.length)];
       try {
-        const spell = worldState.castSpell(randomType);
-        broadcastToRoom('spell_cast', spell);
+        const spell = ws.castSpell(randomType);
+        broadcast('spell_cast', spell);
       } catch (e) {
-        broadcastToRoom('announcement', worldState.announce('The magic fizzles... try again soon!', 'agent', 3000));
+        broadcast('announcement', ws.announce('The magic fizzles... try again soon!', 'agent', 3000));
         return false;
       }
       break;
     }
 
     case 'move_goal': {
-      if (currentMiniGame?.isActive && currentMiniGame.type === 'reach' && currentMiniGame.targetEntityId) {
+      if (arena.currentMiniGame?.isActive && arena.currentMiniGame.type === 'reach' && arena.currentMiniGame.targetEntityId) {
         const newPos = [
           (Math.random() - 0.5) * 40,
           3 + Math.random() * 8,
           (Math.random() - 0.5) * 40
         ];
-        const updated = worldState.modifyEntity(currentMiniGame.targetEntityId, { position: newPos });
+        const updated = ws.modifyEntity(arena.currentMiniGame.targetEntityId, { position: newPos });
         if (updated) {
-          broadcastToRoom('entity_modified', updated);
-          broadcastToRoom('announcement', worldState.announce('A BRIBE MOVES THE GOAL!', 'system', 5000));
+          broadcast('entity_modified', updated);
+          broadcast('announcement', ws.announce('A BRIBE MOVES THE GOAL!', 'system', 5000));
         }
       } else {
-        broadcastToRoom('announcement', worldState.announce('The Magician notes your bribe... the goal will shift next game!', 'agent', 5000));
+        broadcast('announcement', ws.announce('The Magician notes your bribe... the goal will shift next game!', 'agent', 5000));
       }
       break;
     }
 
     case 'extra_time': {
-      if (currentMiniGame?.isActive) {
-        currentMiniGame.timeLimit += 15000;
-        broadcastToRoom('announcement', worldState.announce('EXTRA TIME! +15 seconds!', 'system', 5000));
+      if (arena.currentMiniGame?.isActive) {
+        arena.currentMiniGame.timeLimit += 15000;
+        broadcast('announcement', ws.announce('EXTRA TIME! +15 seconds!', 'system', 5000));
       } else {
-        broadcastToRoom('announcement', worldState.announce('The Magician pockets the bribe... extra time next game!', 'agent', 5000));
+        broadcast('announcement', ws.announce('The Magician pockets the bribe... extra time next game!', 'agent', 5000));
       }
       break;
     }
@@ -998,19 +336,804 @@ async function executeAutoBribe(bribeType, bribeId) {
   return true;
 }
 
-app.get('/api/bribe/options', (req, res) => {
+function spawnAIPlayers(arena) {
+  if (arena.aiPlayers.length > 0) return;
+  const broadcast = arena.broadcastToRoom.bind(arena);
+  const explorer = new AIPlayer(arena.worldState, broadcast, 'explorer');
+  const chaotic = new AIPlayer(arena.worldState, broadcast, 'chaotic');
+  arena.aiPlayers.push(explorer, chaotic);
+  console.log(`[AI:${arena.id}] Spawned 2 AI players`);
+}
+
+function despawnAIPlayers(arena) {
+  const broadcast = arena.broadcastToRoom.bind(arena);
+  for (const ai of arena.aiPlayers) {
+    arena.worldState.removePlayer(ai.id);
+    broadcast('player_left', { id: ai.id });
+  }
+  arena.aiPlayers.length = 0;
+  console.log(`[AI:${arena.id}] Despawned all AI players`);
+}
+
+function setupArenaCallbacks(arena) {
+  const ws = arena.worldState;
+
+  ws.onPlayerJoin = function onPlayerJoin(player) {
+    if (player.type === 'ai') return;
+    if (ws.gameState.phase === 'lobby' && !ws.autoStartTargetTime) {
+      scheduleAutoStart(arena);
+    }
+  };
+
+  ws.onPhaseChange = function onPhaseChange(gameState) {
+    const broadcast = arena.broadcastToRoom.bind(arena);
+    broadcast('game_state_changed', gameState);
+
+    if (gameState.phase === 'lobby') {
+      broadcast('world_cleared', {});
+      broadcast('physics_changed', ws.physics);
+      broadcast('environment_changed', ws.environment);
+      broadcast('floor_changed', { type: ws.floorType });
+      broadcast('hazard_plane_changed', { ...ws.hazardPlane });
+      broadcast('effects_cleared', {});
+
+      const activated = ws.activateSpectators();
+      if (activated > 0) {
+        broadcast('player_activated', {});
+      }
+
+      scheduleAutoStart(arena);
+    } else {
+      clearTimeout(arena.autoStartTimer);
+      ws.autoStartTargetTime = null;
+    }
+  };
+}
+
+// Setup callbacks for default arena
+setupArenaCallbacks(defaultArena);
+
+// ============================================
+// Auth Endpoints (platform-level, on app)
+// ============================================
+
+app.post('/api/auth/privy', async (req, res) => {
+  const { accessToken } = req.body;
+  if (!accessToken) return res.status(400).json({ error: 'Missing accessToken' });
+
+  const privyResult = await verifyPrivyToken(accessToken);
+  if (!privyResult) return res.status(401).json({ error: 'Invalid Privy token' });
+
+  const { privyUserId, twitterUsername, twitterAvatar, displayName, walletAddress } = privyResult;
+  const name = twitterUsername || displayName || `User-${privyUserId.slice(-6)}`;
+
+  upsertUser(privyUserId, name, 'authenticated', { privyUserId, twitterUsername, twitterAvatar, walletAddress });
+
+  const token = signToken(privyUserId);
+  res.json({
+    token,
+    user: { id: privyUserId, name, type: 'authenticated', twitterUsername, twitterAvatar, walletAddress }
+  });
+});
+
+app.post('/api/auth/guest', (req, res) => {
+  const name = req.body.name || `Guest-${Date.now().toString(36)}`;
+  const guestId = `guest-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+  upsertUser(guestId, name, 'guest');
+
+  const token = signToken(guestId);
+  res.json({ token, user: { id: guestId, name, type: 'guest' } });
+});
+
+app.get('/api/me', requireAuth, async (req, res) => {
+  const user = await findUser(req.user.id);
+  if (!user) {
+    const id = req.user.id;
+    const type = id.startsWith('guest-') ? 'guest' : 'authenticated';
+    const name = id.startsWith('guest-') ? `Guest-${id.split('-')[1]}` : id;
+    return res.json({ id, name, type });
+  }
+  res.json(user);
+});
+
+// ============================================
+// Arena CRUD (platform-level, on app)
+// ============================================
+
+app.get('/api/arenas', (req, res) => {
+  res.json({ arenas: arenaManager.listArenas() });
+});
+
+app.post('/api/arenas', (req, res) => {
+  try {
+    const { arena, apiKey } = arenaManager.createArena(req.body);
+    setupArenaCallbacks(arena);
+
+    // Persist to DB
+    saveArena(arena);
+
+    res.json({
+      arenaId: arena.id,
+      apiKey,
+      name: arena.name,
+      endpoints: {
+        context: `/api/arenas/${arena.id}/agent/context`,
+        compose: `/api/arenas/${arena.id}/world/compose`,
+        startGame: `/api/arenas/${arena.id}/game/start`,
+        endGame: `/api/arenas/${arena.id}/game/end`,
+        castSpell: `/api/arenas/${arena.id}/spell/cast`,
+        announce: `/api/arenas/${arena.id}/announce`,
+        chat: `/api/arenas/${arena.id}/chat/send`,
+        gameState: `/api/arenas/${arena.id}/game/state`,
+      }
+    });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.get('/api/arenas/:id/info', (req, res) => {
+  const arena = arenaManager.getArena(req.params.id);
+  if (!arena) return res.status(404).json({ error: `Arena not found: ${req.params.id}` });
+  res.json(arena.getPublicInfo());
+});
+
+app.patch('/api/arenas/:id', (req, res) => {
+  const arena = arenaManager.getArena(req.params.id);
+  if (!arena) return res.status(404).json({ error: `Arena not found: ${req.params.id}` });
+  if (arena.isDefault) return res.status(403).json({ error: 'Cannot modify default arena' });
+
+  const apiKey = req.headers['x-arena-api-key'];
+  if (!apiKey || apiKey !== arena.apiKey) {
+    return res.status(401).json({ error: 'Invalid or missing X-Arena-API-Key' });
+  }
+
+  const { name, description, gameMasterName, config } = req.body;
+  if (name) arena.name = name;
+  if (description !== undefined) arena.description = description;
+  if (gameMasterName) arena.gameMasterName = gameMasterName;
+  if (config) Object.assign(arena.config, config);
+
+  saveArena(arena);
+  res.json({ success: true, arena: arena.getPublicInfo() });
+});
+
+app.delete('/api/arenas/:id', (req, res) => {
+  const arena = arenaManager.getArena(req.params.id);
+  if (!arena) return res.status(404).json({ error: `Arena not found: ${req.params.id}` });
+
+  const apiKey = req.headers['x-arena-api-key'];
+  if (!apiKey || apiKey !== arena.apiKey) {
+    return res.status(401).json({ error: 'Invalid or missing X-Arena-API-Key' });
+  }
+
+  try {
+    arenaManager.deleteArena(req.params.id);
+    deleteArenaFromDB(req.params.id);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/arenas/:id/upvote', (req, res) => {
+  const arena = arenaManager.getArena(req.params.id);
+  if (!arena) return res.status(404).json({ error: `Arena not found: ${req.params.id}` });
+  arena.upvotes++;
+  res.json({ success: true, upvotes: arena.upvotes });
+});
+
+// ============================================
+// Game Router (per-arena endpoints)
+// ============================================
+
+const gameRouter = express.Router({ mergeParams: true });
+
+// Require API key for all write operations (POST/PATCH/DELETE) except player-facing endpoints.
+// Default arena (chaos) passes through automatically — requireArenaKey skips it.
+const PLAYER_PATHS = new Set(['/chat/send', '/chat/bridge', '/bribe', '/tokens/faucet',
+  '/agent-player/join', '/agent-player/move', '/agent-player/chat', '/agent-player/leave']);
+gameRouter.use((req, res, next) => {
+  if (req.method === 'GET') return next();
+  // Player-facing endpoints don't need arena key (have their own auth)
+  if (PLAYER_PATHS.has(req.path)) return next();
+  // Bribe honor needs key (agent operation)
+  requireArenaKey(req, res, next);
+});
+
+// Health check
+gameRouter.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now(), arenaId: req.arena.id });
+});
+
+// Unified agent context
+gameRouter.get('/agent/context', (req, res) => {
+  const arena = req.arena;
+  const ws = arena.worldState;
+  const sinceMessage = parseInt(req.query.since_message) || 0;
+  const sinceEvent = parseInt(req.query.since_event) || 0;
+
+  const players = ws.getPlayers().map(p => ({
+    id: p.id, name: p.name, type: p.type, position: p.position, state: p.state,
+    lastActivity: p.lastActivity
+  }));
+
+  const allMessages = ws.getMessages(sinceMessage);
+  const audienceChat = allMessages.filter(m => m.senderType === 'audience');
+  const spectatorCount = players.filter(p => p.state === 'spectating').length;
+
+  res.json({
+    arenaId: arena.id,
+    players,
+    playerCount: players.length,
+    activeHumanCount: ws.getActiveHumanCount(),
+    gameState: ws.getGameState(),
+    entities: Array.from(ws.entities.values()).map(e => ({
+      id: e.id, type: e.type, position: e.position,
+      groupId: e.properties?.groupId || null
+    })),
+    availablePrefabs: getPrefabInfo(),
+    composerCache: getComposerStats(),
+    entityCount: ws.entities.size,
+    physics: { ...ws.physics },
+    activeEffects: ws.getActiveEffects(),
+    recentChat: allMessages,
+    audienceChat,
+    audienceCount: spectatorCount + audienceChat.length,
+    recentEvents: ws.getEvents(sinceEvent),
+    leaderboard: ws.getLeaderboard(),
+    cooldownUntil: ws.gameState.cooldownUntil,
+    lobbyReadyAt: ws.lobbyEnteredAt + MIN_LOBBY_MS,
+    spellCooldownUntil: ws.lastSpellCastTime + WorldState.SPELL_COOLDOWN,
+    environment: { ...ws.environment },
+    hazardPlane: { ...ws.hazardPlane },
+    pendingWelcomes: arena.agentLoop?.pendingWelcomes || [],
+    lastGameType: ws.lastGameType || null,
+    lastGameEndTime: ws.lastGameEndTime || null,
+    suggestedGameTypes: ['reach', 'collect', 'survival', 'king', 'hot_potato', 'race'].filter(t => t !== ws.lastGameType),
+    gameHistory: ws.gameHistory.map(g => ({ type: g.type, template: g.template })),
+    lastTemplate: ws.lastTemplate || null
+  });
+});
+
+// World state
+gameRouter.get('/world/state', (req, res) => {
+  res.json(req.arena.worldState.getState());
+});
+
+// Spawn entity (BLOCKED — use compose)
+gameRouter.post('/world/spawn', (req, res) => {
+  return res.status(400).json({
+    error: 'DEPRECATED — use POST /api/world/compose instead. Example: POST /api/world/compose {"description":"spider","position":[5,1,0]}',
+    hint: 'compose handles ALL spawning — prefabs like spider, ghost, shark AND custom creations'
+  });
+});
+
+// Modify entity
+gameRouter.post('/world/modify', (req, res) => {
+  const arena = req.arena;
+  const { id, changes } = req.body;
+  if (!id || !changes) {
+    return res.status(400).json({ error: 'Missing required: id, changes' });
+  }
+  try {
+    const entity = arena.worldState.modifyEntity(id, changes);
+    arena.broadcastToRoom('entity_modified', entity);
+    res.json({ success: true, entity });
+  } catch (error) {
+    res.status(404).json({ success: false, error: error.message });
+  }
+});
+
+// Destroy entity
+gameRouter.post('/world/destroy', (req, res) => {
+  const arena = req.arena;
+  const { id } = req.body;
+  if (!id) {
+    return res.status(400).json({ error: 'Missing required: id' });
+  }
+  try {
+    arena.worldState.destroyEntity(id);
+    arena.broadcastToRoom('entity_destroyed', { id });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(404).json({ success: false, error: error.message });
+  }
+});
+
+// Clear all entities
+gameRouter.post('/world/clear', (req, res) => {
+  const arena = req.arena;
+  if (rejectIfActiveGame(arena, res)) return;
+  if (rejectIfLobbyTimer(arena, res)) return;
+
+  const ids = arena.worldState.clearEntities();
+  for (const id of ids) {
+    arena.broadcastToRoom('entity_destroyed', { id });
+  }
+  arena.broadcastToRoom('physics_changed', arena.worldState.physics);
+  arena.broadcastToRoom('environment_changed', arena.worldState.environment);
+  res.json({ success: true, cleared: ids.length });
+});
+
+// Spawn prefab (BLOCKED — use compose)
+gameRouter.post('/world/spawn-prefab', (req, res) => {
+  return res.status(400).json({
+    error: 'DEPRECATED — use POST /api/world/compose instead. Example: POST /api/world/compose {"description":"spider","position":[5,1,0]}',
+    hint: 'compose auto-resolves prefabs by name — spider, ghost, bounce_pad, etc.'
+  });
+});
+
+// Compose
+gameRouter.post('/world/compose', (req, res) => {
+  const arena = req.arena;
+  if (rejectIfLobbyTimer(arena, res)) return;
+
+  const { description, position, recipe, properties } = req.body;
+  if (!description || !position) {
+    return res.status(400).json({ error: 'Missing required: description, position' });
+  }
+
+  const broadcast = arena.broadcastToRoom.bind(arena);
+  const result = compose(description, position, recipe, properties, arena.worldState, broadcast);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  if (arena.agentLoop) arena.agentLoop.notifyAgentAction();
+  res.json(result);
+});
+
+// Destroy prefab group
+gameRouter.post('/world/destroy-group', (req, res) => {
+  const arena = req.arena;
+  const { groupId } = req.body;
+  if (!groupId) {
+    return res.status(400).json({ error: 'Missing required: groupId' });
+  }
+
+  const ids = arena.worldState.destroyGroup(groupId);
+  if (ids.length === 0) {
+    return res.status(404).json({ error: `No entities found with groupId: ${groupId}` });
+  }
+
+  for (const id of ids) {
+    arena.broadcastToRoom('entity_destroyed', { id });
+  }
+  res.json({ success: true, destroyed: ids.length, entityIds: ids });
+});
+
+// Floor type
+gameRouter.post('/world/floor', (req, res) => {
+  const arena = req.arena;
+  const { type } = req.body;
+  try {
+    const floorType = arena.worldState.setFloorType(type);
+    arena.broadcastToRoom('floor_changed', { type: floorType });
+    res.json({ success: true, floorType });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+gameRouter.get('/world/floor', (req, res) => {
+  res.json({ floorType: req.arena.worldState.floorType });
+});
+
+// Hazard plane
+gameRouter.post('/world/hazard-plane', (req, res) => {
+  const arena = req.arena;
+  try {
+    const state = arena.worldState.setHazardPlane(req.body);
+    arena.broadcastToRoom('hazard_plane_changed', state);
+    res.json({ success: true, hazardPlane: state });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+gameRouter.get('/world/hazard-plane', (req, res) => {
+  res.json({ hazardPlane: { ...req.arena.worldState.hazardPlane } });
+});
+
+// Environment
+gameRouter.post('/world/environment', (req, res) => {
+  const arena = req.arena;
+  try {
+    const env = arena.worldState.setEnvironment(req.body);
+    arena.broadcastToRoom('environment_changed', env);
+    res.json({ success: true, environment: env });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+gameRouter.get('/world/environment', (req, res) => {
+  res.json({ environment: { ...req.arena.worldState.environment } });
+});
+
+// Respawn point
+gameRouter.post('/world/respawn', (req, res) => {
+  const arena = req.arena;
+  const { position } = req.body;
+  if (!position || !Array.isArray(position) || position.length !== 3) {
+    return res.status(400).json({ error: 'Missing required: position [x,y,z]' });
+  }
+  const rp = arena.worldState.setRespawnPoint(position);
+  arena.broadcastToRoom('respawn_point_changed', { position: rp });
+  res.json({ success: true, respawnPoint: rp });
+});
+
+// Load arena template
+gameRouter.post('/world/template', (req, res) => {
+  const arena = req.arena;
+  const phase = arena.worldState.gameState.phase;
+  if (phase === 'lobby' || phase === 'building') {
+    return res.status(400).json({
+      error: 'Cannot load template during lobby. Use start_game with a template parameter instead. Example: POST /api/game/start { "template": "parkour_hell" }'
+    });
+  }
+  if (rejectIfActiveGame(arena, res)) return;
+
+  const { name } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: 'Missing required: name' });
+  }
+
+  import('./ArenaTemplates.js').then(({ TEMPLATES }) => {
+    const template = TEMPLATES[name];
+    if (!template) {
+      return res.status(404).json({
+        error: `Template not found: ${name}. Available: ${Object.keys(TEMPLATES).join(', ')}`
+      });
+    }
+
+    const spawned = applyTemplate(arena, template);
+    arena.worldState.lastTemplateLoadTime = Date.now();
+
+    res.json({
+      success: true, template: name, name: template.name,
+      gameType: template.gameType, floorType: template.floorType || 'solid',
+      entitiesSpawned: spawned.length, goalPosition: template.goalPosition || null
+    });
+  }).catch(err => {
+    res.status(500).json({ error: err.message });
+  });
+});
+
+// Physics
+gameRouter.post('/physics/set', (req, res) => {
+  const arena = req.arena;
+  const { gravity, friction, bounce } = req.body;
+  try {
+    const physics = arena.worldState.setPhysics({ gravity, friction, bounce });
+    arena.broadcastToRoom('physics_changed', physics);
+    res.json({ success: true, physics });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// Players
+gameRouter.get('/players', (req, res) => {
+  res.json({ players: req.arena.worldState.getPlayers() });
+});
+
+// Challenge
+gameRouter.post('/challenge/create', (req, res) => {
+  const arena = req.arena;
+  const { type, target, description, reward } = req.body;
+  if (!type) {
+    return res.status(400).json({ error: 'Missing required: type' });
+  }
+  try {
+    const challenge = arena.worldState.createChallenge(type, target, description, reward);
+    arena.broadcastToRoom('challenge_created', challenge);
+    res.json({ success: true, id: challenge.id, challenge });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+gameRouter.get('/challenge/status', (req, res) => {
+  res.json({ challenges: req.arena.worldState.getChallenges() });
+});
+
+// Announcements
+gameRouter.post('/announce', (req, res) => {
+  const arena = req.arena;
+  const now = Date.now();
+  if (now - arena.lastAnnouncementTime < ANNOUNCEMENT_COOLDOWN) {
+    return res.status(429).json({ error: 'Announcement rate limit: wait before announcing again' });
+  }
+  arena.lastAnnouncementTime = now;
+
+  const { text, type, duration } = req.body;
+  if (!text) {
+    return res.status(400).json({ error: 'Missing required: text' });
+  }
+
+  const announcement = arena.worldState.announce(text, type || 'agent', duration || 5000);
+  arena.broadcastToRoom('announcement', announcement);
+  res.json({ success: true, announcement });
+});
+
+gameRouter.get('/announcements', (req, res) => {
+  res.json({ announcements: req.arena.worldState.getAnnouncements() });
+});
+
+// Game types
+gameRouter.get('/game/types', (req, res) => {
+  res.json({ gameTypes: GAME_TYPES });
+});
+
+// Start game
+gameRouter.post('/game/start', (req, res) => {
+  const arena = req.arena;
+  const ws = arena.worldState;
+  const { type, template } = req.body;
+
+  if (!type && !template) {
+    return res.status(400).json({ error: 'Missing required: type or template' });
+  }
+
+  if (arena.currentMiniGame?.isActive) {
+    return res.status(400).json({ error: 'A game is already in progress' });
+  }
+
+  const phase = ws.gameState.phase;
+  if (phase !== 'lobby' && phase !== 'building') {
+    return res.status(400).json({ error: `Cannot start game during ${phase} phase` });
+  }
+
+  if (rejectIfLobbyTimer(arena, res)) return;
+
+  if (ws.isInCooldown()) {
+    const remaining = Math.ceil((ws.gameState.cooldownUntil - Date.now()) / 1000);
+    return res.status(400).json({ error: `Cooldown active — wait ${remaining}s` });
+  }
+
+  const humanPlayers = ws.getPlayers().filter(p => p.type !== 'ai');
+  if (humanPlayers.length === 0) {
+    return res.status(400).json({ error: 'Cannot start game: no players connected' });
+  }
+
+  if (template) {
+    import('./ArenaTemplates.js').then(({ TEMPLATES }) => {
+      const tmpl = TEMPLATES[template];
+      if (!tmpl) {
+        return res.status(404).json({
+          error: `Template not found: ${template}. Available: ${Object.keys(TEMPLATES).join(', ')}`
+        });
+      }
+
+      applyTemplate(arena, tmpl);
+      ws.setLastTemplate(template);
+
+      const gameType = type || tmpl.gameType || 'reach';
+      const result = doStartGame(arena, gameType, req.body);
+      if (!result.success) {
+        return res.status(result.status || 400).json({ error: result.error });
+      }
+      res.json(result);
+    }).catch(err => {
+      res.status(500).json({ error: err.message });
+    });
+  } else {
+    const result = doStartGame(arena, type, req.body);
+    if (!result.success) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  }
+});
+
+// End game
+gameRouter.post('/game/end', (req, res) => {
+  const arena = req.arena;
+  const ws = arena.worldState;
+  const phase = ws.gameState.phase;
+
+  if (phase !== 'countdown' && phase !== 'playing') {
+    return res.status(400).json({ error: `No active game to end (phase: ${phase})` });
+  }
+
+  const { result, winnerId } = req.body;
+  const hadMiniGame = arena.currentMiniGame?.isActive;
+
+  if (hadMiniGame) {
+    arena.currentMiniGame.end(result || 'cancelled', winnerId);
+  } else {
+    ws.endGame(result || 'cancelled', winnerId);
+    if (arena.agentLoop) arena.agentLoop.onGameEnded();
+  }
+
+  const winnerPlayer = winnerId ? ws.players.get(winnerId) : null;
+  const endText = winnerPlayer ? `Game ended - Winner: ${winnerPlayer.name}` : `Game ended: ${result || 'cancelled'}`;
+  const endMsg = ws.addMessage('System', 'system', endText);
+  arena.broadcastToRoom('chat_message', endMsg);
+  ws.addEvent('game_end', { result: result || 'cancelled', winnerId });
+
+  res.json({ success: true, gameState: ws.getGameState() });
+});
+
+// Game state
+gameRouter.get('/game/state', (req, res) => {
+  res.json({ gameState: req.arena.worldState.getGameState() });
+});
+
+// Record winner
+gameRouter.post('/game/winner', (req, res) => {
+  const { playerId } = req.body;
+  if (!playerId) {
+    return res.status(400).json({ error: 'Missing required: playerId' });
+  }
+  req.arena.worldState.recordWinner(playerId);
+  res.json({ success: true, gameState: req.arena.worldState.getGameState() });
+});
+
+// Add trick
+gameRouter.post('/game/trick', (req, res) => {
+  const arena = req.arena;
+  const { trigger, action, params } = req.body;
+  if (!trigger || !action) {
+    return res.status(400).json({ error: 'Missing required: trigger, action' });
+  }
+  if (!arena.currentMiniGame?.isActive) {
+    return res.status(400).json({ error: 'No active game' });
+  }
+  const id = arena.currentMiniGame.addTrick(trigger, action, params);
+  res.json({ success: true, trickId: id });
+});
+
+// Mini-game status
+gameRouter.get('/game/minigame', (req, res) => {
+  res.json({ miniGame: req.arena.currentMiniGame?.getStatus() ?? null });
+});
+
+// Building phase
+gameRouter.post('/game/building', (req, res) => {
+  const arena = req.arena;
+  const phase = arena.worldState.gameState.phase;
+  if (phase !== 'lobby') {
+    return res.status(400).json({ error: `Cannot enter building phase during ${phase} phase` });
+  }
+  const state = arena.worldState.startBuilding();
+  arena.broadcastToRoom('game_state_changed', state);
+  res.json({ success: true, gameState: state });
+});
+
+// ============================================
+// Chat
+// ============================================
+
+gameRouter.get('/chat/messages', (req, res) => {
+  const since = parseInt(req.query.since) || 0;
+  const limit = parseInt(req.query.limit) || 20;
+  res.json({ messages: req.arena.worldState.getMessages(since, limit) });
+});
+
+gameRouter.post('/chat/send', (req, res) => {
+  const arena = req.arena;
+  const now = Date.now();
+  if (now - arena.lastAgentChatTime < AGENT_CHAT_COOLDOWN) {
+    return res.status(429).json({ error: 'Chat rate limit: wait before sending another message' });
+  }
+  arena.lastAgentChatTime = now;
+
+  const { text } = req.body;
+  if (!text || String(text).trim().length === 0) {
+    return res.status(400).json({ error: 'Missing required: text' });
+  }
+
+  const senderName = arena.isDefault ? 'Chaos Magician' : arena.gameMasterName;
+  const message = arena.worldState.addMessage(senderName, 'agent', String(text).trim());
+  arena.broadcastToRoom('chat_message', message);
+  if (arena.agentLoop) arena.agentLoop.notifyAgentAction();
+  res.json({ success: true, message });
+});
+
+gameRouter.post('/chat/bridge', (req, res) => {
+  const arena = req.arena;
+  const { sender, platform, text } = req.body;
+  if (!sender || !platform || !text) {
+    return res.status(400).json({ error: 'Missing required: sender, platform, text' });
+  }
+
+  const validPlatforms = ['twitch', 'discord', 'telegram'];
+  if (!validPlatforms.includes(platform)) {
+    return res.status(400).json({ error: `Invalid platform. Must be one of: ${validPlatforms.join(', ')}` });
+  }
+
+  const displayName = `[${platform}] ${sender}`;
+  const message = arena.worldState.addMessage(displayName, 'audience', String(text).trim().slice(0, 200));
+  arena.broadcastToRoom('chat_message', message);
+  res.json({ success: true, message });
+});
+
+// ============================================
+// Leaderboard & Stats
+// ============================================
+
+gameRouter.get('/leaderboard', (req, res) => {
+  res.json({ leaderboard: req.arena.worldState.getLeaderboard() });
+});
+
+gameRouter.get('/stats', async (req, res) => {
+  const arena = req.arena;
+  const dbStats = await getStats();
+  res.json({
+    uptime: Math.floor(process.uptime()),
+    arenaId: arena.id,
+    players: arena.worldState.players.size,
+    entities: arena.worldState.entities.size,
+    gamesPlayed: dbStats.totalGames ?? arena.worldState.statistics.totalChallengesCompleted,
+    totalPlayers: dbStats.totalPlayers ?? arena.worldState.statistics.playersOnline ?? 0,
+    dbConnected: dbStats.dbConnected
+  });
+});
+
+// ============================================
+// Spells
+// ============================================
+
+gameRouter.post('/spell/cast', (req, res) => {
+  const arena = req.arena;
+  const phase = arena.worldState.gameState.phase;
+  if (phase !== 'playing') {
+    return res.status(400).json({ error: `Cannot cast spells during ${phase} phase. Wait for a game to start.` });
+  }
+
+  const { type, duration } = req.body;
+  if (!type) {
+    return res.status(400).json({ error: 'Missing required: type' });
+  }
+
+  try {
+    const spell = arena.worldState.castSpell(type, duration);
+    arena.broadcastToRoom('spell_cast', spell);
+
+    const spellMsg = arena.worldState.addMessage('System', 'system', `Spell active: ${spell.name}`);
+    arena.broadcastToRoom('chat_message', spellMsg);
+    arena.worldState.addEvent('spell_cast', { type, name: spell.name });
+    if (arena.agentLoop) arena.agentLoop.notifyAgentAction();
+
+    res.json({ success: true, spell });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+gameRouter.post('/spell/clear', (req, res) => {
+  const arena = req.arena;
+  arena.worldState.clearEffects();
+  arena.broadcastToRoom('effects_cleared', {});
+  res.json({ success: true });
+});
+
+gameRouter.get('/spell/active', (req, res) => {
+  res.json({ effects: req.arena.worldState.getActiveEffects() });
+});
+
+// ============================================
+// Bribe System
+// ============================================
+
+gameRouter.get('/bribe/options', (req, res) => {
   res.json({ options: BRIBE_OPTIONS, isRealChain });
 });
 
-app.post('/api/bribe', requireAuth, async (req, res) => {
+gameRouter.post('/bribe', requireAuth, async (req, res) => {
+  const arena = req.arena;
+  const ws = arena.worldState;
   const { bribeType, request, txHash } = req.body;
   if (!bribeType) {
     return res.status(400).json({ error: 'Missing required: bribeType' });
   }
 
-  // Derive playerId from JWT — find active session for this user
   const userId = req.user.id;
-  const sessionPlayer = Array.from(worldState.players.values()).find(p => p.userId === userId);
+  const sessionPlayer = Array.from(ws.players.values()).find(p => p.userId === userId);
   if (!sessionPlayer) {
     return res.status(400).json({ error: 'No active game session' });
   }
@@ -1031,13 +1154,11 @@ app.post('/api/bribe', requireAuth, async (req, res) => {
 
   const dbUser = await findUser(userId);
 
-  // DB replay check
   const existingTx = await findTransactionByTxHash(txHash);
   if (existingTx) {
     return res.status(400).json({ error: 'Transaction already used' });
   }
 
-  // Verify on-chain transaction with sender check
   const verification = await chain.verifyBribeTransaction(txHash, option.costWei, dbUser?.wallet_address);
   if (!verification.valid) {
     return res.status(400).json({ error: verification.error });
@@ -1048,46 +1169,38 @@ app.post('/api/bribe', requireAuth, async (req, res) => {
   const description = bribeType === 'custom' ? request : option.label;
   const bribe = await chain.submitBribe(playerId, amount, description, txHash);
 
-  // Persist transaction to DB
   await saveTransaction({
-    id: bribe.id,
-    userId,
-    walletAddress: dbUser?.wallet_address,
-    txHash: txHash || null,
-    txType: bribeType,
-    amount: String(amount),
-    description
+    id: bribe.id, userId, walletAddress: dbUser?.wallet_address,
+    txHash: txHash || null, txType: bribeType, amount: String(amount), description
   });
 
-  const player = worldState.players.get(playerId);
+  const player = ws.players.get(playerId);
   const name = player?.name || playerId.slice(0, 8);
 
-  broadcastToRoom('announcement', worldState.announce(
-    `${name} bribed the Magician (${option.label}) for ${costLabel}!`,
-    'player', 8000
+  arena.broadcastToRoom('announcement', ws.announce(
+    `${name} bribed the Magician (${option.label}) for ${costLabel}!`, 'player', 8000
   ));
-  broadcastToRoom('chat_message',
-    worldState.addMessage('System', 'system', `Bribe: ${option.label} from ${name}`)
+  arena.broadcastToRoom('chat_message',
+    ws.addMessage('System', 'system', `Bribe: ${option.label} from ${name}`)
   );
 
-  worldState.addEvent('bribe', {
+  ws.addEvent('bribe', {
     playerId, name, amount, bribeType,
     request: description, bribeId: bribe.id, txHash: txHash || null
   });
 
-  // Auto-execute simple bribes server-side; others are queued for agent
-  const autoExecuted = await executeAutoBribe(bribeType, bribe.id);
-
+  const autoExecuted = await executeAutoBribe(arena, bribeType, bribe.id);
   res.json({ success: true, bribe, autoExecuted });
 });
 
-app.get('/api/bribe/pending', async (req, res) => {
+gameRouter.get('/bribe/pending', async (req, res) => {
   const pending = await chain.checkPendingBribes();
   res.json({ bribes: pending });
 });
 
-// Honor a pending bribe (agent action)
-app.post('/api/bribe/:id/honor', async (req, res) => {
+gameRouter.post('/bribe/:id/honor', async (req, res) => {
+  const arena = req.arena;
+  const ws = arena.worldState;
   const { id } = req.params;
   const { response } = req.body;
 
@@ -1096,41 +1209,38 @@ app.post('/api/bribe/:id/honor', async (req, res) => {
     return res.status(404).json({ error: `Bribe not found: ${id}` });
   }
 
-  // Update transaction status in DB
   await updateTransactionStatus(id, 'honored');
 
-  const player = worldState.players.get(bribe.playerId);
+  const player = ws.players.get(bribe.playerId);
   const name = player?.name || bribe.playerId.slice(0, 8);
 
-  const announcement = worldState.announce(
-    `The Magician honors ${name}'s bribe!${response ? ` "${response}"` : ''}`,
-    'agent', 8000
+  const announcement = ws.announce(
+    `The Magician honors ${name}'s bribe!${response ? ` "${response}"` : ''}`, 'agent', 8000
   );
-  broadcastToRoom('announcement', announcement);
+  arena.broadcastToRoom('announcement', announcement);
 
-  worldState.addEvent('bribe_honored', {
+  ws.addEvent('bribe_honored', {
     bribeId: id, playerId: bribe.playerId, name, response
   });
 
   res.json({ success: true, bribe });
 });
 
-// Get recently honored bribes
-app.get('/api/bribe/honored', async (req, res) => {
+gameRouter.get('/bribe/honored', async (req, res) => {
   const limit = parseInt(req.query.limit) || 5;
   const honored = await chain.getHonoredBribes(limit);
   res.json({ bribes: honored });
 });
 
-// Transaction history for authenticated user
-app.get('/api/transactions', requireAuth, async (req, res) => {
+// Transactions
+gameRouter.get('/transactions', requireAuth, async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 100);
   const offset = parseInt(req.query.offset) || 0;
   const transactions = await getTransactionsByUser(req.user.id, limit, offset);
   res.json({ transactions });
 });
 
-app.get('/api/balance/:addressOrId', async (req, res) => {
+gameRouter.get('/balance/:addressOrId', async (req, res) => {
   const param = req.params.addressOrId;
   const isEvmAddress = param?.startsWith('0x') && param.length === 42;
 
@@ -1139,26 +1249,23 @@ app.get('/api/balance/:addressOrId', async (req, res) => {
     return res.json({ address: param, balance });
   }
 
-  // Fall back to session/user ID lookup
   const user = await findUser(param);
   const walletAddress = user?.wallet_address || null;
   const balance = await chain.getBalance(walletAddress || param);
   res.json({ playerId: param, balance, walletAddress });
 });
 
-app.get('/api/wallet/:playerId', async (req, res) => {
+gameRouter.get('/wallet/:playerId', async (req, res) => {
   const { playerId } = req.params;
   const user = await findUser(playerId);
   const walletAddress = user?.wallet_address || null;
   res.json({ playerId, walletAddress, hasWallet: !!walletAddress });
 });
 
-// Token faucet — mock mode only (real chain uses native MON)
-app.post('/api/tokens/faucet', requireAuth, async (req, res) => {
+gameRouter.post('/tokens/faucet', requireAuth, async (req, res) => {
   if (isRealChain) {
     return res.status(400).json({ error: 'Faucet not available on mainnet. Send MON to your wallet address.' });
   }
-  // Mock mode: grant tokens
   const playerId = req.user.id;
   const balance = await chain.getBalance(playerId);
   chain.balances.set(playerId, balance + 100);
@@ -1169,82 +1276,73 @@ app.post('/api/tokens/faucet', requireAuth, async (req, res) => {
 // Agent Loop
 // ============================================
 
-const agentLoop = new AgentLoop(worldState, broadcastToRoom, { chain });
-
-// Agent loop status
-app.get('/api/agent/status', (req, res) => {
-  res.json(agentLoop.getStatus());
+gameRouter.get('/agent/status', (req, res) => {
+  const arena = req.arena;
+  if (arena.agentLoop) {
+    res.json(arena.agentLoop.getStatus());
+  } else {
+    res.json({ phase: 'inactive', paused: false, drama: 0, invokeCount: 0, gamesPlayed: 0, playerCount: arena.worldState.players.size });
+  }
 });
 
-// Pause agent (kill switch)
-app.post('/api/agent/pause', (req, res) => {
-  agentLoop.pause();
+gameRouter.post('/agent/pause', (req, res) => {
+  if (req.arena.agentLoop) req.arena.agentLoop.pause();
   res.json({ success: true, status: 'paused' });
 });
 
-// Resume agent
-app.post('/api/agent/resume', (req, res) => {
-  agentLoop.resume();
+gameRouter.post('/agent/resume', (req, res) => {
+  if (req.arena.agentLoop) req.arena.agentLoop.resume();
   res.json({ success: true, status: 'running' });
 });
 
-// Agent heartbeat (external agent-runner calls this to keep drama score accurate)
-app.post('/api/agent/heartbeat', (req, res) => {
-  agentLoop.notifyAgentAction();
-  res.json({ success: true, drama: agentLoop.calculateDrama(), phase: agentLoop.phase });
+gameRouter.post('/agent/heartbeat', (req, res) => {
+  const arena = req.arena;
+  if (arena.agentLoop) arena.agentLoop.notifyAgentAction();
+  res.json({
+    success: true,
+    drama: arena.agentLoop?.calculateDrama() || 0,
+    phase: arena.agentLoop?.phase || 'inactive'
+  });
 });
 
-// Get drama score
-app.get('/api/agent/drama', (req, res) => {
-  res.json({ drama: agentLoop.calculateDrama(), phase: agentLoop.phase });
-});
-
-// Building phase
-app.post('/api/game/building', (req, res) => {
-  const phase = worldState.gameState.phase;
-  if (phase !== 'lobby') {
-    return res.status(400).json({ error: `Cannot enter building phase during ${phase} phase` });
-  }
-
-  const state = worldState.startBuilding();
-  broadcastToRoom('game_state_changed', state);
-  res.json({ success: true, gameState: state });
+gameRouter.get('/agent/drama', (req, res) => {
+  const arena = req.arena;
+  res.json({
+    drama: arena.agentLoop?.calculateDrama() || 0,
+    phase: arena.agentLoop?.phase || 'inactive'
+  });
 });
 
 // ============================================
-// AI Players API
+// AI Players
 // ============================================
 
-app.get('/api/ai/status', (req, res) => {
-  res.json({ enabled: aiPlayersEnabled, count: aiPlayers.length });
+gameRouter.get('/ai/status', (req, res) => {
+  res.json({ enabled: req.arena.aiPlayersEnabled, count: req.arena.aiPlayers.length });
 });
 
-app.post('/api/ai/enable', (req, res) => {
-  if (aiPlayersEnabled) return res.json({ success: true, status: 'already enabled' });
-  aiPlayersEnabled = true;
-  spawnAIPlayers();
-  res.json({ success: true, status: 'enabled', count: aiPlayers.length });
+gameRouter.post('/ai/enable', (req, res) => {
+  const arena = req.arena;
+  if (arena.aiPlayersEnabled) return res.json({ success: true, status: 'already enabled' });
+  arena.aiPlayersEnabled = true;
+  spawnAIPlayers(arena);
+  res.json({ success: true, status: 'enabled', count: arena.aiPlayers.length });
 });
 
-app.post('/api/ai/disable', (req, res) => {
-  if (!aiPlayersEnabled) return res.json({ success: true, status: 'already disabled' });
-  aiPlayersEnabled = false;
-  despawnAIPlayers();
+gameRouter.post('/ai/disable', (req, res) => {
+  const arena = req.arena;
+  if (!arena.aiPlayersEnabled) return res.json({ success: true, status: 'already disabled' });
+  arena.aiPlayersEnabled = false;
+  despawnAIPlayers(arena);
   res.json({ success: true, status: 'disabled' });
 });
 
 // ============================================
-// SSE Event Feed (for OBS overlays)
+// SSE Event Feed
 // ============================================
 
-const sseClients = new Set();
-const SSE_EVENTS = new Set([
-  'announcement', 'player_died', 'spell_cast', 'game_state_changed',
-  'player_joined', 'player_left', 'chat_message', 'floor_changed',
-  'entity_spawned', 'entity_destroyed'
-]);
-
-app.get('/api/stream/events', (req, res) => {
+gameRouter.get('/stream/events', (req, res) => {
+  const arena = req.arena;
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -1252,257 +1350,236 @@ app.get('/api/stream/events', (req, res) => {
   });
 
   const client = { res, id: Date.now() };
-  sseClients.add(client);
+  arena.sseClients.add(client);
 
-  // Send initial state
   const initData = {
     type: 'init',
-    drama: agentLoop.calculateDrama(),
-    phase: agentLoop.phase,
-    players: worldState.players.size,
-    gameState: worldState.getGameState()
+    arenaId: arena.id,
+    drama: arena.agentLoop?.calculateDrama() || 0,
+    phase: arena.agentLoop?.phase || 'inactive',
+    players: arena.worldState.players.size,
+    gameState: arena.worldState.getGameState()
   };
   res.write(`data: ${JSON.stringify(initData)}\n\n`);
 
   req.on('close', () => {
-    sseClients.delete(client);
+    arena.sseClients.delete(client);
   });
 });
 
-function broadcastSSE(eventType, data) {
-  const payload = JSON.stringify({ type: eventType, ...data, timestamp: Date.now() });
-  for (const client of sseClients) {
-    client.res.write(`data: ${payload}\n\n`);
-  }
-  // Also fire webhooks
-  fireWebhooks(eventType, data);
-}
-
 // ============================================
-// Webhook System
+// Webhooks
 // ============================================
 
-const webhooks = new Map();
-let webhookIdCounter = 0;
-
-app.post('/api/webhooks/register', (req, res) => {
+gameRouter.post('/webhooks/register', (req, res) => {
+  const arena = req.arena;
   const { url, events } = req.body;
   if (!url) {
     return res.status(400).json({ error: 'Missing required: url' });
   }
 
-  const id = `webhook-${++webhookIdCounter}`;
+  const id = `webhook-${++arena.webhookIdCounter}`;
   const webhook = {
-    id,
-    url,
-    events: events || null, // null = all events
+    id, url,
+    events: events || null,
     createdAt: Date.now()
   };
-  webhooks.set(id, webhook);
+  arena.webhooks.set(id, webhook);
 
-  console.log(`[Webhooks] Registered ${id} → ${url}${events ? ` (${events.join(', ')})` : ' (all events)'}`);
+  console.log(`[Webhooks:${arena.id}] Registered ${id} → ${url}${events ? ` (${events.join(', ')})` : ' (all events)'}`);
   res.json({ success: true, webhook });
 });
 
-app.delete('/api/webhooks/:id', (req, res) => {
+gameRouter.delete('/webhooks/:id', (req, res) => {
+  const arena = req.arena;
   const { id } = req.params;
-  if (!webhooks.has(id)) {
+  if (!arena.webhooks.has(id)) {
     return res.status(404).json({ error: `Webhook not found: ${id}` });
   }
-  webhooks.delete(id);
+  arena.webhooks.delete(id);
   res.json({ success: true });
 });
 
-app.get('/api/webhooks', (req, res) => {
-  res.json({ webhooks: Array.from(webhooks.values()) });
+gameRouter.get('/webhooks', (req, res) => {
+  res.json({ webhooks: Array.from(req.arena.webhooks.values()) });
 });
 
-function fireWebhooks(eventType, data) {
-  const payload = JSON.stringify({
-    type: eventType,
-    data,
-    timestamp: Date.now()
-  });
-
-  for (const webhook of webhooks.values()) {
-    // Filter by event type if specified
-    if (webhook.events && !webhook.events.includes(eventType)) continue;
-
-    fetch(webhook.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: payload,
-      signal: AbortSignal.timeout(5000)
-    }).catch(() => {
-      // Fire-and-forget — silent failure
-    });
-  }
-}
-
 // ============================================
-// Public Game API
+// Public API
 // ============================================
 
-app.get('/api/public/state', (req, res) => {
-  const players = worldState.getPlayers().map(p => ({
-    name: p.name,
-    type: p.type,
-    state: p.state
+gameRouter.get('/public/state', (req, res) => {
+  const ws = req.arena.worldState;
+  const players = ws.getPlayers().map(p => ({
+    name: p.name, type: p.type, state: p.state
   }));
 
   res.json({
+    arenaId: req.arena.id,
     players,
     playerCount: players.length,
     gameState: {
-      phase: worldState.gameState.phase,
-      gameType: worldState.gameState.gameType,
-      timeRemaining: worldState.getGameState().timeRemaining || null
+      phase: ws.gameState.phase,
+      gameType: ws.gameState.gameType,
+      timeRemaining: ws.getGameState().timeRemaining || null
     },
-    entityCount: worldState.entities.size,
-    activeEffects: worldState.getActiveEffects().map(e => e.name),
-    floorType: worldState.floorType,
-    environment: { skyColor: worldState.environment.skyColor }
+    entityCount: ws.entities.size,
+    activeEffects: ws.getActiveEffects().map(e => e.name),
+    floorType: ws.floorType,
+    environment: { skyColor: ws.environment.skyColor }
   });
 });
 
-app.get('/api/public/leaderboard', (req, res) => {
-  res.json({ leaderboard: worldState.getLeaderboard() });
+gameRouter.get('/public/leaderboard', (req, res) => {
+  res.json({ leaderboard: req.arena.worldState.getLeaderboard() });
 });
 
-app.get('/api/public/events', (req, res) => {
+gameRouter.get('/public/events', (req, res) => {
+  const ws = req.arena.worldState;
   const since = parseInt(req.query.since) || 0;
   const limit = parseInt(req.query.limit) || 20;
   const filtered = since > 0
-    ? worldState.events.filter(e => e.timestamp > since)
-    : worldState.events;
+    ? ws.events.filter(e => e.timestamp > since)
+    : ws.events;
   res.json({ events: filtered.slice(-limit) });
 });
 
-app.get('/api/public/stats', (req, res) => {
-  // Single pass over events instead of four separate .filter() calls
+gameRouter.get('/public/stats', (req, res) => {
+  const arena = req.arena;
+  const ws = arena.worldState;
   const counts = { player_death: 0, bribe: 0, bribe_honored: 0, spell_cast: 0 };
-  for (const event of worldState.events) {
+  for (const event of ws.events) {
     if (event.type in counts) counts[event.type]++;
   }
 
   res.json({
     uptime: Math.floor(process.uptime()),
-    playerCount: worldState.players.size,
-    entityCount: worldState.entities.size,
-    gamesPlayed: agentLoop.gamesPlayed,
+    arenaId: arena.id,
+    playerCount: ws.players.size,
+    entityCount: ws.entities.size,
+    gamesPlayed: arena.agentLoop?.gamesPlayed || 0,
     totalDeaths: counts.player_death,
     bribesSubmitted: counts.bribe,
     bribesHonored: counts.bribe_honored,
     spellsCast: counts.spell_cast,
-    agentInvocations: agentLoop.invokeCount
+    agentInvocations: arena.agentLoop?.invokeCount || 0
   });
 });
 
 // ============================================
-// Agent-Player API (External AI agents playing the game)
+// Agent-Player API
 // ============================================
 
-const agentPlayers = new Map();
-
-// Validate that an agent player exists; returns 404 response if not found
-function requireAgentPlayer(playerId, res) {
-  if (!agentPlayers.has(playerId)) {
+function requireAgentPlayer(arena, playerId, res) {
+  if (!arena.agentPlayers.has(playerId)) {
     res.status(404).json({ error: 'Agent player not found. Join first.' });
     return null;
   }
-  return agentPlayers.get(playerId);
+  return arena.agentPlayers.get(playerId);
 }
 
-app.post('/api/agent-player/join', (req, res) => {
+gameRouter.post('/agent-player/join', (req, res) => {
+  const arena = req.arena;
   const { name } = req.body;
   if (!name) {
     return res.status(400).json({ error: 'Missing required: name' });
   }
 
   const id = `agent-player-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  const player = worldState.addPlayer(id, name, 'agent');
-  agentPlayers.set(id, { joinedAt: Date.now(), lastAction: Date.now() });
+  const player = arena.worldState.addPlayer(id, name, 'agent');
+  arena.agentPlayers.set(id, { joinedAt: Date.now(), lastAction: Date.now() });
 
-  broadcastToRoom('player_joined', { id, name, type: 'agent' });
-  worldState.addEvent('player_joined', { id, name, type: 'agent' });
+  arena.broadcastToRoom('player_joined', { id, name, type: 'agent' });
+  arena.worldState.addEvent('player_joined', { id, name, type: 'agent' });
 
   res.json({ success: true, playerId: id, player });
 });
 
-app.post('/api/agent-player/move', (req, res) => {
+gameRouter.post('/agent-player/move', (req, res) => {
+  const arena = req.arena;
   const { playerId, position } = req.body;
   if (!playerId || !position) {
     return res.status(400).json({ error: 'Missing required: playerId, position' });
   }
 
-  const agentEntry = requireAgentPlayer(playerId, res);
+  const agentEntry = requireAgentPlayer(arena, playerId, res);
   if (!agentEntry) return;
 
-  const player = worldState.updatePlayer(playerId, { position });
+  const player = arena.worldState.updatePlayer(playerId, { position });
   if (!player) {
     return res.status(404).json({ error: 'Player not found in world state' });
   }
 
   agentEntry.lastAction = Date.now();
-  broadcastToRoom('player_moved', { id: playerId, position });
+  arena.broadcastToRoom('player_moved', { id: playerId, position });
   res.json({ success: true, position: player.position });
 });
 
-app.get('/api/agent-player/:id/state', (req, res) => {
+gameRouter.get('/agent-player/:id/state', (req, res) => {
+  const arena = req.arena;
+  const ws = arena.worldState;
   const { id } = req.params;
-  const player = worldState.players.get(id);
+  const player = ws.players.get(id);
   if (!player) {
     return res.status(404).json({ error: 'Player not found' });
   }
 
-  const otherPlayers = worldState.getPlayers()
+  const otherPlayers = ws.getPlayers()
     .filter(p => p.id !== id)
     .map(p => ({ name: p.name, type: p.type, state: p.state, position: p.position }));
 
   res.json({
     me: player,
     otherPlayers,
-    gameState: worldState.getGameState(),
-    entities: Array.from(worldState.entities.values()).map(e => ({
+    gameState: ws.getGameState(),
+    entities: Array.from(ws.entities.values()).map(e => ({
       id: e.id, type: e.type, position: e.position, size: e.size
     })),
-    activeEffects: worldState.getActiveEffects(),
-    recentChat: worldState.getMessages(0, 10),
-    leaderboard: worldState.getLeaderboard()
+    activeEffects: ws.getActiveEffects(),
+    recentChat: ws.getMessages(0, 10),
+    leaderboard: ws.getLeaderboard()
   });
 });
 
-app.post('/api/agent-player/chat', (req, res) => {
+gameRouter.post('/agent-player/chat', (req, res) => {
+  const arena = req.arena;
   const { playerId, text } = req.body;
   if (!playerId || !text) {
     return res.status(400).json({ error: 'Missing required: playerId, text' });
   }
 
-  if (!requireAgentPlayer(playerId, res)) return;
+  if (!requireAgentPlayer(arena, playerId, res)) return;
 
-  const player = worldState.players.get(playerId);
+  const player = arena.worldState.players.get(playerId);
   const name = player?.name || playerId;
-  const message = worldState.addMessage(name, 'player', String(text).trim());
-  broadcastToRoom('chat_message', message);
-
+  const message = arena.worldState.addMessage(name, 'player', String(text).trim());
+  arena.broadcastToRoom('chat_message', message);
   res.json({ success: true, message });
 });
 
-app.post('/api/agent-player/leave', (req, res) => {
+gameRouter.post('/agent-player/leave', (req, res) => {
+  const arena = req.arena;
   const { playerId } = req.body;
   if (!playerId) {
     return res.status(400).json({ error: 'Missing required: playerId' });
   }
 
-  if (!requireAgentPlayer(playerId, res)) return;
+  if (!requireAgentPlayer(arena, playerId, res)) return;
 
-  worldState.removePlayer(playerId);
-  agentPlayers.delete(playerId);
-  broadcastToRoom('player_left', { id: playerId });
-  worldState.addEvent('player_left', { id: playerId, type: 'agent' });
-
+  arena.worldState.removePlayer(playerId);
+  arena.agentPlayers.delete(playerId);
+  arena.broadcastToRoom('player_left', { id: playerId });
+  arena.worldState.addEvent('player_left', { id: playerId, type: 'agent' });
   res.json({ success: true });
 });
+
+// ============================================
+// Mount Game Router
+// ============================================
+
+const arenaMiddleware = createArenaMiddleware(arenaManager);
+app.use('/api/arenas/:arenaId', arenaMiddleware, gameRouter);
+app.use('/api', arenaMiddleware, gameRouter);
 
 // ============================================
 // Colyseus Game Server
@@ -1514,28 +1591,16 @@ const gameServer = new Server({
   transport: new WebSocketTransport({ server: httpServer })
 });
 
-// Reference to current room for broadcasting and game updates
-let gameRoom = null;
+// Inject arenaManager into GameRoom class
+GameRoom.arenaManager = arenaManager;
 
-// Register game room
-gameServer.define('game', GameRoom).on('create', (room) => {
-  console.log(`Game room created: ${room.roomId}`);
-  room.worldState = worldState;
-  gameRoom = room;
-});
+// Register game room with filterBy for multi-arena support
+gameServer.define('game', GameRoom).filterBy(['arenaId']);
 
-// Broadcast function for HTTP API -> WebSocket clients + SSE
-function broadcastToRoom(event, data) {
-  if (gameRoom) {
-    gameRoom.broadcast(event, data);
-  }
-  // Also push key events to SSE stream
-  if (SSE_EVENTS.has(event)) {
-    broadcastSSE(event, data);
-  }
-}
-
+// ============================================
 // SPA catch-all (production)
+// ============================================
+
 if (process.env.NODE_ENV === 'production') {
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) {
@@ -1548,14 +1613,20 @@ if (process.env.NODE_ENV === 'production') {
 // Start Server
 // ============================================
 
-// Initialize auth
 initAuth();
 
-// Initialize database (non-blocking)
 initDB().then(async (connected) => {
   if (connected) {
-    await worldState.loadLeaderboardFromDB();
-    // Rebuild replay-protection set from persisted transactions
+    await defaultArena.worldState.loadLeaderboardFromDB();
+
+    const arenaRows = await loadArenas();
+    arenaManager.loadFromDB(arenaRows);
+    for (const arena of arenaManager.getAllArenas()) {
+      if (arena.id !== 'chaos') {
+        setupArenaCallbacks(arena);
+      }
+    }
+
     if (isRealChain) {
       const hashes = await loadVerifiedTxHashes();
       for (const h of hashes) chain._verifiedTxHashes.add(h);
@@ -1566,80 +1637,25 @@ initDB().then(async (connected) => {
 
 loadCacheFromDisk();
 
-// Start agent loop
-agentLoop.start();
+// Start agent loop for default arena
+const broadcast = defaultArena.broadcastToRoom.bind(defaultArena);
+defaultArena.agentLoop = new AgentLoop(defaultArena.worldState, broadcast, { chain });
+defaultArena.agentLoop.start();
 
-// AI players (disabled by default, toggled via API)
-const aiPlayers = [];
-let aiPlayersEnabled = process.env.AI_PLAYERS === 'true';
-
-function spawnAIPlayers() {
-  if (aiPlayers.length > 0) return; // already spawned
-  const explorer = new AIPlayer(worldState, broadcastToRoom, 'explorer');
-  const chaotic = new AIPlayer(worldState, broadcastToRoom, 'chaotic');
-  aiPlayers.push(explorer, chaotic);
-  console.log('[AI] Spawned 2 AI players: Explorer Bot, Chaos Bot');
-}
-
-function despawnAIPlayers() {
-  for (const ai of aiPlayers) {
-    worldState.removePlayer(ai.id);
-    broadcastToRoom('player_left', { id: ai.id });
-  }
-  aiPlayers.length = 0;
-  console.log('[AI] Despawned all AI players');
-}
-
-if (aiPlayersEnabled) spawnAIPlayers();
+// AI players for default arena
+defaultArena.aiPlayersEnabled = process.env.AI_PLAYERS === 'true';
+if (defaultArena.aiPlayersEnabled) spawnAIPlayers(defaultArena);
 
 httpServer.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════╗
-║           SELF-BUILDING GAME SERVER                       ║
+║           SELF-BUILDING GAME SERVER (Multi-Arena)         ║
 ╠═══════════════════════════════════════════════════════════╣
 ║                                                           ║
 ║  HTTP API:    http://localhost:${PORT}/api                  ║
 ║  WebSocket:   ws://localhost:${PORT}                        ║
-║                                                           ║
-║  Auth Endpoints:                                          ║
-║    POST /api/auth/privy       - Exchange Privy token      ║
-║    POST /api/auth/guest       - Guest session             ║
-║    GET  /api/me               - Current user profile      ║
-║                                                           ║
-║  Agent Endpoint:                                          ║
-║    GET  /api/agent/context    - Unified agent context     ║
-║                                                           ║
-║  World Endpoints:                                         ║
-║    GET  /api/health           - Server health             ║
-║    GET  /api/world/state      - Full world state          ║
-║    POST /api/world/spawn      - Create entity             ║
-║    POST /api/world/modify     - Update entity             ║
-║    POST /api/world/destroy    - Remove entity             ║
-║    POST /api/physics/set      - Change physics            ║
-║    GET  /api/players          - Player positions          ║
-║                                                           ║
-║  Challenge Endpoints:                                     ║
-║    POST /api/challenge/create - New challenge             ║
-║    GET  /api/challenge/status - Challenge data            ║
-║                                                           ║
-║  Announcement Endpoints:                                  ║
-║    POST /api/announce         - Send announcement         ║
-║    GET  /api/announcements    - Get announcements         ║
-║                                                           ║
-║  Game State Endpoints:                                    ║
-║    POST /api/game/start       - Start mini-game           ║
-║    POST /api/game/end         - End current game          ║
-║    POST /api/game/trick       - Add trick mid-game        ║
-║    GET  /api/game/state       - Get game state            ║
-║    POST /api/game/winner      - Record winner             ║
-║                                                           ║
-║  Chat Endpoints:                                          ║
-║    GET  /api/chat/messages    - Get chat messages         ║
-║    POST /api/chat/send        - Agent sends message       ║
-║                                                           ║
-║  Leaderboard & Stats:                                     ║
-║    GET  /api/leaderboard      - Get top 10 players        ║
-║    GET  /api/stats            - Server stats              ║
+║  Arenas:      GET /api/arenas                             ║
+║  Default:     chaos (Chaos Magician)                      ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
@@ -1649,61 +1665,102 @@ gameServer.onShutdown(() => {
   console.log('Game server shutting down');
 });
 
-// Game loop for mini-game updates (10 ticks per second)
+// ============================================
+// Game Tick Loop (iterates all arenas)
+// ============================================
+
 let lastUpdateTime = Date.now();
-let lastStateBroadcast = 0;
-let lastHazardBroadcast = 0;
 setInterval(() => {
   const now = Date.now();
   const delta = (now - lastUpdateTime) / 1000;
   lastUpdateTime = now;
 
-  // Update kinematic (moving) entities
-  const movedEntities = worldState.updateKinematicEntities(delta);
-  for (const entity of movedEntities) {
-    broadcastToRoom('entity_modified', entity);
-  }
+  for (const arena of arenaManager.getAllArenas()) {
+    const ws = arena.worldState;
+    const broadcast = arena.broadcastToRoom.bind(arena);
 
-  // Update chasing entities (spiders, ghosts, etc.)
-  const chasedEntities = worldState.updateChasingEntities(delta);
-  for (const entity of chasedEntities) {
-    broadcastToRoom('entity_modified', entity);
-  }
-
-  // Process breaking platforms
-  worldState.processBreakingPlatforms(broadcastToRoom);
-
-  // Rising hazard plane
-  const hazardUpdate = worldState.updateHazardPlane(delta);
-  if (hazardUpdate) {
-    // Throttle broadcasts to 5/sec (200ms interval)
-    if (now - lastHazardBroadcast >= 200) {
-      lastHazardBroadcast = now;
-      broadcastToRoom('hazard_plane_update', hazardUpdate);
+    // 1. Kinematic entities (patrol, rotate, pendulum, crush)
+    const movedEntities = ws.updateKinematicEntities(delta);
+    for (const entity of movedEntities) {
+      broadcast('entity_modified', entity);
     }
 
-    // Server-side kill check — players below hazard plane die
-    for (const player of worldState.players.values()) {
-      if (player.state === 'alive' && player.position[1] < hazardUpdate.height) {
-        player.state = 'dead';
-        broadcastToRoom('player_died', { id: player.id, cause: 'hazard_plane' });
+    // 2. Chasing entities (spiders, ghosts, etc.)
+    const chasedEntities = ws.updateChasingEntities(delta);
+    for (const entity of chasedEntities) {
+      broadcast('entity_modified', entity);
+    }
+
+    // 3. Breaking platforms
+    ws.processBreakingPlatforms(broadcast);
+
+    // 4. Rising hazard plane
+    const hazardUpdate = ws.updateHazardPlane(delta);
+    if (hazardUpdate) {
+      if (now - arena.lastHazardBroadcast >= 200) {
+        arena.lastHazardBroadcast = now;
+        broadcast('hazard_plane_update', hazardUpdate);
+      }
+
+      // Server-side kill check
+      for (const player of ws.players.values()) {
+        if (player.state === 'alive' && player.position[1] < hazardUpdate.height) {
+          player.state = 'dead';
+          broadcast('player_died', { id: player.id, cause: 'hazard_plane' });
+        }
+      }
+    }
+
+    // 5. MiniGame tick
+    if (arena.currentMiniGame?.isActive) {
+      arena.currentMiniGame.update(delta);
+      if (now - arena.lastStateBroadcast >= 1000) {
+        arena.lastStateBroadcast = now;
+        broadcast('game_state_changed', ws.getGameState());
+      }
+    }
+
+    // 6. AI players
+    for (const ai of arena.aiPlayers) {
+      ai.update(delta);
+    }
+
+    // 7. AFK detection (throttled)
+    if (now - arena._lastAfkCheck >= AFK_CHECK_INTERVAL) {
+      arena._lastAfkCheck = now;
+      const room = arena.gameRoom;
+
+      for (const player of ws.players.values()) {
+        if (player.type === 'ai') continue;
+
+        // Kick phase: player was warned and didn't respond in time
+        if (player.state === 'afk_warned') {
+          if (now - player.afkWarningSentAt < AFK_KICK_MS) continue;
+          const client = room?.getClient(player.id);
+          if (client) {
+            client.send('afk_kicked', { reason: 'You were kicked for being AFK.' });
+            client.leave(4000);
+          }
+          console.log(`[AFK] Kicked ${player.name} from arena ${arena.id}`);
+          continue;
+        }
+
+        // Warning phase: player idle too long
+        if (player.state === 'dead') continue;
+        if (now - player.lastActivity < AFK_IDLE_MS) continue;
+
+        const token = Math.random().toString(36).slice(2, 10);
+        player.afkWarningToken = token;
+        player.afkWarningSentAt = now;
+        player.state = 'afk_warned';
+        const client = room?.getClient(player.id);
+        if (client) {
+          client.send('afk_warning', { token, timeout: AFK_KICK_MS });
+        }
+        console.log(`[AFK] Warning sent to ${player.name} in arena ${arena.id}`);
       }
     }
   }
-
-  if (currentMiniGame?.isActive) {
-    currentMiniGame.update(delta);
-    // Broadcast game state every second for timer updates
-    if (now - lastStateBroadcast >= 1000) {
-      lastStateBroadcast = now;
-      broadcastToRoom('game_state_changed', worldState.getGameState());
-    }
-  }
-
-  // Update AI players
-  for (const ai of aiPlayers) {
-    ai.update(delta);
-  }
 }, 100);
 
-export { worldState, broadcastToRoom };
+export { arenaManager };

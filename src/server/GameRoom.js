@@ -24,14 +24,19 @@ function detectRequest(text) {
 }
 
 export class GameRoom extends Room {
-  // World state injected by server
-  worldState = null;
+  // ArenaManager injected by server at startup
+  static arenaManager = null;
 
-  // Current mini-game instance (injected by server)
-  currentMiniGame = null;
+  // Per-room arena reference (resolved in onCreate)
+  arena = null;
 
-  // Rate limiting for chat
+  // Rate limiting
   _chatRateLimit = new Map();
+  _deathTimestamps = new Map();
+
+  // Convenience accessors
+  get worldState() { return this.arena?.worldState || null; }
+  get currentMiniGame() { return this.arena?.currentMiniGame || null; }
 
   _systemMessage(text) {
     if (!this.worldState) return;
@@ -40,7 +45,17 @@ export class GameRoom extends Room {
   }
 
   onCreate(options) {
-    console.log(`[GameRoom] Room created`);
+    // Resolve arena from metadata (set by filterBy)
+    const arenaId = this.metadata?.arenaId || 'chaos';
+    const manager = GameRoom.arenaManager;
+    if (manager) {
+      this.arena = manager.getArena(arenaId);
+      if (this.arena) {
+        this.arena.gameRoom = this;
+      }
+    }
+
+    console.log(`[GameRoom] Room created for arena: ${arenaId}`);
 
     // Player position updates (client -> server)
     this.onMessage('move', (client, data) => {
@@ -58,8 +73,6 @@ export class GameRoom extends Room {
       }, { except: client });
     });
 
-    // Player death (rate-limited: 1 per 2 seconds per player)
-    this._deathTimestamps = new Map();
     this.onMessage('died', (client, data) => {
       if (!this.worldState) return;
 
@@ -67,6 +80,8 @@ export class GameRoom extends Room {
       const lastDeath = this._deathTimestamps.get(client.sessionId) || 0;
       if (now - lastDeath < 2000) return; // rate limit
       this._deathTimestamps.set(client.sessionId, now);
+
+      this.worldState.recordPlayerActivity(client.sessionId);
 
       const player = this.worldState.players.get(client.sessionId);
       const name = player?.name || client.sessionId.slice(0, 8);
@@ -97,6 +112,7 @@ export class GameRoom extends Room {
     this.onMessage('respawn', (client) => {
       if (!this.worldState) return;
 
+      this.worldState.recordPlayerActivity(client.sessionId);
       const player = this.worldState.players.get(client.sessionId);
       const name = player?.name || client.sessionId.slice(0, 8);
       const rp = this.worldState.respawnPoint || [0, 2, 0];
@@ -129,6 +145,8 @@ export class GameRoom extends Room {
     this.onMessage('collect', (client, data) => {
       if (!this.worldState) return;
 
+      this.worldState.recordPlayerActivity(client.sessionId);
+
       // Only allow collecting entities that still exist
       const entity = this.worldState.entities.get(data.entityId);
       if (!entity || entity.type !== 'collectible') return;
@@ -154,6 +172,8 @@ export class GameRoom extends Room {
 
     // Trigger activation (for goals, checkpoints)
     this.onMessage('trigger_activated', (client, data) => {
+      if (!this.worldState) return;
+      this.worldState.recordPlayerActivity(client.sessionId);
       console.log(`[GameRoom] Trigger activated: ${data.entityId} by ${client.sessionId}`);
 
       this.broadcast('trigger_activated', {
@@ -187,6 +207,7 @@ export class GameRoom extends Room {
       }
       this._chatRateLimit.set(client.sessionId, now);
 
+      this.worldState.recordPlayerActivity(client.sessionId);
       const player = this.worldState.players.get(client.sessionId);
       const sender = player?.name || client.sessionId.slice(0, 8);
 
@@ -201,6 +222,7 @@ export class GameRoom extends Room {
     // Breakable platform step notification
     this.onMessage('platform_step', (client, { entityId }) => {
       if (!this.worldState) return;
+      this.worldState.recordPlayerActivity(client.sessionId);
       const started = this.worldState.startBreaking(entityId);
       if (!started) return;
 
@@ -208,11 +230,26 @@ export class GameRoom extends Room {
       this.broadcast('platform_cracking', { id: entityId, breakAt: info.breakAt });
     });
 
-    // Set simulation interval (physics tick)
-    this.setSimulationInterval((deltaTime) => {
-      // Server-side physics updates could go here
-      // For now, clients handle their own physics
-    }, 1000 / 60); // 60 FPS
+    // AFK heartbeat response — player clicked "I'm here!"
+    this.onMessage('afk_heartbeat', (client, data) => {
+      if (!this.worldState) return;
+      const player = this.worldState.players.get(client.sessionId);
+      if (!player || player.state !== 'afk_warned') return;
+      if (data.token !== player.afkWarningToken) return;
+
+      this.worldState.recordPlayerActivity(client.sessionId);
+      client.send('afk_cleared');
+    });
+
+    // Placeholder for future server-side physics (clients handle physics currently)
+    this.setSimulationInterval(() => {}, 1000 / 60);
+  }
+
+  getClient(sessionId) {
+    for (const client of this.clients) {
+      if (client.sessionId === sessionId) return client;
+    }
+    return null;
   }
 
   onJoin(client, options) {
@@ -262,6 +299,9 @@ export class GameRoom extends Room {
 
   onLeave(client) {
     console.log(`[GameRoom] Player left: ${client.sessionId}`);
+    this._chatRateLimit.delete(client.sessionId);
+    this._deathTimestamps.delete(client.sessionId);
+
     if (!this.worldState) return;
 
     const player = this.worldState.players.get(client.sessionId);
@@ -274,6 +314,10 @@ export class GameRoom extends Room {
   }
 
   onDispose() {
-    console.log(`[GameRoom] Room disposed`);
+    console.log(`[GameRoom] Room disposed for arena: ${this.arena?.id || 'unknown'}`);
+    // Clear arena's room reference so a new room can be created
+    if (this.arena) {
+      this.arena.gameRoom = null;
+    }
   }
 }
