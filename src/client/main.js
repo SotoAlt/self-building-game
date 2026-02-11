@@ -1976,7 +1976,17 @@ function disposeBubbleSprite(mesh, sprite) {
 }
 
 function createChatBubbleSprite(text) {
-  const MAX_CHARS = 50;
+  const MAX_CHARS = 60;
+  const FONT_SIZE = 26;
+  const FONT_FAMILY = '"Segoe UI", Arial, sans-serif';
+  const PADDING_X = 28;
+  const PADDING_Y = 12;
+  const POINTER_HEIGHT = 10;
+  const CHAT_DURATION = 5000;
+  const SPRITE_SCALE = 4;
+  const SPRITE_HEIGHT = 2.8;
+  const RENDER_ORDER = 999;
+
   const display = text.length > MAX_CHARS ? text.slice(0, MAX_CHARS - 1) + '\u2026' : text;
 
   const canvas = document.createElement('canvas');
@@ -1984,47 +1994,47 @@ function createChatBubbleSprite(text) {
   canvas.height = 128;
   const ctx = canvas.getContext('2d');
 
-  const pointerH = 12;
-  const bodyH = canvas.height - pointerH;
-  const borderRadius = 16;
+  const fontStr = `bold ${FONT_SIZE}px ${FONT_FAMILY}`;
+  ctx.font = fontStr;
+  const textWidth = ctx.measureText(display).width;
+
+  const bubbleW = Math.min(canvas.width - 4, textWidth + PADDING_X * 2);
+  const bubbleH = FONT_SIZE + PADDING_Y * 2;
+  const borderRadius = bubbleH / 2;
+  const left = (canvas.width - bubbleW) / 2;
+  const top = (canvas.height - POINTER_HEIGHT - bubbleH) / 2;
   const centerX = canvas.width / 2;
 
-  // Rounded rect background with pointer
-  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
   ctx.beginPath();
-  ctx.moveTo(borderRadius, 0);
-  ctx.lineTo(canvas.width - borderRadius, 0);
-  ctx.quadraticCurveTo(canvas.width, 0, canvas.width, borderRadius);
-  ctx.lineTo(canvas.width, bodyH - borderRadius);
-  ctx.quadraticCurveTo(canvas.width, bodyH, canvas.width - borderRadius, bodyH);
-  ctx.lineTo(centerX + 10, bodyH);
-  ctx.lineTo(centerX, bodyH + pointerH);
-  ctx.lineTo(centerX - 10, bodyH);
-  ctx.lineTo(borderRadius, bodyH);
-  ctx.quadraticCurveTo(0, bodyH, 0, bodyH - borderRadius);
-  ctx.lineTo(0, borderRadius);
-  ctx.quadraticCurveTo(0, 0, borderRadius, 0);
+  ctx.moveTo(left + borderRadius, top);
+  ctx.lineTo(left + bubbleW - borderRadius, top);
+  ctx.arcTo(left + bubbleW, top, left + bubbleW, top + borderRadius, borderRadius);
+  ctx.lineTo(left + bubbleW, top + bubbleH - borderRadius);
+  ctx.arcTo(left + bubbleW, top + bubbleH, left + bubbleW - borderRadius, top + bubbleH, borderRadius);
+  ctx.lineTo(centerX + 8, top + bubbleH);
+  ctx.lineTo(centerX, top + bubbleH + POINTER_HEIGHT);
+  ctx.lineTo(centerX - 8, top + bubbleH);
+  ctx.lineTo(left + borderRadius, top + bubbleH);
+  ctx.arcTo(left, top + bubbleH, left, top + bubbleH - borderRadius, borderRadius);
+  ctx.lineTo(left, top + borderRadius);
+  ctx.arcTo(left, top, left + borderRadius, top, borderRadius);
   ctx.closePath();
   ctx.fill();
 
-  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  ctx.fillStyle = '#111';
-  ctx.font = '22px sans-serif';
+  ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(display, centerX, bodyH / 2);
+  ctx.fillText(display, centerX, top + bubbleH / 2);
 
   const texture = new THREE.CanvasTexture(canvas);
   const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(4, 1, 1);
-  sprite.position.y = 3.0;
+  sprite.scale.set(SPRITE_SCALE, 1, 1);
+  sprite.position.y = SPRITE_HEIGHT;
   sprite.userData.isChatBubble = true;
-  sprite.userData.chatExpiry = Date.now() + 4000;
-  sprite.renderOrder = 999;
+  sprite.userData.chatExpiry = Date.now() + CHAT_DURATION;
+  sprite.renderOrder = RENDER_ORDER;
   return sprite;
 }
 
