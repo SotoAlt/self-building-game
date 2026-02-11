@@ -16,11 +16,14 @@ export class WorldState {
     fogColor: '#1a1a2e',
     fogNear: 50,
     fogFar: 200,
+    fogDensity: 0.012,
     ambientColor: '#404040',
     ambientIntensity: 0.5,
     sunColor: '#ffffff',
     sunIntensity: 1.0,
-    sunPosition: [50, 100, 50]
+    sunPosition: [50, 100, 50],
+    skyPreset: null,
+    materialTheme: null,
   };
 
   constructor() {
@@ -254,7 +257,8 @@ export class WorldState {
 
   setEnvironment(changes) {
     const colorKeys = ['skyColor', 'fogColor', 'ambientColor', 'sunColor'];
-    const numberKeys = ['fogNear', 'fogFar', 'ambientIntensity', 'sunIntensity'];
+    const numberKeys = ['fogNear', 'fogFar', 'fogDensity', 'ambientIntensity', 'sunIntensity'];
+    const stringKeys = ['skyPreset', 'materialTheme'];
 
     for (const key of colorKeys) {
       if (changes[key] !== undefined) {
@@ -271,6 +275,12 @@ export class WorldState {
           throw new Error(`Invalid value for ${key}: must be a number`);
         }
         this.environment[key] = changes[key];
+      }
+    }
+
+    for (const key of stringKeys) {
+      if (changes[key] !== undefined) {
+        this.environment[key] = changes[key] || null;
       }
     }
 

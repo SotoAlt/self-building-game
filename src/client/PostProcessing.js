@@ -54,8 +54,8 @@ export function initPostProcessing(rendererRef, sceneRef, cameraRef) {
   outlinePass.hiddenEdgeColor.set('#2a2a4a');
   composer.addPass(outlinePass);
 
-  // 3. Bloom — selective glow for emissive objects
-  bloomPass = new UnrealBloomPass(size, 0.4, 0.4, 0.85);
+  // 3. Bloom — glow for emissive objects
+  bloomPass = new UnrealBloomPass(size, 0.6, 0.5, 0.3);
   composer.addPass(bloomPass);
 
   // 4. Output pass — tone mapping
