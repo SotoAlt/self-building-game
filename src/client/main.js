@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { GEOMETRY_TEMPLATES } from './GeometryTemplates.js';
-import { createEntityToonMaterial, createGroundToonMaterial, getEntityColor } from './ToonMaterials.js';
+import { createEntityToonMaterial, createGroundToonMaterial, getEntityColor, setMaterialTheme } from './ToonMaterials.js';
 import { initPostProcessing, renderFrame, resizePostProcessing, updateOutlineObjects } from './PostProcessing.js';
 import { createLavaShaderMaterial, createWaterShaderMaterial, createWindShaderMaterial, registerShaderMaterial, updateShaderTime, registerConveyorMaterial, updateConveyorScrolls } from './SurfaceShaders.js';
 import { createPlayerCharacter, createRemotePlayerCharacter, updateSquashStretch } from './PlayerVisuals.js';
@@ -150,7 +150,7 @@ async function attemptReconnect() {
 // ============================================
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x2a2a4e);
-scene.fog = new THREE.Fog(0x2a2a4e, 60, 250);
+scene.fog = new THREE.FogExp2(0x2a2a4e, 0.012);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(0, 10, 30);
@@ -242,13 +242,12 @@ function setFloorType(type) {
 function applyEnvironment(env) {
   if (env.skyColor) {
     scene.background = new THREE.Color(env.skyColor);
-    updateSkyColors(env.skyColor, env.fogColor || env.skyColor);
+    updateSkyColors(env.skyColor, env.fogColor || env.skyColor, env.skyPreset);
   }
-  if (env.fogColor || env.fogNear != null || env.fogFar != null) {
-    scene.fog = new THREE.Fog(
+  if (env.fogColor || env.fogDensity != null) {
+    scene.fog = new THREE.FogExp2(
       env.fogColor ? new THREE.Color(env.fogColor) : scene.fog.color,
-      env.fogNear ?? scene.fog.near,
-      env.fogFar ?? scene.fog.far
+      env.fogDensity ?? 0.012
     );
   }
   if (env.ambientColor) ambientLight.color.set(env.ambientColor);
@@ -256,6 +255,9 @@ function applyEnvironment(env) {
   if (env.sunColor) directionalLight.color.set(env.sunColor);
   if (env.sunIntensity != null) directionalLight.intensity = env.sunIntensity;
   if (env.sunPosition) directionalLight.position.set(...env.sunPosition);
+
+  // Apply material theme for this arena
+  if (env.materialTheme !== undefined) setMaterialTheme(env.materialTheme);
 
   // Update ambient particles based on environment
   const pType = selectParticleType(currentFloorType, env);
@@ -878,14 +880,33 @@ function createEntityMesh(entity) {
   mesh.userData = { entity, rotating: props.rotating, speed: props.speed || 1 };
 
   if (entity.type === 'collectible') {
-    const glowGeometry = new THREE.SphereGeometry(0.7, 16, 16);
+    // Larger pulsing glow sphere
+    const glowGeometry = new THREE.SphereGeometry(1.0, 16, 16);
     const glowMaterial = new THREE.MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: 0.3
+      opacity: 0.2,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
     const glow = new THREE.Mesh(glowGeometry, glowMaterial);
     mesh.add(glow);
+  }
+
+  // Goal triggers get a glow too
+  if (entity.type === 'trigger' && props.isGoal) {
+    const [sx, sy, sz] = entity.size || [3, 3, 3];
+    const goalGlow = new THREE.Mesh(
+      new THREE.SphereGeometry(Math.max(sx, sy, sz) * 0.6, 16, 16),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.15,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      })
+    );
+    mesh.add(goalGlow);
   }
 
   return mesh;
@@ -2915,8 +2936,11 @@ function animate() {
 
   for (const [, mesh] of entityMeshes) {
     const isGrouped = mesh.parent && mesh.parent !== scene;
+    const entity = mesh.userData.entity;
+    const eType = entity?.type;
+    const eProps = entity?.properties;
 
-    if (mesh.userData.entity?.properties?.kinematic && !isGrouped) {
+    if (eProps?.kinematic && !isGrouped) {
       trackLastPosition(mesh);
       if (mesh.userData.targetPosition) {
         mesh.position.lerp(mesh.userData.targetPosition, 0.2);
@@ -2937,8 +2961,33 @@ function animate() {
       }
     }
 
-    if (mesh.userData.entity?.type === 'collectible') {
-      mesh.position.y = mesh.userData.entity.position[1] + Math.sin(Date.now() * 0.003) * 0.3;
+    // ─── Entity idle animations ─────────────────────────
+    if (eType === 'collectible') {
+      const baseY = entity.position[1];
+      mesh.rotation.y += delta;
+      mesh.position.y = baseY + Math.sin(time * 1.5 + mesh.id * 0.7) * 0.15;
+      const glow = mesh.children[0];
+      if (glow?.material) {
+        glow.material.opacity = 0.15 + Math.sin(time * 2.5) * 0.12;
+      }
+    } else if (eType === 'obstacle' && !isGrouped) {
+      if (mesh.material?.emissiveIntensity !== undefined) {
+        mesh.material.emissiveIntensity = 0.3 + Math.sin(time * 0.8 + mesh.id * 1.1) * 0.2;
+      }
+      const pulse = 1 + Math.sin(time * 1.6 + mesh.id * 0.5) * 0.02;
+      mesh.scale.set(pulse, pulse, pulse);
+    } else if (eType === 'decoration' && !isGrouped && !mesh.userData.rotating) {
+      mesh.rotation.y += 0.3 * delta;
+      if (eProps?.emissive && mesh.material?.emissiveIntensity !== undefined) {
+        mesh.material.emissiveIntensity = 0.5 + Math.sin(time * 4 + mesh.id * 2.3) * 0.2 + Math.sin(time * 7) * 0.1;
+      }
+    } else if (eType === 'trigger' && eProps?.isGoal && !isGrouped) {
+      mesh.rotation.y += 1.5 * delta;
+      const pulse = 1 + Math.sin(time * 2) * 0.05;
+      mesh.scale.set(pulse, pulse, pulse);
+      if (mesh.material?.emissiveIntensity !== undefined) {
+        mesh.material.emissiveIntensity = 0.5 + Math.sin(time * 3) * 0.25;
+      }
     }
   }
 

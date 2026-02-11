@@ -1,8 +1,13 @@
 /**
  * ArenaTemplates - Pre-designed arena layouts
  *
- * The agent can load these instantly via load_template tool.
+ * Loaded via start_game({ template }) for atomic arena setup.
  * Each template defines entities, a goal position, game type, and respawn point.
+ *
+ * Visual properties per template:
+ *   materialTheme: stone | lava_rock | ice_crystal | neon | wood | candy
+ *   skyPreset: starfield | sunset | storm | void | aurora
+ *   fogDensity: 0.008 (tight) → 0.025 (atmospheric)
  */
 
 // Generate 3-layer hex-staggered breakable grid for Hex-A-Gone
@@ -46,7 +51,11 @@ export const TEMPLATES = {
     name: 'Spiral of Madness',
     gameType: 'reach',
     floorType: 'solid',
-    environment: { skyColor: '#0d1b2a', fogColor: '#0d1b2a', fogFar: 180, ambientIntensity: 0.4 },
+    environment: {
+      skyColor: '#0d1b2a', fogColor: '#0d1b2a', fogDensity: 0.012,
+      ambientIntensity: 0.4,
+      materialTheme: 'stone', skyPreset: 'starfield',
+    },
     respawnPoint: [0, 2, 0],
     goalPosition: [0, 28, 0],
     entities: [
@@ -68,10 +77,18 @@ export const TEMPLATES = {
       // Obstacles on some platforms
       { type: 'obstacle', position: [-5, 17, -4], size: [1, 2, 1], properties: { color: '#e74c3c', rotating: true, speed: 3 } },
       { type: 'obstacle', position: [4, 23, -4], size: [1, 2, 1], properties: { color: '#e74c3c', rotating: true, speed: 2 } },
-      // Decorations
+      // Torches on platforms
       { type: 'decoration', position: [5, 5, 2], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
       { type: 'decoration', position: [-6, 14, 3], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
       { type: 'decoration', position: [1, 28, 1], size: [0.8, 1.2, 0.8], properties: { shape: 'dodecahedron', color: '#9b59b6', emissive: true } },
+      // Stone pillars framing the base
+      { type: 'decoration', position: [7, 3, 7], size: [0.6, 5, 0.6], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-7, 3, -7], size: [0.6, 5, 0.6], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      { type: 'decoration', position: [7, 3, -7], size: [0.6, 5, 0.6], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-7, 3, 7], size: [0.6, 5, 0.6], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      // Floating crystals
+      { type: 'decoration', position: [3, 12, 4], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#3498db', emissive: true, rotating: true, speed: 0.6 } },
+      { type: 'decoration', position: [-4, 20, -2], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#2980b9', emissive: true, rotating: true, speed: 0.8 } },
     ]
   },
 
@@ -79,7 +96,11 @@ export const TEMPLATES = {
     name: 'Sky Islands',
     gameType: 'collect',
     floorType: 'none',
-    environment: { skyColor: '#1a3a5c', fogColor: '#1a3a5c', fogFar: 250, ambientIntensity: 0.6, sunIntensity: 1.2 },
+    environment: {
+      skyColor: '#1a3a5c', fogColor: '#1a3a5c', fogDensity: 0.008,
+      ambientIntensity: 0.6, sunIntensity: 1.2,
+      materialTheme: 'neon', skyPreset: 'void',
+    },
     respawnPoint: [0, 6, 0],
     goalPosition: null,
     entities: [
@@ -111,12 +132,16 @@ export const TEMPLATES = {
       { type: 'collectible', position: [0, 12, 0], size: [1, 1, 1], properties: { color: '#e67e22' } },
       // Moving platform to reach center bonus
       { type: 'platform', position: [0, 8, 0], size: [2, 0.5, 2], properties: { color: '#9b59b6', kinematic: true, path: [[0, 8, 0], [0, 11, 0]], speed: 0.5 } },
-      // Decorations — trees and mushrooms on islands
+      // Trees and mushrooms on islands
       { type: 'decoration', position: [2, 6.5, -17], size: [0.3, 2, 0.3], properties: { shape: 'cylinder', color: '#5d4037' } },
       { type: 'decoration', position: [2, 8, -17], size: [1.5, 1.5, 1.5], properties: { shape: 'sphere', color: '#27ae60' } },
       { type: 'decoration', position: [-17, 8.5, -1], size: [0.3, 0.8, 0.3], properties: { shape: 'cylinder', color: '#f5f5dc' } },
       { type: 'decoration', position: [-17, 9.2, -1], size: [0.8, 0.4, 0.8], properties: { shape: 'sphere', color: '#e74c3c' } },
       { type: 'decoration', position: [16, 9.5, 2], size: [0.6, 0.9, 0.6], properties: { shape: 'dodecahedron', color: '#9b59b6', emissive: true } },
+      // Glowing orbs under bridges
+      { type: 'decoration', position: [0, 3, -9], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#8e44ad', emissive: true } },
+      { type: 'decoration', position: [9, 4, 0], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#8e44ad', emissive: true } },
+      { type: 'decoration', position: [-9, 3.5, 0], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#8e44ad', emissive: true } },
     ]
   },
 
@@ -124,7 +149,12 @@ export const TEMPLATES = {
     name: 'The Gauntlet',
     gameType: 'reach',
     floorType: 'lava',
-    environment: { skyColor: '#1a0a0a', fogColor: '#2a0a0a', fogFar: 150, ambientColor: '#553333', ambientIntensity: 0.3, sunColor: '#ff6633', sunIntensity: 0.8 },
+    environment: {
+      skyColor: '#1a0a0a', fogColor: '#2a0a0a', fogDensity: 0.015,
+      ambientColor: '#553333', ambientIntensity: 0.3,
+      sunColor: '#ff6633', sunIntensity: 0.8,
+      materialTheme: 'lava_rock', skyPreset: 'storm',
+    },
     respawnPoint: [0, 2, 20],
     goalPosition: [0, 5, -40],
     entities: [
@@ -150,7 +180,7 @@ export const TEMPLATES = {
       { type: 'platform', position: [0, 4, -40], size: [5, 1, 5], properties: { color: '#f1c40f' } },
       // Goal trigger
       { type: 'trigger', position: [0, 6, -40], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } },
-      // Decorations — fire braziers along the gauntlet
+      // Fire braziers along the gauntlet
       { type: 'decoration', position: [4, 1.5, 20], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
       { type: 'decoration', position: [-4, 1.5, 20], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
       { type: 'decoration', position: [3, 1.5, -18], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff4400', emissive: true } },
@@ -158,6 +188,14 @@ export const TEMPLATES = {
       // Warning flag at goal
       { type: 'decoration', position: [3, 6.5, -40], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
       { type: 'decoration', position: [3.4, 7.2, -40], size: [0.6, 0.4, 0.05], properties: { color: '#e74c3c' } },
+      // Lava pillars
+      { type: 'decoration', position: [5, 3, 10], size: [0.8, 5, 0.8], properties: { shape: 'cylinder', color: '#4a2020' } },
+      { type: 'decoration', position: [-5, 3, 10], size: [0.8, 5, 0.8], properties: { shape: 'cylinder', color: '#4a2020' } },
+      { type: 'decoration', position: [5, 3, -30], size: [0.8, 5, 0.8], properties: { shape: 'cylinder', color: '#4a2020' } },
+      { type: 'decoration', position: [-5, 3, -30], size: [0.8, 5, 0.8], properties: { shape: 'cylinder', color: '#4a2020' } },
+      // Ember orbs
+      { type: 'decoration', position: [5, 6, 10], size: [0.5, 0.5, 0.5], properties: { shape: 'sphere', color: '#ff4400', emissive: true, rotating: true, speed: 0.5 } },
+      { type: 'decoration', position: [-5, 6, -30], size: [0.5, 0.5, 0.5], properties: { shape: 'sphere', color: '#ff4400', emissive: true, rotating: true, speed: 0.7 } },
     ]
   },
 
@@ -165,6 +203,11 @@ export const TEMPLATES = {
     name: 'Closing Walls',
     gameType: 'survival',
     floorType: 'solid',
+    environment: {
+      skyColor: '#1a1a2e', fogColor: '#1a1a2e', fogDensity: 0.010,
+      ambientIntensity: 0.5,
+      materialTheme: 'stone', skyPreset: 'storm',
+    },
     respawnPoint: [0, 2, 0],
     goalPosition: null,
     entities: [
@@ -179,7 +222,12 @@ export const TEMPLATES = {
       { type: 'platform', position: [0, 3, 0], size: [4, 0.5, 4], properties: { color: '#e67e22' } },
       // Obstacles that sweep the arena
       { type: 'obstacle', position: [0, 1.5, 8], size: [20, 2, 1], properties: { color: '#e74c3c', kinematic: true, path: [[0, 1.5, 8], [0, 1.5, -8]], speed: 0.3 } },
-      { type: 'obstacle', position: [8, 1.5, 0], size: [1, 2, 20], properties: { color: '#e74c3c', kinematic: true, path: [[8, 1.5, 0], [-8, 1.5, 0]], speed: 0.25 } }
+      { type: 'obstacle', position: [8, 1.5, 0], size: [1, 2, 20], properties: { color: '#e74c3c', kinematic: true, path: [[8, 1.5, 0], [-8, 1.5, 0]], speed: 0.25 } },
+      // Pillar top crystals
+      { type: 'decoration', position: [12, 6, 12], size: [0.6, 0.9, 0.6], properties: { shape: 'dodecahedron', color: '#e74c3c', emissive: true, rotating: true, speed: 0.5 } },
+      { type: 'decoration', position: [-12, 6, -12], size: [0.6, 0.9, 0.6], properties: { shape: 'dodecahedron', color: '#e74c3c', emissive: true, rotating: true, speed: 0.5 } },
+      // Center orb
+      { type: 'decoration', position: [0, 6, 0], size: [1, 1, 1], properties: { shape: 'sphere', color: '#e67e22', emissive: true, rotating: true, speed: 0.3 } },
     ]
   },
 
@@ -187,7 +235,11 @@ export const TEMPLATES = {
     name: 'Parkour Hell',
     gameType: 'reach',
     floorType: 'none',
-    environment: { skyColor: '#0a0a1a', fogColor: '#0a0a1a', fogFar: 160, ambientIntensity: 0.35 },
+    environment: {
+      skyColor: '#0a0a1a', fogColor: '#0a0a1a', fogDensity: 0.014,
+      ambientIntensity: 0.35,
+      materialTheme: 'neon', skyPreset: 'void',
+    },
     respawnPoint: [0, 2, 25],
     goalPosition: [0, 40, -25],
     entities: [
@@ -212,7 +264,14 @@ export const TEMPLATES = {
       { type: 'platform', position: [2, 36, -22], size: [2, 0.5, 2], properties: { color: '#3498db' } },
       // Goal
       { type: 'platform', position: [0, 38, -25], size: [4, 1, 4], properties: { color: '#f1c40f' } },
-      { type: 'trigger', position: [0, 40, -25], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } }
+      { type: 'trigger', position: [0, 40, -25], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } },
+      // Floating neon orbs along the path
+      { type: 'decoration', position: [5, 5, 22], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#e74c3c', emissive: true } },
+      { type: 'decoration', position: [-4, 8, 14], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#e67e22', emissive: true } },
+      { type: 'decoration', position: [6, 11, 10], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#f1c40f', emissive: true } },
+      { type: 'decoration', position: [-5, 14, 6], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#2ecc71', emissive: true } },
+      { type: 'decoration', position: [4, 25, -10], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#3498db', emissive: true } },
+      { type: 'decoration', position: [-4, 35, -22], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#9b59b6', emissive: true } },
     ]
   },
 
@@ -220,7 +279,12 @@ export const TEMPLATES = {
     name: 'Hex-A-Gone',
     gameType: 'survival',
     floorType: 'none',
-    environment: { skyColor: '#120326', fogColor: '#120326', fogNear: 20, fogFar: 80, ambientColor: '#553388', ambientIntensity: 0.5, sunColor: '#aa77ff', sunIntensity: 0.7 },
+    environment: {
+      skyColor: '#120326', fogColor: '#120326', fogDensity: 0.018,
+      ambientColor: '#553388', ambientIntensity: 0.5,
+      sunColor: '#aa77ff', sunIntensity: 0.7,
+      materialTheme: 'ice_crystal', skyPreset: 'aurora',
+    },
     respawnPoint: [0, 12, 0],
     goalPosition: null,
     entities: [
@@ -229,6 +293,10 @@ export const TEMPLATES = {
       { type: 'decoration', position: [0, 15, 0], size: [1.2, 1.8, 1.2], properties: { shape: 'dodecahedron', color: '#9b59b6', emissive: true, rotating: true, speed: 0.5 } },
       { type: 'decoration', position: [6, 14, 4], size: [0.8, 1.2, 0.8], properties: { shape: 'dodecahedron', color: '#8e44ad', emissive: true, rotating: true, speed: 0.8 } },
       { type: 'decoration', position: [-5, 13, -5], size: [0.8, 1.2, 0.8], properties: { shape: 'dodecahedron', color: '#a569bd', emissive: true, rotating: true, speed: 0.7 } },
+      // Additional floating crystals at edges
+      { type: 'decoration', position: [8, 12, 0], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#bb88dd', emissive: true, rotating: true, speed: 0.6 } },
+      { type: 'decoration', position: [-8, 12, 0], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#bb88dd', emissive: true, rotating: true, speed: 0.9 } },
+      { type: 'decoration', position: [0, 11, 8], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#cc99ee', emissive: true, rotating: true, speed: 0.4 } },
     ],
   },
 
@@ -236,7 +304,12 @@ export const TEMPLATES = {
     name: 'Slime Climb',
     gameType: 'reach',
     floorType: 'none',
-    environment: { skyColor: '#1a0a0a', fogColor: '#2a0a0a', fogFar: 180, ambientColor: '#553333', ambientIntensity: 0.3, sunColor: '#ff6633', sunIntensity: 0.8 },
+    environment: {
+      skyColor: '#1a0a0a', fogColor: '#2a0a0a', fogDensity: 0.012,
+      ambientColor: '#553333', ambientIntensity: 0.3,
+      sunColor: '#ff6633', sunIntensity: 0.8,
+      materialTheme: 'lava_rock', skyPreset: 'storm',
+    },
     respawnPoint: [0, 2, 15],
     goalPosition: [0, 42, -30],
     hazardPlane: { active: true, type: 'lava', startHeight: -5, riseSpeed: 0.4, maxHeight: 35 },
@@ -266,11 +339,14 @@ export const TEMPLATES = {
       // Goal platform
       { type: 'platform', position: [0, 39, -30], size: [4, 1, 4], properties: { color: '#f1c40f' } },
       { type: 'trigger', position: [0, 41, -30], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } },
-      // Decorations — warning flags
+      // Warning flags + braziers
       { type: 'decoration', position: [4, 1.5, 15], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
       { type: 'decoration', position: [4.4, 2.2, 15], size: [0.6, 0.4, 0.05], properties: { color: '#ff6600' } },
       { type: 'decoration', position: [-3, 19.5, -22], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
       { type: 'decoration', position: [-2.6, 20.2, -22], size: [0.6, 0.4, 0.05], properties: { color: '#ff6600' } },
+      // Lava pillars along climb
+      { type: 'decoration', position: [5, 5, 8], size: [0.6, 4, 0.6], properties: { shape: 'cylinder', color: '#3a1010' } },
+      { type: 'decoration', position: [-5, 12, -9], size: [0.6, 4, 0.6], properties: { shape: 'cylinder', color: '#3a1010' } },
     ]
   },
 
@@ -278,7 +354,11 @@ export const TEMPLATES = {
     name: 'Wind Tunnel',
     gameType: 'reach',
     floorType: 'none',
-    environment: { skyColor: '#1a2a3a', fogColor: '#1a2a3a', fogFar: 200, ambientIntensity: 0.5, sunIntensity: 1.0 },
+    environment: {
+      skyColor: '#1a2a3a', fogColor: '#1a2a3a', fogDensity: 0.010,
+      ambientIntensity: 0.5, sunIntensity: 1.0,
+      materialTheme: 'ice_crystal', skyPreset: 'starfield',
+    },
     respawnPoint: [0, 4, 30],
     goalPosition: [0, 9, -40],
     entities: [
@@ -308,11 +388,14 @@ export const TEMPLATES = {
       // Goal platform
       { type: 'platform', position: [0, 7, -40], size: [5, 1, 5], properties: { color: '#f1c40f' } },
       { type: 'trigger', position: [0, 9, -40], size: [3, 3, 3], properties: { color: '#f1c40f', rotating: true, speed: 2, isGoal: true } },
-      // Decorations — directional banners and wind streamers
+      // Banners and wind streamers
       { type: 'decoration', position: [4, 4.5, 30], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
       { type: 'decoration', position: [4.4, 5.2, 30], size: [0.6, 0.4, 0.05], properties: { color: '#3498db' } },
       { type: 'decoration', position: [-2, 5, 8], size: [0.1, 1.5, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
       { type: 'decoration', position: [-1.6, 5.7, 8], size: [0.5, 0.3, 0.05], properties: { color: '#87ceeb' } },
+      // Ice crystals
+      { type: 'decoration', position: [4, 5, -2], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#b3e5fc', emissive: true, rotating: true, speed: 0.4 } },
+      { type: 'decoration', position: [-3, 8, -26], size: [0.5, 0.8, 0.5], properties: { shape: 'dodecahedron', color: '#b3e5fc', emissive: true, rotating: true, speed: 0.6 } },
     ]
   },
 
@@ -321,7 +404,12 @@ export const TEMPLATES = {
     name: 'Treasure Trove',
     gameType: 'collect',
     floorType: 'solid',
-    environment: { skyColor: '#1a0f0a', fogColor: '#1a0f0a', fogFar: 120, ambientColor: '#443322', ambientIntensity: 0.3, sunColor: '#ffaa44', sunIntensity: 0.6 },
+    environment: {
+      skyColor: '#1a0f0a', fogColor: '#1a0f0a', fogDensity: 0.018,
+      ambientColor: '#443322', ambientIntensity: 0.3,
+      sunColor: '#ffaa44', sunIntensity: 0.6,
+      materialTheme: 'wood', skyPreset: 'sunset',
+    },
     respawnPoint: [0, 2, 0],
     goalPosition: null,
     entities: [
@@ -353,9 +441,14 @@ export const TEMPLATES = {
       { type: 'collectible', position: [0, 2, 12], size: [1, 1, 1], properties: { color: '#f1c40f' } },
       // Moving obstacle
       { type: 'obstacle', position: [0, 1.5, 5], size: [10, 2, 1], properties: { color: '#e74c3c', kinematic: true, path: [[0, 1.5, 5], [0, 1.5, -5]], speed: 0.4 } },
-      // Decorations — torches
+      // Torches
       { type: 'decoration', position: [14, 2, 14], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
       { type: 'decoration', position: [-14, 2, -14], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
+      { type: 'decoration', position: [14, 2, -14], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
+      { type: 'decoration', position: [-14, 2, 14], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff6600', emissive: true } },
+      // Wooden pillars
+      { type: 'decoration', position: [14, 2, 0], size: [0.5, 3, 0.5], properties: { shape: 'cylinder', color: '#5d4037' } },
+      { type: 'decoration', position: [-14, 2, 0], size: [0.5, 3, 0.5], properties: { shape: 'cylinder', color: '#5d4037' } },
     ]
   },
 
@@ -364,7 +457,11 @@ export const TEMPLATES = {
     name: 'Ice Rink',
     gameType: 'survival',
     floorType: 'solid',
-    environment: { skyColor: '#1a2a3a', fogColor: '#1a2a3a', fogFar: 180, ambientIntensity: 0.5, sunColor: '#aaddff', sunIntensity: 0.9 },
+    environment: {
+      skyColor: '#1a2a3a', fogColor: '#1a2a3a', fogDensity: 0.010,
+      ambientIntensity: 0.5, sunColor: '#aaddff', sunIntensity: 0.9,
+      materialTheme: 'ice_crystal', skyPreset: 'starfield',
+    },
     respawnPoint: [0, 2, 0],
     goalPosition: null,
     entities: [
@@ -383,8 +480,16 @@ export const TEMPLATES = {
       { type: 'trigger', position: [-14, 3, 0], size: [4, 6, 30], properties: { color: '#87ceeb', isWind: true, windForce: [-6, 0, 0], opacity: 0.08 } },
       { type: 'trigger', position: [0, 3, 14], size: [30, 6, 4], properties: { color: '#87ceeb', isWind: true, windForce: [0, 0, 6], opacity: 0.08 } },
       { type: 'trigger', position: [0, 3, -14], size: [30, 6, 4], properties: { color: '#87ceeb', isWind: true, windForce: [0, 0, -6], opacity: 0.08 } },
-      // Decorations
+      // Center crystal
       { type: 'decoration', position: [0, 8, 0], size: [1.5, 1.5, 1.5], properties: { shape: 'dodecahedron', color: '#aaddff', emissive: true, rotating: true, speed: 0.3 } },
+      // Ice pillars at corners
+      { type: 'decoration', position: [14, 3, 14], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#b3e5fc' } },
+      { type: 'decoration', position: [-14, 3, -14], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#b3e5fc' } },
+      { type: 'decoration', position: [14, 3, -14], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#b3e5fc' } },
+      { type: 'decoration', position: [-14, 3, 14], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#b3e5fc' } },
+      // Small crystals on ice
+      { type: 'decoration', position: [6, 1.5, 6], size: [0.4, 0.6, 0.4], properties: { shape: 'dodecahedron', color: '#e0f7fa', emissive: true } },
+      { type: 'decoration', position: [-6, 1.5, -6], size: [0.4, 0.6, 0.4], properties: { shape: 'dodecahedron', color: '#e0f7fa', emissive: true } },
     ]
   },
 
@@ -393,7 +498,11 @@ export const TEMPLATES = {
     name: 'King\'s Plateau',
     gameType: 'king',
     floorType: 'solid',
-    environment: { skyColor: '#1a1a2e', fogColor: '#1a1a2e', fogFar: 200, ambientIntensity: 0.4, sunColor: '#ffdd44', sunIntensity: 1.0 },
+    environment: {
+      skyColor: '#1a1a2e', fogColor: '#1a1a2e', fogDensity: 0.010,
+      ambientIntensity: 0.4, sunColor: '#ffdd44', sunIntensity: 1.0,
+      materialTheme: 'stone', skyPreset: 'sunset',
+    },
     respawnPoint: [0, 2, 15],
     goalPosition: null,
     entities: [
@@ -418,6 +527,16 @@ export const TEMPLATES = {
       { type: 'obstacle', position: [7, 2.5, 0], size: [1, 1.5, 2], properties: { color: '#e74c3c', kinematic: true, path: [[7, 2.5, -3], [7, 2.5, 3]], speed: 1 } },
       // Crown decoration
       { type: 'decoration', position: [0, 8, 0], size: [1, 1.5, 1], properties: { shape: 'dodecahedron', color: '#f1c40f', emissive: true, rotating: true, speed: 0.5 } },
+      // Column pillars at hill base
+      { type: 'decoration', position: [5, 3, 5], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-5, 3, 5], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      { type: 'decoration', position: [5, 3, -5], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-5, 3, -5], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      // Flags at mini-hills
+      { type: 'decoration', position: [14, 3.5, 12], size: [0.1, 3, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
+      { type: 'decoration', position: [14.4, 4.5, 12], size: [0.6, 0.4, 0.05], properties: { color: '#e67e22' } },
+      { type: 'decoration', position: [-14, 3.5, -12], size: [0.1, 3, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
+      { type: 'decoration', position: [-14.4, 4.5, -12], size: [0.6, 0.4, 0.05], properties: { color: '#e67e22' } },
     ]
   },
 
@@ -425,7 +544,11 @@ export const TEMPLATES = {
     name: 'Island Kingdoms',
     gameType: 'king',
     floorType: 'none',
-    environment: { skyColor: '#0d1b2a', fogColor: '#0d1b2a', fogFar: 200, ambientIntensity: 0.4, sunColor: '#ffaa00', sunIntensity: 0.9 },
+    environment: {
+      skyColor: '#0d1b2a', fogColor: '#0d1b2a', fogDensity: 0.010,
+      ambientIntensity: 0.4, sunColor: '#ffaa00', sunIntensity: 0.9,
+      materialTheme: 'stone', skyPreset: 'sunset',
+    },
     respawnPoint: [0, 6, 0],
     goalPosition: null,
     entities: [
@@ -444,8 +567,14 @@ export const TEMPLATES = {
       // Wind on bridges
       { type: 'trigger', position: [3, 6, -10], size: [4, 5, 8], properties: { color: '#87ceeb', isWind: true, windForce: [5, 0, 0], opacity: 0.08 } },
       { type: 'trigger', position: [-3, 6, 10], size: [4, 5, 8], properties: { color: '#87ceeb', isWind: true, windForce: [-5, 0, 0], opacity: 0.08 } },
-      // Decorations
+      // Crown above center
       { type: 'decoration', position: [0, 10, 0], size: [1.2, 1.8, 1.2], properties: { shape: 'dodecahedron', color: '#f1c40f', emissive: true, rotating: true, speed: 0.4 } },
+      // Glowing orbs under bridges
+      { type: 'decoration', position: [0, 2, -10], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#8e44ad', emissive: true } },
+      { type: 'decoration', position: [0, 2, 10], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#8e44ad', emissive: true } },
+      // Columns on islands
+      { type: 'decoration', position: [3, 7, -20], size: [0.4, 4, 0.4], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-3, 7, 20], size: [0.4, 4, 0.4], properties: { shape: 'cylinder', color: '#5a6a7a' } },
     ]
   },
 
@@ -454,7 +583,12 @@ export const TEMPLATES = {
     name: 'Curse Arena',
     gameType: 'hot_potato',
     floorType: 'solid',
-    environment: { skyColor: '#1a0a0a', fogColor: '#2a0a0a', fogFar: 150, ambientColor: '#553333', ambientIntensity: 0.4, sunColor: '#ff4444', sunIntensity: 0.7 },
+    environment: {
+      skyColor: '#1a0a0a', fogColor: '#2a0a0a', fogDensity: 0.015,
+      ambientColor: '#553333', ambientIntensity: 0.4,
+      sunColor: '#ff4444', sunIntensity: 0.7,
+      materialTheme: 'lava_rock', skyPreset: 'storm',
+    },
     respawnPoint: [0, 2, 0],
     goalPosition: null,
     entities: [
@@ -472,8 +606,13 @@ export const TEMPLATES = {
       { type: 'trigger', position: [-10, 1, 0], size: [3, 1, 3], properties: { color: '#2ecc71', isSpeedBoost: true } },
       // Moving obstacles that converge
       { type: 'obstacle', position: [0, 1.5, 0], size: [16, 1.5, 1], properties: { color: '#e74c3c', rotating: true, speed: 1.5 } },
-      // Decorations — skull-like orbs
+      // Curse orb above
       { type: 'decoration', position: [0, 8, 0], size: [1.5, 1.5, 1.5], properties: { shape: 'sphere', color: '#e74c3c', emissive: true, rotating: true, speed: 1 } },
+      // Pillar top flames
+      { type: 'decoration', position: [6, 6, 6], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff4400', emissive: true } },
+      { type: 'decoration', position: [-6, 6, -6], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff4400', emissive: true } },
+      { type: 'decoration', position: [6, 6, -6], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff4400', emissive: true } },
+      { type: 'decoration', position: [-6, 6, 6], size: [0.3, 0.5, 0.3], properties: { shape: 'cone', color: '#ff4400', emissive: true } },
     ]
   },
 
@@ -481,7 +620,12 @@ export const TEMPLATES = {
     name: 'Curse Platforms',
     gameType: 'hot_potato',
     floorType: 'none',
-    environment: { skyColor: '#0a0a1a', fogColor: '#0a0a1a', fogFar: 120, ambientColor: '#332233', ambientIntensity: 0.35, sunColor: '#ff6666', sunIntensity: 0.7 },
+    environment: {
+      skyColor: '#0a0a1a', fogColor: '#0a0a1a', fogDensity: 0.018,
+      ambientColor: '#332233', ambientIntensity: 0.35,
+      sunColor: '#ff6666', sunIntensity: 0.7,
+      materialTheme: 'neon', skyPreset: 'void',
+    },
     respawnPoint: [0, 6, 0],
     goalPosition: null,
     entities: [
@@ -503,6 +647,10 @@ export const TEMPLATES = {
       { type: 'platform', position: [8, 6.3, 8], size: [3.5, 0.2, 3.5], properties: { color: '#b3e5fc', isIce: true } },
       // Obstacle
       { type: 'obstacle', position: [0, 3.5, 0], size: [6, 1, 1], properties: { color: '#e74c3c', rotating: true, speed: 2 } },
+      // Floating orbs between platforms
+      { type: 'decoration', position: [5, 4, 5], size: [0.3, 0.3, 0.3], properties: { shape: 'sphere', color: '#ff6666', emissive: true } },
+      { type: 'decoration', position: [-5, 5, -5], size: [0.3, 0.3, 0.3], properties: { shape: 'sphere', color: '#ff6666', emissive: true } },
+      { type: 'decoration', position: [0, 7, 0], size: [0.8, 0.8, 0.8], properties: { shape: 'sphere', color: '#e74c3c', emissive: true, rotating: true, speed: 0.8 } },
     ]
   },
 
@@ -511,7 +659,11 @@ export const TEMPLATES = {
     name: 'Checkpoint Dash',
     gameType: 'race',
     floorType: 'none',
-    environment: { skyColor: '#0d1b2a', fogColor: '#0d1b2a', fogFar: 200, ambientIntensity: 0.4, sunIntensity: 1.0 },
+    environment: {
+      skyColor: '#0d1b2a', fogColor: '#0d1b2a', fogDensity: 0.010,
+      ambientIntensity: 0.4, sunIntensity: 1.0,
+      materialTheme: 'stone', skyPreset: 'starfield',
+    },
     respawnPoint: [0, 2, 30],
     goalPosition: null,
     entities: [
@@ -535,14 +687,19 @@ export const TEMPLATES = {
       { type: 'obstacle', position: [0, 4, -12], size: [4, 1, 1], properties: { color: '#e74c3c', kinematic: true, path: [[-3, 4, -12], [3, 4, -12]], speed: 1.5 } },
       { type: 'obstacle', position: [0, 4, -16], size: [4, 1, 1], properties: { color: '#e74c3c', kinematic: true, path: [[3, 4, -16], [-3, 4, -16]], speed: 1.8 } },
       { type: 'trigger', position: [0, 4, -14], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 4, rotating: true, speed: 1 } },
-      // CP5 — final sprint, narrow ascending platforms
+      // CP5 — final sprint
       { type: 'platform', position: [3, 4, -22], size: [2, 0.5, 2], properties: { color: '#9b59b6' } },
       { type: 'platform', position: [-2, 6, -26], size: [2, 0.5, 2], properties: { color: '#8e44ad' } },
       { type: 'platform', position: [0, 8, -30], size: [4, 1, 4], properties: { color: '#f1c40f' } },
       { type: 'trigger', position: [0, 10, -30], size: [3, 3, 3], properties: { color: '#95a5a6', isCheckpoint: true, checkpointIndex: 5, rotating: true, speed: 1 } },
-      // Decorations
+      // Start flag
       { type: 'decoration', position: [4, 1.5, 30], size: [0.1, 2, 0.1], properties: { shape: 'cylinder', color: '#bdc3c7' } },
       { type: 'decoration', position: [4.4, 2.2, 30], size: [0.6, 0.4, 0.05], properties: { color: '#2ecc71' } },
+      // Guiding orbs along the path
+      { type: 'decoration', position: [3, 2, 16], size: [0.3, 0.3, 0.3], properties: { shape: 'sphere', color: '#2ecc71', emissive: true } },
+      { type: 'decoration', position: [-1, 3, 8], size: [0.3, 0.3, 0.3], properties: { shape: 'sphere', color: '#95a5a6', emissive: true } },
+      { type: 'decoration', position: [1, 5, -8], size: [0.3, 0.3, 0.3], properties: { shape: 'sphere', color: '#95a5a6', emissive: true } },
+      { type: 'decoration', position: [-1, 7, -24], size: [0.3, 0.3, 0.3], properties: { shape: 'sphere', color: '#9b59b6', emissive: true } },
     ]
   },
 
@@ -550,7 +707,11 @@ export const TEMPLATES = {
     name: 'Race Circuit',
     gameType: 'race',
     floorType: 'solid',
-    environment: { skyColor: '#1a1a2e', fogColor: '#1a1a2e', fogFar: 250, ambientIntensity: 0.5, sunIntensity: 1.1 },
+    environment: {
+      skyColor: '#1a1a2e', fogColor: '#1a1a2e', fogDensity: 0.008,
+      ambientIntensity: 0.5, sunIntensity: 1.1,
+      materialTheme: 'stone', skyPreset: 'sunset',
+    },
     respawnPoint: [0, 2, 18],
     goalPosition: null,
     entities: [
@@ -578,6 +739,14 @@ export const TEMPLATES = {
       { type: 'obstacle', position: [-15, 1.5, 0], size: [1, 2, 6], properties: { color: '#e74c3c', kinematic: true, path: [[-15, 1.5, 3], [-15, 1.5, -3]], speed: 1.2 } },
       // Center decoration
       { type: 'decoration', position: [0, 5, 0], size: [2, 3, 2], properties: { shape: 'dodecahedron', color: '#9b59b6', emissive: true, rotating: true, speed: 0.3 } },
+      // Corner columns
+      { type: 'decoration', position: [20, 3, 20], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-20, 3, 20], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      { type: 'decoration', position: [20, 3, -20], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      { type: 'decoration', position: [-20, 3, -20], size: [0.5, 5, 0.5], properties: { shape: 'cylinder', color: '#5a6a7a' } },
+      // Column-top orbs
+      { type: 'decoration', position: [20, 6, 20], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#9b59b6', emissive: true } },
+      { type: 'decoration', position: [-20, 6, -20], size: [0.4, 0.4, 0.4], properties: { shape: 'sphere', color: '#9b59b6', emissive: true } },
     ]
   },
 
@@ -585,7 +754,11 @@ export const TEMPLATES = {
     name: 'The Void',
     gameType: 'survival',
     floorType: 'none',
-    environment: { skyColor: '#0a0a1a', fogColor: '#0a0a1a', fogFar: 100, ambientIntensity: 0.3 },
+    environment: {
+      skyColor: '#0a0a1a', fogColor: '#0a0a1a', fogDensity: 0.020,
+      ambientIntensity: 0.3,
+      materialTheme: 'neon', skyPreset: 'void',
+    },
     respawnPoint: [0, 3, 0],
     goalPosition: null,
     entities: [
@@ -600,30 +773,28 @@ export function randomizeTemplate(template) {
   const tmpl = JSON.parse(JSON.stringify(template));
 
   for (const entity of tmpl.entities) {
-    // Nudge positions ±2 on X/Z for non-checkpoint, non-hill entities
-    if (!entity.properties?.isCheckpoint && !entity.properties?.isHill && !entity.properties?.isGoal) {
+    const props = entity.properties;
+
+    // Nudge positions for non-fixed entities
+    if (!props?.isCheckpoint && !props?.isHill && !props?.isGoal) {
       entity.position[0] += (Math.random() - 0.5) * 2;
       entity.position[2] += (Math.random() - 0.5) * 2;
     }
 
-    // Vary kinematic/rotating speeds ±30%
-    if (entity.properties?.speed) {
-      entity.properties.speed *= 0.7 + Math.random() * 0.6;
+    // Vary speeds ±30%
+    if (props?.speed) {
+      props.speed *= 0.7 + Math.random() * 0.6;
+    }
+    if (props?.conveyorSpeed) {
+      props.conveyorSpeed *= 0.7 + Math.random() * 0.6;
     }
 
-    // Vary conveyor speed ±30%
-    if (entity.properties?.conveyorSpeed) {
-      entity.properties.conveyorSpeed *= 0.7 + Math.random() * 0.6;
-    }
-
-    // Vary breakable platform delays ±100ms
-    if (entity.properties?.breakDelay) {
-      entity.properties.breakDelay += Math.floor((Math.random() - 0.5) * 200);
-      entity.properties.breakDelay = Math.max(100, entity.properties.breakDelay);
+    if (props?.breakDelay) {
+      const jitter = Math.floor((Math.random() - 0.5) * 200);
+      props.breakDelay = Math.max(100, props.breakDelay + jitter);
     }
   }
 
-  // Vary hazard plane riseSpeed ±20%
   if (tmpl.hazardPlane?.riseSpeed) {
     tmpl.hazardPlane.riseSpeed *= 0.8 + Math.random() * 0.4;
   }

@@ -1,12 +1,14 @@
 /**
- * ToonMaterials — Cel-shaded material factory for all game entities and players
+ * ToonMaterials — Cel-shaded material factory with theme support
  *
- * Replaces flat MeshStandardMaterial with MeshToonMaterial + gradient maps.
- * Gives the game a stylized cartoon look (Fall Guys / Splatoon vibe).
+ * Material themes give each arena a distinct look:
+ *   stone, lava_rock, ice_crystal, neon, wood, candy
+ *
+ * Normal maps from ProceduralTextures add surface depth.
  */
 
 import * as THREE from 'three';
-import { getProceduralTexture } from './ProceduralTextures.js';
+import { getProceduralTexture, generateNormalMap, getNormalMapType } from './ProceduralTextures.js';
 
 function createGradientTexture(steps) {
   const data = new Uint8Array(steps);
@@ -20,9 +22,9 @@ function createGradientTexture(steps) {
   return texture;
 }
 
-const GRADIENT_2 = createGradientTexture(2); // Bold: dark/light
-const GRADIENT_3 = createGradientTexture(3); // Classic toon: shadow/mid/highlight
-const GRADIENT_4 = createGradientTexture(4); // Softer: 4 steps
+const GRADIENT_2 = createGradientTexture(2);
+const GRADIENT_3 = createGradientTexture(3);
+const GRADIENT_4 = createGradientTexture(4);
 
 const GRADIENT_MAP = {
   platform: GRADIENT_3,
@@ -33,6 +35,57 @@ const GRADIENT_MAP = {
   decoration: GRADIENT_4,
 };
 
+// ─── Material Themes ────────────────────────────────────────
+const MATERIAL_THEMES = {
+  stone: {
+    emissiveMult: 0.1,
+    surfaceEmissive: 0.3,
+    colorShift: [0, 0, 0],        // H, S, L offsets
+    normalScale: 0.6,
+  },
+  lava_rock: {
+    emissiveMult: 0.3,
+    surfaceEmissive: 0.4,
+    colorShift: [0, 0.05, -0.05],
+    normalScale: 0.8,
+  },
+  ice_crystal: {
+    emissiveMult: 0.15,
+    surfaceEmissive: 0.25,
+    colorShift: [0, -0.1, 0.1],
+    normalScale: 0.5,
+  },
+  neon: {
+    emissiveMult: 0.5,
+    surfaceEmissive: 0.6,
+    colorShift: [0, 0.15, 0.05],
+    normalScale: 0,
+  },
+  wood: {
+    emissiveMult: 0.08,
+    surfaceEmissive: 0.2,
+    colorShift: [0, -0.05, -0.03],
+    normalScale: 0.7,
+  },
+  candy: {
+    emissiveMult: 0.25,
+    surfaceEmissive: 0.35,
+    colorShift: [0, 0.1, 0.08],
+    normalScale: 0,
+  },
+};
+
+let currentMaterialTheme = null;
+
+export function setMaterialTheme(themeName) {
+  currentMaterialTheme = themeName && MATERIAL_THEMES[themeName] ? themeName : null;
+}
+
+export function getMaterialTheme() {
+  return currentMaterialTheme;
+}
+
+// ─── Entity Material Factory ────────────────────────────────
 export function createEntityToonMaterial(entity) {
   const props = entity.properties || {};
   const type = entity.type;
@@ -54,6 +107,13 @@ export function createEntityToonMaterial(entity) {
 
   const color = getEntityColor(type, props.color);
   const isSurface = type === 'platform' || type === 'ramp';
+  const theme = currentMaterialTheme ? MATERIAL_THEMES[currentMaterialTheme] : null;
+
+  // Apply theme color shift
+  if (theme && theme.colorShift) {
+    const [dh, ds, dl] = theme.colorShift;
+    color.offsetHSL(dh, ds, dl);
+  }
 
   // Nudge surfaces whose luminance is too close to the ground (~0.24) for visibility
   if (isSurface && !props.emissive) {
@@ -66,9 +126,9 @@ export function createEntityToonMaterial(entity) {
   const isTransparent = props.opacity != null && props.opacity < 1;
   const gradientMap = GRADIENT_MAP[type] || GRADIENT_3;
 
-  let emissiveIntensity = 0.12;
+  let emissiveIntensity = theme ? theme.emissiveMult : 0.12;
   if (props.emissive) emissiveIntensity = 0.7;
-  else if (isSurface) emissiveIntensity = 0.35;
+  else if (isSurface) emissiveIntensity = theme ? theme.surfaceEmissive : 0.35;
 
   const matOpts = {
     color,
@@ -88,9 +148,18 @@ export function createEntityToonMaterial(entity) {
 
   const material = new THREE.MeshToonMaterial(matOpts);
 
+  // Apply procedural color texture
   const texture = getProceduralTexture(entity);
   if (texture) {
     material.map = texture;
+  }
+
+  // Apply normal map for surface depth
+  const normalType = getNormalMapType(entity, currentMaterialTheme);
+  const normalScale = theme ? theme.normalScale : 0.5;
+  if (normalType && normalScale > 0) {
+    material.normalMap = generateNormalMap(normalType);
+    material.normalScale = new THREE.Vector2(normalScale, normalScale);
   }
 
   return material;
@@ -106,12 +175,18 @@ export function createPlayerToonMaterial(color) {
 }
 
 export function createGroundToonMaterial() {
-  return new THREE.MeshToonMaterial({
+  const mat = new THREE.MeshToonMaterial({
     color: 0x2d3436,
     gradientMap: GRADIENT_4,
     emissive: 0x2d3436,
     emissiveIntensity: 0.15,
   });
+
+  // Ground gets a subtle stone normal map
+  mat.normalMap = generateNormalMap('stone');
+  mat.normalScale = new THREE.Vector2(0.3, 0.3);
+
+  return mat;
 }
 
 const ENTITY_COLORS = {
@@ -123,9 +198,7 @@ const ENTITY_COLORS = {
   decoration: 0x95a5a6,
 };
 
-function getEntityColor(type, customColor) {
+export function getEntityColor(type, customColor) {
   if (customColor) return new THREE.Color(customColor);
   return new THREE.Color(ENTITY_COLORS[type] || 0x95a5a6);
 }
-
-export { getEntityColor };
