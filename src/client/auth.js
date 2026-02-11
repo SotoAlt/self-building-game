@@ -36,11 +36,17 @@ export async function getPrivyUser() {
 
 export async function loginWithTwitter() {
   if (!bridge) throw new Error('Privy not initialized — check VITE_PRIVY_APP_ID and VITE_PRIVY_CLIENT_ID');
+
+  // Clear stale Privy session before starting fresh OAuth flow
+  if (bridge.authenticated) {
+    await silentLogout();
+  }
+
   try {
     bridge.initOAuth({ provider: 'twitter' });
   } catch (e) {
     console.error('[Auth] Twitter OAuth failed:', e);
-    throw new Error('Failed to start Twitter login. Check Privy dashboard settings.');
+    throw new Error('Failed to start Twitter login. Check Privy dashboard settings.', { cause: e });
   }
 }
 
@@ -48,22 +54,16 @@ export async function handleOAuthCallback() {
   if (!bridge) return null;
 
   const params = new URLSearchParams(window.location.search);
-  const hasOAuthParams = params.has('privy_oauth_code') || params.has('privy_oauth_state');
+  const isOAuthCallback = params.has('privy_oauth_code') || params.has('privy_oauth_state');
+  if (!isOAuthCallback) return null;
 
-  // PrivyProvider processes OAuth params on mount. If already authenticated, just clean up.
-  if (bridge.authenticated && bridge.user) {
-    if (hasOAuthParams) cleanOAuthParams();
-    return bridge.user;
-  }
+  // SDK may have already processed the callback before we check
+  const user = (bridge.authenticated && bridge.user)
+    ? bridge.user
+    : await pollFor(() => bridge.authenticated ? bridge.user : null, 5000, 200);
 
-  // OAuth params present but SDK hasn't finished processing -- poll briefly
-  if (hasOAuthParams) {
-    const user = await pollFor(() => bridge.authenticated ? bridge.user : null, 5000, 200);
-    cleanOAuthParams();
-    return user;
-  }
-
-  return null;
+  cleanOAuthParams();
+  return user;
 }
 
 // No-op: React SDK auto-creates embedded wallets via createOnLogin: 'all-users'
@@ -72,11 +72,11 @@ export async function ensureEmbeddedWallet() {}
 export async function exchangeForBackendToken() {
   if (!bridge) return null;
 
-  const privyToken = await Promise.race([
-    bridge.getAccessToken(),
-    new Promise(resolve => setTimeout(() => resolve(null), 5000))
-  ]);
-  if (!privyToken) return null;
+  const privyToken = await withTimeout(bridge.getAccessToken(), 8000);
+  if (!privyToken) {
+    await silentLogout();
+    return null;
+  }
 
   const res = await fetch(`${API_URL}/api/auth/privy`, {
     method: 'POST',
@@ -189,6 +189,17 @@ function cleanOAuthParams() {
 function storeToken(data) {
   localStorage.setItem('game:token', data.token);
   return data;
+}
+
+function silentLogout() {
+  return bridge?.logout().catch(() => {});
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(() => resolve(null), ms)),
+  ]);
 }
 
 function pollFor(fn, timeoutMs, intervalMs) {
