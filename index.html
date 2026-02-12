@@ -119,6 +119,25 @@
       cursor: not-allowed;
       transform: none;
     }
+    .login-loader {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      margin-top: 24px;
+    }
+    .loader-spinner, .btn-spinner {
+      width: 24px; height: 24px;
+      border: 3px solid rgba(255,255,255,0.2);
+      border-top-color: #1d9bf0;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .loader-spinner { width: 36px; height: 36px; }
+    .btn-spinner { width: 16px; height: 16px; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .login-status {
       color: rgba(255,255,255,0.4);
       font-size: 12px;
@@ -1051,17 +1070,25 @@
 </head>
 <body>
   <div id="login-screen">
-    <div class="login-container">
+    <!-- Phase 1: Loading splash (visible by default) -->
+    <div id="login-splash" class="login-container">
+      <h1>Self-Building Game</h1>
+      <p class="login-subtitle">The Chaos Magician awaits...</p>
+      <div class="login-loader">
+        <div class="loader-spinner"></div>
+        <p class="login-status">Loading...</p>
+      </div>
+    </div>
+    <!-- Phase 2: Login buttons (hidden until ready) -->
+    <div id="login-buttons-container" class="login-container" style="display:none">
       <h1>Self-Building Game</h1>
       <p class="login-subtitle">The Chaos Magician awaits...</p>
       <div class="login-buttons">
         <button id="btn-continue" class="login-btn continue" style="display:none">Continue</button>
-        <button id="btn-twitter-login" class="login-btn twitter">
-          Login with X (Twitter)
+        <button id="btn-twitter-login" class="login-btn twitter" disabled>
+          <span class="btn-spinner"></span> Loading Twitter...
         </button>
-        <button id="btn-guest" class="login-btn guest">
-          Play as Guest
-        </button>
+        <button id="btn-guest" class="login-btn guest">Play as Guest</button>
       </div>
       <p id="login-status" class="login-status"></p>
     </div>

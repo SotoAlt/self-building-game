@@ -5,9 +5,17 @@
  * Exposes a flat async API consumed by main.js.
  */
 
-import { mountPrivyBridge } from './PrivyBridge.jsx';
-import { Buffer } from 'buffer';
-globalThis.Buffer = Buffer;
+let _mountPrivyBridge = null;
+
+async function loadPrivyBridge() {
+  if (!_mountPrivyBridge) {
+    const { Buffer } = await import('buffer');
+    globalThis.Buffer = Buffer;
+    const mod = await import('./PrivyBridge.jsx');
+    _mountPrivyBridge = mod.mountPrivyBridge;
+  }
+  return _mountPrivyBridge;
+}
 
 const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3000'
@@ -21,9 +29,10 @@ export async function initPrivy(appId, clientId) {
     return;
   }
   try {
-    bridge = await mountPrivyBridge(appId, clientId);
+    const mount = await loadPrivyBridge();
+    bridge = await withTimeout(mount(appId, clientId), 10000);
     if (!bridge) {
-      console.warn('[Auth] Privy bridge failed to mount');
+      console.warn('[Auth] Privy bridge timed out');
     }
   } catch (e) {
     console.error('[Auth] Privy initialization failed:', e);

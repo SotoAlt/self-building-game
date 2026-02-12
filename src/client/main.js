@@ -3114,42 +3114,25 @@ async function pollForUpdates() {
 // Auth Flow
 // ============================================
 async function startAuthFlow() {
+  const splash = document.getElementById('login-splash');
+  const buttonsContainer = document.getElementById('login-buttons-container');
   const statusEl = document.getElementById('login-status');
   const continueBtn = document.getElementById('btn-continue');
+  const twitterBtn = document.getElementById('btn-twitter-login');
 
   function setStatus(text) {
     if (statusEl) statusEl.textContent = text;
   }
 
-  // Init Privy if credentials are available (env vars injected by Vite)
+  function hideLoginScreen() {
+    document.getElementById('login-screen').style.display = 'none';
+  }
+
   const appId = import.meta.env.VITE_PRIVY_APP_ID;
   const clientId = import.meta.env.VITE_PRIVY_CLIENT_ID;
   const privyEnabled = !!(appId && clientId);
 
-  if (privyEnabled) {
-    await initPrivy(appId, clientId);
-  } else {
-    const twitterBtn = document.getElementById('btn-twitter-login');
-    if (twitterBtn) twitterBtn.style.display = 'none';
-  }
-
-  // Check for OAuth callback (returning from Twitter redirect) — auto-login ONLY in this case
-  if (privyEnabled) {
-    try {
-      const callbackUser = await handleOAuthCallback();
-      if (callbackUser) {
-        setStatus('Authenticating...');
-        const result = await exchangeForBackendToken();
-        if (result) return result;
-      }
-    } catch (e) {
-      console.error('[Auth] OAuth callback failed:', e);
-      setStatus('Twitter login failed: ' + (e.message || 'Unknown error'));
-    }
-  }
-
-  // Probe for existing session — but DON'T auto-connect, just remember it
-  let cachedSession = null;
+  // --- Fast path: returning user with cached token ---
   const existingToken = getToken();
   if (existingToken) {
     try {
@@ -3158,66 +3141,109 @@ async function startAuthFlow() {
       });
       if (res.ok) {
         const user = await res.json();
-        cachedSession = { token: existingToken, user };
-      } else {
-        localStorage.removeItem('game:token');
+        hideLoginScreen();
+        return { token: existingToken, user };
       }
-    } catch {
-      localStorage.removeItem('game:token');
+    } catch { /* token invalid or server unreachable */ }
+    localStorage.removeItem('game:token');
+  }
+
+  // --- Start Privy init in background (non-blocking) ---
+  let privyReady = false;
+  let privyInitPromise = Promise.resolve();
+
+  if (privyEnabled) {
+    privyInitPromise = initPrivy(appId, clientId).then(() => {
+      privyReady = true;
+      if (twitterBtn) {
+        twitterBtn.disabled = false;
+        twitterBtn.innerHTML = 'Login with X (Twitter)';
+      }
+    }).catch(e => {
+      console.error('[Auth] Privy init failed:', e);
+      if (twitterBtn) {
+        twitterBtn.textContent = 'Twitter Unavailable';
+        twitterBtn.disabled = true;
+      }
+    });
+  } else if (twitterBtn) {
+    twitterBtn.style.display = 'none';
+  }
+
+  // --- OAuth callback check (returning from Twitter redirect) ---
+  const params = new URLSearchParams(window.location.search);
+  const isOAuthCallback = privyEnabled
+    && (params.has('privy_oauth_code') || params.has('privy_oauth_state'));
+
+  if (isOAuthCallback) {
+    await privyInitPromise;
+    try {
+      const callbackUser = await handleOAuthCallback();
+      if (callbackUser) {
+        setStatus('Authenticating...');
+        const result = await exchangeForBackendToken();
+        if (result) {
+          hideLoginScreen();
+          return result;
+        }
+      }
+    } catch (e) {
+      console.error('[Auth] OAuth callback failed:', e);
     }
   }
 
-  // If no cached backend session, try Privy session
-  if (!cachedSession && privyEnabled) {
+  // --- Transition: splash -> login buttons ---
+  if (splash) splash.style.display = 'none';
+  if (buttonsContainer) buttonsContainer.style.display = 'block';
+
+  // Show "Continue" button if an existing Privy session is already available
+  if (privyReady) {
     try {
       const privyUser = await getPrivyUser();
-      if (privyUser) {
-        const result = await exchangeForBackendToken();
-        if (result) cachedSession = result;
+      const result = privyUser ? await exchangeForBackendToken() : null;
+      if (result && continueBtn) {
+        const userName = result.user?.name || result.user?.twitterUsername || 'Player';
+        continueBtn.textContent = `Continue as ${userName}`;
+        continueBtn.style.display = 'block';
       }
     } catch (e) {
       console.warn('[Auth] Privy session check failed:', e);
     }
   }
 
-  // Show "Continue" button if we have a cached session
-  if (cachedSession && continueBtn) {
-    const userName = cachedSession.user?.name || cachedSession.user?.twitterUsername || 'Player';
-    continueBtn.textContent = `Continue as ${userName}`;
-    continueBtn.style.display = 'block';
-  }
-
-  // ALWAYS show login screen and wait for user action
-  setStatus('');
-  document.getElementById('login-screen').style.display = 'flex';
-
+  // --- Wait for user action ---
   return new Promise((resolve) => {
-    // Continue with cached session
     continueBtn?.addEventListener('click', async () => {
-      if (cachedSession) {
+      const token = getToken();
+      if (token) {
         await ensureEmbeddedWallet();
-        document.getElementById('login-screen').style.display = 'none';
-        resolve(cachedSession);
+        hideLoginScreen();
+        resolve({ token, user: { name: continueBtn.textContent.replace('Continue as ', '') } });
       }
     });
 
-    // Twitter login
-    document.getElementById('btn-twitter-login')?.addEventListener('click', async () => {
+    twitterBtn?.addEventListener('click', async () => {
+      if (!privyReady) {
+        setStatus('Still loading Twitter... please wait');
+        await privyInitPromise;
+        if (!privyReady) {
+          setStatus('Twitter login unavailable. Try Guest mode.');
+          return;
+        }
+      }
       setStatus('Redirecting to Twitter...');
       try {
         await loginWithTwitter();
       } catch (e) {
-        console.error('[Auth] Twitter login failed:', e);
         setStatus('Login failed: ' + (e.message || 'Unknown error'));
       }
     });
 
-    // Guest login
     document.getElementById('btn-guest').addEventListener('click', async () => {
       setStatus('Creating guest session...');
       const result = await loginAsGuest();
       if (result) {
-        document.getElementById('login-screen').style.display = 'none';
+        hideLoginScreen();
         resolve(result);
       } else {
         setStatus('Failed to create session. Try again.');
