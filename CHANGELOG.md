@@ -2,6 +2,22 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.39.0] - 2026-02-12
+
+### Changed
+- **Lazy-loaded Privy auth** — PrivyBridge.jsx and all Privy/wallet dependencies (`@privy-io`, `viem`, `@walletconnect`, `wagmi`, `react`, `react-dom`) loaded via dynamic `import()` instead of static import
+  - Guest users never download Privy chunk at all
+  - Twitter login button shows "Loading Twitter..." spinner until Privy ready, then enables; 10s timeout shows "Twitter Unavailable"
+  - `buffer` polyfill moved into lazy load path
+- **Loading splash screen** — two-phase login screen: instant HTML splash with spinner (visible before JS loads), then login buttons appear once JS is ready
+- **Auto-login for returning users** — cached token validated via `/api/me` on load; valid sessions skip login screen entirely (splash -> arena lobby)
+- **Background Privy initialization** — `initPrivy()` runs non-blocking; login buttons shown immediately while Privy loads in background
+- **OAuth callback progress** — returning from Twitter shows "Connecting to Twitter..." -> "Authenticating..." -> "Logging in..." on splash instead of stuck "Loading..."
+- **Vendor bundle splitting** — Privy deps auto-split into lazy chunks via dynamic import boundary (was forced manual chunk causing circular dependency crash)
+
+### Fixed
+- **Circular chunk crash** — `ReferenceError: Cannot access 'Mw' before initialization` caused by forcing Privy deps into a manual `vendor-privy` chunk that created circular dependency with `vendor`; fixed by letting Rollup handle splitting naturally via dynamic import
+
 ## [0.38.0] - 2026-02-11
 
 ### Added
