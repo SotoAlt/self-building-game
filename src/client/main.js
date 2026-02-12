@@ -3176,11 +3176,15 @@ async function startAuthFlow() {
     && (params.has('privy_oauth_code') || params.has('privy_oauth_state'));
 
   if (isOAuthCallback) {
+    // Update splash status so user sees progress during Twitter callback
+    const splashStatus = splash?.querySelector('.login-status');
+    if (splashStatus) splashStatus.textContent = 'Connecting to Twitter...';
     await privyInitPromise;
     try {
+      if (splashStatus) splashStatus.textContent = 'Authenticating...';
       const callbackUser = await handleOAuthCallback();
       if (callbackUser) {
-        setStatus('Authenticating...');
+        if (splashStatus) splashStatus.textContent = 'Logging in...';
         const result = await exchangeForBackendToken();
         if (result) {
           hideLoginScreen();

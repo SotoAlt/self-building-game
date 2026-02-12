@@ -1,10 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Privy + its transitive deps (React, wallet libs, polyfills) — lazy-loaded chunk
-const PRIVY_PACKAGES = [
-  '@privy-io', 'viem', '@walletconnect', 'wagmi', '@base-org/account',
-  '/ox/', '/react/', '/react-dom/', '/scheduler/', '/buffer/',
+// Privy-only packages — DON'T assign a manual chunk; let Rollup split them
+// naturally via the dynamic import('./PrivyBridge.jsx') boundary.
+// Forcing them into a named chunk causes circular deps with 'vendor'.
+const PRIVY_ONLY = [
+  '@privy-io', 'viem', '@walletconnect', 'wagmi', '@base-org/account', '/ox/',
 ];
 
 export default defineConfig({
@@ -21,7 +22,8 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes('node_modules')) return;
           if (id.includes('three')) return 'vendor-three';
-          if (PRIVY_PACKAGES.some(pkg => id.includes(pkg))) return 'vendor-privy';
+          // Let Privy deps land in the lazy chunk created by dynamic import
+          if (PRIVY_ONLY.some(pkg => id.includes(pkg))) return;
           return 'vendor';
         },
       },
