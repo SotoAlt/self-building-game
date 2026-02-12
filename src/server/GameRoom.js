@@ -66,6 +66,16 @@ export class GameRoom extends Room {
         velocity: data.velocity
       });
 
+      // Movement-based AFK prevention: if player moved >5 units from anchor, count as active
+      const player = this.worldState.players.get(client.sessionId);
+      if (player?.activityAnchor && data.position) {
+        const dx = data.position[0] - player.activityAnchor[0];
+        const dz = data.position[2] - player.activityAnchor[2];
+        if (dx * dx + dz * dz > 25) {
+          this.worldState.recordPlayerActivity(client.sessionId);
+        }
+      }
+
       this.broadcast('player_moved', {
         id: client.sessionId,
         position: data.position,
