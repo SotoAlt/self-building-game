@@ -44,6 +44,11 @@ export class GameRoom extends Room {
     this.broadcast('chat_message', message);
   }
 
+  _isSpectator(client) {
+    const player = this.worldState?.players.get(client.sessionId);
+    return player?.type === 'spectator';
+  }
+
   onCreate(options) {
     // Resolve arena from metadata (set by filterBy)
     const arenaId = this.metadata?.arenaId || 'chaos';
@@ -60,6 +65,7 @@ export class GameRoom extends Room {
     // Player position updates (client -> server)
     this.onMessage('move', (client, data) => {
       if (!this.worldState) return;
+      if (this._isSpectator(client)) return;
 
       this.worldState.updatePlayer(client.sessionId, {
         position: data.position,
@@ -85,6 +91,7 @@ export class GameRoom extends Room {
 
     this.onMessage('died', (client, data) => {
       if (!this.worldState) return;
+      if (this._isSpectator(client)) return;
 
       const now = Date.now();
       const lastDeath = this._deathTimestamps.get(client.sessionId) || 0;
@@ -121,6 +128,7 @@ export class GameRoom extends Room {
     // Player respawn
     this.onMessage('respawn', (client) => {
       if (!this.worldState) return;
+      if (this._isSpectator(client)) return;
 
       this.worldState.recordPlayerActivity(client.sessionId);
       const player = this.worldState.players.get(client.sessionId);
@@ -154,6 +162,7 @@ export class GameRoom extends Room {
     // Collectible pickup
     this.onMessage('collect', (client, data) => {
       if (!this.worldState) return;
+      if (this._isSpectator(client)) return;
 
       this.worldState.recordPlayerActivity(client.sessionId);
 
@@ -183,6 +192,7 @@ export class GameRoom extends Room {
     // Trigger activation (for goals, checkpoints)
     this.onMessage('trigger_activated', (client, data) => {
       if (!this.worldState) return;
+      if (this._isSpectator(client)) return;
       this.worldState.recordPlayerActivity(client.sessionId);
       console.log(`[GameRoom] Trigger activated: ${data.entityId} by ${client.sessionId}`);
 
@@ -230,6 +240,7 @@ export class GameRoom extends Room {
     // Breakable platform step notification
     this.onMessage('platform_step', (client, { entityId }) => {
       if (!this.worldState) return;
+      if (this._isSpectator(client)) return;
       this.worldState.recordPlayerActivity(client.sessionId);
       const started = this.worldState.startBreaking(entityId);
       if (!started) return;
@@ -265,17 +276,25 @@ export class GameRoom extends Room {
     const payload = options.token ? verifyToken(options.token) : null;
     const userId = payload?.userId ?? client.sessionId;
     const type = options.type || (payload ? 'authenticated' : 'human');
+    const isUrlSpectator = type === 'spectator';
 
     upsertUser(userId, name, type);
     console.log(`[GameRoom] ${name} joined (${type})`);
 
     if (!this.worldState) return;
 
-    // Check if game is active — mid-game joiners become spectators
+    // Determine initial player state:
+    // - URL spectators always spectate
+    // - Humans joining mid-game spectate until next round
+    // - Otherwise, start alive
+    const isHuman = type !== 'ai' && type !== 'spectator';
     const gamePhase = this.worldState.gameState.phase;
     const isGameActive = gamePhase === 'countdown' || gamePhase === 'playing';
-    const isHuman = type !== 'ai';
-    const initialState = (isGameActive && isHuman) ? 'spectating' : 'alive';
+
+    let initialState = 'alive';
+    if (isUrlSpectator || (isGameActive && isHuman)) {
+      initialState = 'spectating';
+    }
 
     const player = this.worldState.addPlayer(client.sessionId, name, type, initialState, userId);
 
@@ -290,7 +309,7 @@ export class GameRoom extends Room {
 
     this.broadcast('player_joined', player, { except: client });
 
-    // Visual announcement for human players
+    // Visual announcement for human players (isHuman excludes spectators and AI)
     if (isHuman) {
       const announcement = this.worldState.announce(`${name} has entered the arena!`, 'system', 4000);
       this.broadcast('announcement', announcement);

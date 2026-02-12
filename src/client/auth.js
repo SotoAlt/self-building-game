@@ -23,9 +23,14 @@ const API_URL = window.location.hostname === 'localhost'
 
 let bridge = null;
 
+// Privy readiness tracking — wallet functions await this before checking bridge
+let _privyReadyResolve = null;
+const privyReady = new Promise(r => { _privyReadyResolve = r; });
+
 export async function initPrivy(appId, clientId) {
   if (!appId) {
     console.warn('[Auth] No Privy appId — Twitter login disabled');
+    _privyReadyResolve();
     return;
   }
   try {
@@ -37,6 +42,7 @@ export async function initPrivy(appId, clientId) {
   } catch (e) {
     console.error('[Auth] Privy initialization failed:', e);
   }
+  _privyReadyResolve();
 }
 
 export async function getPrivyUser() {
@@ -137,6 +143,7 @@ export async function logout() {
 }
 
 export async function getEmbeddedWalletProvider() {
+  if (!bridge) await withTimeout(privyReady, 12000);
   if (!bridge) {
     console.warn('[Auth] getProvider: bridge not initialized');
     return null;
@@ -159,6 +166,7 @@ export async function getEmbeddedWalletProvider() {
 }
 
 export async function getEmbeddedWalletAddress() {
+  if (!bridge) await withTimeout(privyReady, 12000);
   if (!bridge) return null;
   return await pollFor(() => bridge.getEmbeddedWalletAddress(), 2000, 200);
 }

@@ -2492,6 +2492,8 @@ async function connectToServer() {
 
     if (authUser?.token) {
       joinOptions.token = authUser.token;
+    }
+    if (user?.type) {
       joinOptions.type = user.type;
     }
 
@@ -3132,23 +3134,8 @@ async function startAuthFlow() {
   const clientId = import.meta.env.VITE_PRIVY_CLIENT_ID;
   const privyEnabled = !!(appId && clientId);
 
-  // --- Fast path: returning user with cached token ---
-  const existingToken = getToken();
-  if (existingToken) {
-    try {
-      const res = await fetch(`${API_URL}/api/me`, {
-        headers: { Authorization: `Bearer ${existingToken}` }
-      });
-      if (res.ok) {
-        const user = await res.json();
-        hideLoginScreen();
-        return { token: existingToken, user };
-      }
-    } catch { /* token invalid or server unreachable */ }
-    localStorage.removeItem('game:token');
-  }
-
   // --- Start Privy init in background (non-blocking) ---
+  // Must happen BEFORE the fast path so wallet is available after auto-login
   let privyReady = false;
   let privyInitPromise = Promise.resolve();
 
@@ -3168,6 +3155,22 @@ async function startAuthFlow() {
     });
   } else if (twitterBtn) {
     twitterBtn.style.display = 'none';
+  }
+
+  // --- Fast path: returning user with cached token ---
+  const existingToken = getToken();
+  if (existingToken) {
+    try {
+      const res = await fetch(`${API_URL}/api/me`, {
+        headers: { Authorization: `Bearer ${existingToken}` }
+      });
+      if (res.ok) {
+        const user = await res.json();
+        hideLoginScreen();
+        return { token: existingToken, user };
+      }
+    } catch { /* token invalid or server unreachable */ }
+    localStorage.removeItem('game:token');
   }
 
   // --- OAuth callback check (returning from Twitter redirect) ---
@@ -3918,7 +3921,15 @@ async function init() {
 
   await fetchInitialState();
   await connectToServer();
-  if (!isSpectator) createPlayer();
+  if (!isSpectator) {
+    createPlayer();
+  } else {
+    const badge = document.createElement('div');
+    badge.id = 'spectator-badge';
+    badge.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);background:rgba(243,156,18,0.9);color:#000;padding:8px 24px;border-radius:20px;font-size:14px;font-weight:bold;z-index:1000;pointer-events:none;letter-spacing:2px;';
+    badge.textContent = 'SPECTATING';
+    document.body.appendChild(badge);
+  }
 
   setupChat();
   fetchLeaderboard();

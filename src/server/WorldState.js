@@ -426,7 +426,7 @@ export class WorldState {
   activateSpectators() {
     let activated = 0;
     for (const player of this.players.values()) {
-      if (player.state === 'spectating') {
+      if (player.state === 'spectating' && player.type !== 'spectator') {
         player.state = 'alive';
         activated++;
       }
@@ -485,7 +485,7 @@ export class WorldState {
   getActiveHumanCount() {
     let count = 0;
     for (const p of this.players.values()) {
-      if (p.type !== 'ai' && p.state !== 'afk_warned') count++;
+      if (p.type !== 'ai' && p.type !== 'spectator' && p.state !== 'afk_warned') count++;
     }
     return count;
   }
