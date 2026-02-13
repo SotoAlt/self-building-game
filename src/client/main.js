@@ -1374,9 +1374,7 @@ function checkCollisions() {
           y: mesh.parent.position.y + mesh.position.y,
           z: mesh.parent.position.z + mesh.position.z }
       : mesh.position;
-    const halfSize = entity.type === 'collectible'
-      ? [0.5, 0.5, 0.5]
-      : entity.size.map(s => s / 2);
+    const halfSize = entity.size.map(s => s / 2);
     entityBox.min.set(ep.x - halfSize[0], ep.y - halfSize[1], ep.z - halfSize[2]);
     entityBox.max.set(ep.x + halfSize[0], ep.y + halfSize[1], ep.z + halfSize[2]);
 
@@ -1387,7 +1385,7 @@ function checkCollisions() {
       continue;
     }
     if (entity.type === 'obstacle') {
-      if (state.gameState.phase === 'playing') {
+      if (state.gameState.phase === 'playing' && Date.now() >= respawnInvulnUntil) {
         playerDie();
       }
       continue;
@@ -1727,7 +1725,7 @@ function updatePlayer(delta) {
     playerDie();
   }
   // Void death (Y < -50) stays always active as ultimate safety net
-  if (playerMesh.position.y < VOID_DEATH_Y) {
+  if (playerMesh.position.y < VOID_DEATH_Y && !invulnerable) {
     playerDie();
   }
 

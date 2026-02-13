@@ -21,7 +21,7 @@ export class CollectGame extends MiniGame {
     const offsetZ = (Math.random() - 0.5) * 10;
     this.spawnArea = config.spawnArea || {
       x: [offsetX - areaSize, offsetX + areaSize],
-      y: [2, 10],
+      y: [1, 4],
       z: [offsetZ - areaSize, offsetZ + areaSize]
     };
     this.collectibleIds = [];

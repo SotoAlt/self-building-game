@@ -19,6 +19,9 @@ const OBSTACLE_PATTERNS = ['sweeper', 'moving_wall', 'pendulum', 'falling_block'
 // Half-width of the arena area for random obstacle placement
 const ARENA_SPREAD = 30;
 
+// Minimum distance from respawn point when placing random obstacles
+const SPAWN_EXCLUSION_RADIUS = 5;
+
 // Game type registry - agents can query this
 export const GAME_TYPES = {
   reach: {
@@ -441,10 +444,16 @@ export class MiniGame {
   }
 
   _spawnRandomObstacles(count) {
+    const rp = this.worldState.respawnPoint || [0, 2, 0];
+
     for (let i = 0; i < count; i++) {
       const pattern = OBSTACLE_PATTERNS[Math.floor(Math.random() * OBSTACLE_PATTERNS.length)];
-      const x = (Math.random() - 0.5) * ARENA_SPREAD;
-      const z = (Math.random() - 0.5) * ARENA_SPREAD;
+      let x, z, attempts = 0;
+      do {
+        x = (Math.random() - 0.5) * ARENA_SPREAD;
+        z = (Math.random() - 0.5) * ARENA_SPREAD;
+        attempts++;
+      } while (Math.hypot(x - rp[0], z - rp[2]) < SPAWN_EXCLUSION_RADIUS && attempts < 10);
 
       switch (pattern) {
         case 'sweeper':
