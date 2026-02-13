@@ -156,8 +156,11 @@ export class HotPotato extends MiniGame {
       setTimeout(() => {
         if (this.isActive) this._startNewRound();
       }, 2000);
+    } else if (alive.length === 1) {
+      this.end('win', alive[0][0]);
+    } else {
+      this.end('draw');
     }
-    // If <= 1 alive, eliminatePlayer already handled the win
   }
 
   _eliminateCursed() {
@@ -183,6 +186,14 @@ export class HotPotato extends MiniGame {
     this._scheduleNextRound();
   }
 
+  // Override base class — HotPotato manages game-over via _startNewRound(), not auto-end
+  eliminatePlayer(playerId) {
+    const player = this.players.get(playerId);
+    if (!player || !player.alive) return;
+    player.alive = false;
+    this.losers.push(playerId);
+  }
+
   onPlayerDeath(playerId) {
     if (!this.isActive) return;
 
@@ -193,11 +204,14 @@ export class HotPotato extends MiniGame {
     const player = this.worldState.players.get(playerId);
     this.announce(`${player?.name || 'Player'} ELIMINATED!`, 'system');
 
-    if (wasCursed) this._scheduleNextRound();
+    // Schedule next round if game-over (<=1 alive) or the cursed player died
+    if (this._getAlivePlayers().length <= 1 || wasCursed) {
+      this._scheduleNextRound();
+    }
   }
 
   checkWinCondition() {
-    // Win conditions handled in _eliminateCursed and eliminatePlayer
+    // Win conditions handled in _startNewRound after each elimination
     return null;
   }
 

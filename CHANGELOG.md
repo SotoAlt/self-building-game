@@ -2,6 +2,23 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.40.0] - 2026-02-12
+
+### Fixed
+- **Spectator mode broken** — `?spectator=true` let spectators move, die, collect items, and trigger goals because `type: 'spectator'` was never sent to server (token was null, so joinOptions.type was skipped)
+  - Client now sends `type` in joinOptions regardless of token presence
+  - Server `GameRoom.onJoin()` recognizes `type: 'spectator'`, sets permanent `spectating` state
+  - `_isSpectator()` helper guards 6 gameplay handlers: `move`, `died`, `respawn`, `collect`, `trigger_activated`, `platform_step`
+  - Chat and AFK heartbeat intentionally allowed for spectators
+  - Spectators excluded from `getActiveHumanCount()` — agent won't count them as active players
+  - `activateSpectators()` skips URL spectators — they stay spectating permanently across rounds
+  - Join announcement suppressed for spectators
+  - "SPECTATING" badge overlay shown at top of screen
+- **Wallet unavailable after auto-login** — Privy init block was placed after the cached-token fast path, so returning users got `bridge = null` and all wallet functions returned null
+  - Moved Privy init to before the fast path — fires non-blocking in background while auto-login returns instantly
+  - Added `privyReady` promise in auth.js, resolved on all `initPrivy()` exit paths (success, failure, no appId)
+  - `getEmbeddedWalletProvider()` and `getEmbeddedWalletAddress()` now await Privy readiness (up to 12s timeout) before checking bridge
+
 ## [0.39.0] - 2026-02-12
 
 ### Changed

@@ -118,6 +118,10 @@ const defaultArena = arenaManager.createDefaultArena();
 // Helper Functions (arena-parameterized)
 // ============================================
 
+function getActiveHumanPlayers(ws) {
+  return ws.getPlayers().filter(p => p.type !== 'ai' && p.type !== 'spectator' && p.state !== 'spectating');
+}
+
 function rejectIfActiveGame(arena, res) {
   const phase = arena.worldState.gameState.phase;
   if (phase === 'countdown' || phase === 'playing') {
@@ -179,11 +183,11 @@ function doStartGame(arena, gameType, options) {
 
   const gameTypeDef = GAME_TYPES[gameType];
   const minRequired = gameTypeDef?.minPlayers || 1;
-  const humanCount = ws.getPlayers().filter(p => p.type !== 'ai').length;
+  const humanPlayers = getActiveHumanPlayers(ws);
 
-  if (humanCount < minRequired) {
+  if (humanPlayers.length < minRequired) {
     const gameName = gameTypeDef?.name || gameType;
-    return { success: false, status: 400, error: `${gameName} requires ${minRequired}+ players (${humanCount} connected)` };
+    return { success: false, status: 400, error: `${gameName} requires ${minRequired}+ players (${humanPlayers.length} connected)` };
   }
 
   // Cancel auto-start timer -- a game is starting
@@ -226,10 +230,10 @@ function scheduleAutoStart(arena) {
 
   arena.autoStartTimer = setTimeout(async () => {
     if (ws.gameState.phase !== 'lobby') return;
-    const humanPlayers = ws.getPlayers().filter(p => p.type !== 'ai');
-    if (humanPlayers.length === 0) return;
+    const activePlayers = getActiveHumanPlayers(ws);
+    if (activePlayers.length === 0) return;
 
-    const playerCount = humanPlayers.length;
+    const playerCount = activePlayers.length;
     const recentTemplates = ws.gameHistory.slice(-3).map(g => g.template);
     const playedTypes = new Set(ws.gameHistory.map(g => g.type));
 
@@ -915,11 +919,11 @@ gameRouter.post('/game/start', (req, res) => {
       const gameType = type || tmpl.gameType || 'reach';
       const gameTypeDef = GAME_TYPES[gameType];
       const minRequired = gameTypeDef?.minPlayers || 1;
-      const humanCount = ws.getPlayers().filter(p => p.type !== 'ai').length;
-      if (humanCount < minRequired) {
+      const activeCount = getActiveHumanPlayers(ws).length;
+      if (activeCount < minRequired) {
         const gameName = gameTypeDef?.name || gameType;
         return res.status(400).json({
-          error: `${gameName} requires ${minRequired}+ players (${humanCount} connected)`
+          error: `${gameName} requires ${minRequired}+ players (${activeCount} connected)`
         });
       }
 
