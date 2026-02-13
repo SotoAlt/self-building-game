@@ -3151,7 +3151,9 @@ async function startAuthFlow() {
   }
 
   function hideLoginScreen() {
-    document.getElementById('login-screen').style.display = 'none';
+    const el = document.getElementById('login-screen');
+    el.classList.add('screen-fade-out');
+    setTimeout(() => { el.style.display = 'none'; el.classList.remove('screen-fade-out'); }, 300);
   }
 
   const appId = import.meta.env.VITE_PRIVY_APP_ID;
@@ -3856,6 +3858,7 @@ async function showArenaLobby() {
   }
 
   lobby.style.display = 'flex';
+  lobby.classList.add('screen-fade-in');
 
   async function loadArenas() {
     try {
@@ -3918,7 +3921,8 @@ async function showArenaLobby() {
       if (!card) return;
       const arenaId = card.dataset.arenaId;
       clearInterval(arenaRefreshInterval);
-      lobby.style.display = 'none';
+      lobby.classList.add('screen-fade-out');
+      setTimeout(() => { lobby.style.display = 'none'; lobby.classList.remove('screen-fade-out'); }, 300);
       resolve(arenaId);
     });
   });
@@ -3950,7 +3954,6 @@ async function init() {
   } else {
     const badge = document.createElement('div');
     badge.id = 'spectator-badge';
-    badge.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);background:rgba(243,156,18,0.9);color:#000;padding:8px 24px;border-radius:20px;font-size:14px;font-weight:bold;z-index:1000;pointer-events:none;letter-spacing:2px;';
     badge.textContent = 'SPECTATING';
     document.body.appendChild(badge);
   }
@@ -3974,7 +3977,9 @@ async function init() {
   }
 
   // Transition from login screen to game UI
-  document.getElementById('login-screen').style.display = 'none';
+  const loginEl = document.getElementById('login-screen');
+  loginEl.classList.add('screen-fade-out');
+  setTimeout(() => { loginEl.style.display = 'none'; loginEl.classList.remove('screen-fade-out'); }, 300);
   if (isDebug) document.getElementById('ui').style.display = 'block';
   const controlsEl = document.getElementById('controls');
   controlsEl.style.display = 'block';
