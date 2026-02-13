@@ -1747,6 +1747,22 @@ function updatePlayer(delta) {
 // ============================================
 // Input
 // ============================================
+
+/** Toggle the help overlay. Pass true to show, false to hide, or omit to flip.
+ *  Returns true if the overlay was open (and is now closed). */
+function toggleHelpOverlay(forceShow) {
+  const el = document.getElementById('help-overlay');
+  if (!el) return false;
+  const isVisible = el.style.display !== 'none';
+  if (forceShow === false) {
+    if (!isVisible) return false;
+    el.style.display = 'none';
+    return true;
+  }
+  el.style.display = (forceShow === true || !isVisible) ? 'flex' : 'none';
+  return false;
+}
+
 document.addEventListener('keydown', (e) => {
   // Don't process game keys when chat is focused
   if (state.chatFocused) {
@@ -1755,6 +1771,11 @@ document.addEventListener('keydown', (e) => {
       state.chatFocused = false;
     }
     return;
+  }
+
+  // Escape closes help overlay
+  if (e.key === 'Escape') {
+    if (toggleHelpOverlay(false)) return;
   }
 
   const key = e.key.toLowerCase();
@@ -1784,6 +1805,11 @@ document.addEventListener('keydown', (e) => {
   if (isInSpectatorMode() && key >= '0' && key <= '9') {
     spectatorFreeMode = false;
     spectatorFollowIndex = key === '0' ? -1 : parseInt(key) - 1;
+  }
+
+  // ? to toggle help overlay
+  if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+    toggleHelpOverlay();
   }
 
   // L to toggle leaderboard
@@ -3955,6 +3981,13 @@ async function init() {
   const controlsEl = document.getElementById('controls');
   controlsEl.style.display = 'block';
   document.getElementById('chat-panel').style.display = 'flex';
+  const helpBtn = document.getElementById('help-btn');
+  helpBtn.style.display = 'flex';
+  helpBtn.addEventListener('click', () => toggleHelpOverlay());
+  // Click backdrop to close help overlay (moved from inline onclick)
+  document.getElementById('help-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) toggleHelpOverlay(false);
+  });
 
   // Profile button & wallet panel
   setupProfileButton();

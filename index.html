@@ -1066,6 +1066,150 @@
       letter-spacing: 0.5px;
       text-transform: uppercase;
     }
+    /* Login onboarding */
+    .login-onboarding {
+      margin-top: 28px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      text-align: left;
+    }
+    .login-onboarding h3 {
+      color: rgba(255,255,255,0.6);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+    .onboard-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .onboard-icon,
+    .help-icon {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .onboard-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      font-size: 14px;
+      background: rgba(155,89,182,0.15);
+      border: 1px solid rgba(155,89,182,0.25);
+    }
+    .onboard-text {
+      font-size: 12px;
+      color: rgba(255,255,255,0.55);
+      line-height: 1.5;
+    }
+    .onboard-text strong {
+      color: rgba(255,255,255,0.85);
+    }
+    /* Help button */
+    #help-btn {
+      position: fixed;
+      bottom: 70px;
+      right: 28px;
+      z-index: 210;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(0,0,0,0.7);
+      color: rgba(255,255,255,0.5);
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    #help-btn:hover {
+      background: rgba(155,89,182,0.3);
+      color: white;
+      border-color: rgba(155,89,182,0.6);
+    }
+    /* Help overlay */
+    #help-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 800;
+      background: rgba(0,0,0,0.88);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .help-content {
+      max-width: 420px;
+      width: 90vw;
+      cursor: default;
+    }
+    .help-header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .help-header h2 {
+      color: #fff;
+      font-size: 22px;
+      margin-bottom: 4px;
+    }
+    .help-header p {
+      color: rgba(255,255,255,0.4);
+      font-size: 13px;
+    }
+    .help-section {
+      margin-bottom: 20px;
+    }
+    .help-section-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: rgba(155,89,182,0.8);
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+    .help-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .help-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+    .help-icon.purple { background: rgba(155,89,182,0.2); border: 1px solid rgba(155,89,182,0.3); }
+    .help-icon.gold { background: rgba(241,196,15,0.15); border: 1px solid rgba(241,196,15,0.25); }
+    .help-icon.green { background: rgba(46,204,113,0.15); border: 1px solid rgba(46,204,113,0.25); }
+    .help-icon.red { background: rgba(231,76,60,0.15); border: 1px solid rgba(231,76,60,0.25); }
+    .help-label {
+      font-size: 13px;
+      color: rgba(255,255,255,0.85);
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .help-desc {
+      font-size: 12px;
+      color: rgba(255,255,255,0.4);
+      line-height: 1.4;
+    }
+    .help-dismiss {
+      text-align: center;
+      color: rgba(255,255,255,0.25);
+      font-size: 11px;
+      margin-top: 16px;
+      letter-spacing: 0.5px;
+    }
   </style>
 </head>
 <body>
@@ -1091,6 +1235,21 @@
         <button id="btn-guest" class="login-btn guest">Play as Guest</button>
       </div>
       <p id="login-status" class="login-status"></p>
+      <div class="login-onboarding">
+        <h3>How it works</h3>
+        <div class="onboard-item">
+          <div class="onboard-icon">&#x1F52E;</div>
+          <div class="onboard-text"><strong>An AI builds the game live.</strong> The Chaos Magician spawns arenas, obstacles, and mini-games in real-time.</div>
+        </div>
+        <div class="onboard-item">
+          <div class="onboard-icon">&#x1F3AE;</div>
+          <div class="onboard-text"><strong>Wait for games to start</strong> or chat <strong>@agent</strong> to ask for things &mdash; "spawn a giant spider", "make lava floor"</div>
+        </div>
+        <div class="onboard-item">
+          <div class="onboard-icon">&#x1F4B0;</div>
+          <div class="onboard-text"><strong>Bribe the Magician</strong> with tokens to get special favors, spells, or chaos on demand.</div>
+        </div>
+      </div>
     </div>
   </div>
   <div id="arena-lobby" style="display:none">
@@ -1243,6 +1402,67 @@
       <div class="drama-label"><span>Calm</span><span id="drama-value">0</span><span>CHAOS</span></div>
     </div>
     <div id="kill-feed"></div>
+  </div>
+  <button id="help-btn" title="How to play">?</button>
+  <div id="help-overlay" style="display:none">
+    <div class="help-content">
+      <div class="help-header">
+        <h2>Chaos Arena</h2>
+        <p>An AI agent runs the show. You just try to survive.</p>
+      </div>
+      <div class="help-section">
+        <div class="help-section-title">The Concept</div>
+        <div class="help-row">
+          <div class="help-icon purple">&#x1F52E;</div>
+          <div>
+            <div class="help-label">The Chaos Magician (AI) builds games live</div>
+            <div class="help-desc">It spawns arenas, starts mini-games, casts spells, and reacts to what players do.</div>
+          </div>
+        </div>
+        <div class="help-row">
+          <div class="help-icon gold">&#x1F399;</div>
+          <div>
+            <div class="help-label">Talk to it in chat with @agent</div>
+            <div class="help-desc">Ask for anything: "spawn a giant spider", "make it rain fire", "start a race"</div>
+          </div>
+        </div>
+        <div class="help-row">
+          <div class="help-icon gold">&#x1F4B0;</div>
+          <div>
+            <div class="help-label">Bribe the Magician</div>
+            <div class="help-desc">Use the Bribe button to pay tokens for special favors, buffs, or total chaos.</div>
+          </div>
+        </div>
+      </div>
+      <div class="help-section">
+        <div class="help-section-title">Gameplay</div>
+        <div class="help-row">
+          <div class="help-icon green">&#x23F3;</div>
+          <div>
+            <div class="help-label">Games start automatically</div>
+            <div class="help-desc">Wait in the lobby &mdash; a new game starts every ~45 seconds or when the agent decides.</div>
+          </div>
+        </div>
+        <div class="help-row">
+          <div class="help-icon red">&#x1F480;</div>
+          <div>
+            <div class="help-label">Survive, race, collect, or compete</div>
+            <div class="help-desc">6 game types: survival, races, collecting, king of the hill, hot potato, and reach-the-goal.</div>
+          </div>
+        </div>
+      </div>
+      <div class="help-section">
+        <div class="help-section-title">Controls</div>
+        <div class="help-row">
+          <div class="help-icon purple">&#x2328;</div>
+          <div>
+            <div class="help-label">WASD move &middot; Space jump &middot; Shift sprint</div>
+            <div class="help-desc">Enter to chat &middot; L for leaderboard &middot; Mouse to look around</div>
+          </div>
+        </div>
+      </div>
+      <div class="help-dismiss">Click anywhere to close &middot; Press ? anytime to reopen</div>
+    </div>
   </div>
   <div id="rotate-overlay">
     <div class="rotate-icon">📱</div>
