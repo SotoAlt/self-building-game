@@ -4,6 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Chaos Arena</title>
+
+  <!-- Open Graph / Twitter Card -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Chaos Arena">
+  <meta property="og:description" content="An AI agent builds the game live. You just try to survive.">
+  <meta property="og:image" content="https://chaos.waweapps.win/og-image.png">
+  <meta property="og:url" content="https://chaos.waweapps.win">
+  <meta name="twitter:card" content="summary_large_image">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -131,14 +140,21 @@
       justify-content: center;
       z-index: 1000;
       background: var(--bg-dark);
+      overflow: hidden;
     }
-    /* Subtle dot pattern overlay */
+    /* Halftone dot gradient overlay — rotated 45° grid with diagonal fade */
     #login-screen::after {
       content: '';
       position: absolute;
-      inset: 0;
-      background: radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px);
-      background-size: 24px 24px;
+      inset: -50%;
+      width: 200%;
+      height: 200%;
+      background:
+        radial-gradient(circle, rgba(168,85,247,0.12) 2.2px, transparent 2.2px);
+      background-size: 9px 9px;
+      transform: rotate(45deg);
+      -webkit-mask-image: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 40%, transparent 70%);
+      mask-image: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 40%, transparent 70%);
       pointer-events: none;
     }
     .login-container {
@@ -155,22 +171,24 @@
     }
     .login-container h1 {
       font-family: var(--font-head);
-      color: var(--gold);
       font-size: 52px;
       font-weight: 700;
       margin-bottom: 6px;
       letter-spacing: 3px;
-      line-height: 1.1;
+      line-height: 0.95;
       padding-bottom: 4px;
-      text-shadow:
-        0 0 0 var(--gold),
-        3px 3px 0 var(--border),
-        -2px -2px 0 var(--border),
-        2px -2px 0 var(--border),
-        -2px 2px 0 var(--border),
-        0 4px 0 var(--border),
-        0 5px 0 rgba(0,0,0,0.3);
       text-transform: uppercase;
+      /* Halftone dot fill inside text — dots fade out diagonally */
+      background:
+        linear-gradient(135deg, transparent 25%, rgba(255,193,7,1) 65%),
+        radial-gradient(circle, rgba(160,80,0,0.4) 1px, transparent 1px) 0 0 / 5px 5px,
+        linear-gradient(180deg, #ffe066 0%, #ffc107 50%, #e6a800 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      /* Outline via text-shadow (rendered behind clipped text) */
+      text-shadow: none;
+      filter: drop-shadow(3px 3px 0 var(--border)) drop-shadow(-2px -2px 0 var(--border)) drop-shadow(0 4px 0 var(--border));
     }
     .login-subtitle {
       color: var(--text-dim);
@@ -193,6 +211,18 @@
       font-family: var(--font-head);
       cursor: pointer;
       transition: transform 0.08s, border-bottom-width 0.08s;
+      position: relative;
+      overflow: hidden;
+    }
+    .login-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle, rgba(255,255,255,0.18) 1.5px, transparent 1.5px);
+      background-size: 10px 10px;
+      -webkit-mask-image: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, transparent 60%);
+      mask-image: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, transparent 60%);
+      pointer-events: none;
     }
     .login-btn:hover { transform: translateY(-1px); }
     .login-btn:active {
@@ -300,13 +330,21 @@
       justify-content: center;
       z-index: 999;
       background: var(--bg-dark);
+      overflow: hidden;
     }
+    /* Halftone dot gradient overlay — rotated 45° grid, matches login screen */
     #arena-lobby::after {
       content: '';
       position: absolute;
-      inset: 0;
-      background: radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px);
-      background-size: 24px 24px;
+      inset: -50%;
+      width: 200%;
+      height: 200%;
+      background:
+        radial-gradient(circle, rgba(168,85,247,0.12) 2.2px, transparent 2.2px);
+      background-size: 9px 9px;
+      transform: rotate(45deg);
+      -webkit-mask-image: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 40%, transparent 70%);
+      mask-image: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 40%, transparent 70%);
       pointer-events: none;
     }
     .lobby-container {
@@ -1391,7 +1429,7 @@
        ============================================ */
     #help-btn {
       position: fixed;
-      bottom: 120px;
+      bottom: 90px;
       right: 20px;
       z-index: 210;
       display: none;
@@ -1561,7 +1599,7 @@
         </div>
         <div class="onboard-item">
           <div class="onboard-icon">&#x1F4B0;</div>
-          <div class="onboard-text"><strong>Bribe the Magician</strong> with tokens to get special favors, spells, or chaos on demand.</div>
+          <div class="onboard-text"><strong>Bribe the Magician</strong> with MON tokens on Monad mainnet. Log in with Twitter to get a wallet, then top up with MON.</div>
         </div>
       </div>
     </div>
@@ -1744,7 +1782,7 @@
           <div class="help-icon gold">&#x1F4B0;</div>
           <div>
             <div class="help-label">Bribe the Magician</div>
-            <div class="help-desc">Use the Bribe button to pay tokens for special favors, buffs, or total chaos.</div>
+            <div class="help-desc">Pay MON tokens on Monad mainnet for special favors, buffs, or total chaos. Log in with Twitter to get a wallet.</div>
           </div>
         </div>
       </div>
