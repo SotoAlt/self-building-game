@@ -535,16 +535,20 @@
       z-index: 100;
       background: rgba(26, 10, 46, 0.85);
       border: var(--border-w) solid var(--border);
-      padding: 8px 24px;
+      padding: 6px 16px 6px 20px;
       border-radius: var(--radius-md);
       color: var(--text);
-      min-width: 240px;
-      text-align: center;
+      min-width: 200px;
       transition: border-color 0.3s;
       box-shadow: 0 var(--depth) 0 var(--border);
       display: flex;
       align-items: center;
       gap: 16px;
+    }
+    #game-status-info {
+      display: flex;
+      flex-direction: column;
+      text-align: left;
     }
     #game-status.playing {
       border-left: 5px solid var(--success);
@@ -565,12 +569,14 @@
       text-transform: uppercase;
     }
     #game-timer {
-      font-size: 28px;
+      font-size: 36px;
       font-weight: 700;
       font-family: var(--font-head);
       text-align: right;
       margin: 0;
-      min-width: 60px;
+      min-width: 50px;
+      line-height: 1;
+      margin-left: auto;
     }
     #game-type {
       font-size: 11px;
@@ -1660,8 +1666,10 @@
   <div id="toast-container"></div>
   <div id="announcements"></div>
   <div id="game-status" class="lobby">
-    <div id="game-phase">LOBBY</div>
-    <div id="game-type"></div>
+    <div id="game-status-info">
+      <div id="game-phase">LOBBY</div>
+      <div id="game-type"></div>
+    </div>
     <div id="game-timer"></div>
   </div>
   <div id="score-overlay" style="display:none"></div>

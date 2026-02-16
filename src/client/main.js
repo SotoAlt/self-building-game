@@ -2386,7 +2386,7 @@ function updateGameStateUI() {
   const timerEl = document.getElementById('game-timer');
 
   if (state.gameState.phase === 'lobby') {
-    statusEl.style.display = 'block';
+    statusEl.style.display = 'flex';
     statusEl.className = 'lobby';
     phaseEl.textContent = 'LOBBY';
     if (state.lobbyCountdownTarget) {
@@ -2411,7 +2411,7 @@ function updateGameStateUI() {
 
   // Building phase shows "BUILDING..." text
   if (state.gameState.phase === 'building') {
-    statusEl.style.display = 'block';
+    statusEl.style.display = 'flex';
     statusEl.className = 'building';
     phaseEl.textContent = 'BUILDING...';
     typeEl.textContent = 'The Magician is crafting...';
@@ -2419,7 +2419,7 @@ function updateGameStateUI() {
     return;
   }
 
-  statusEl.style.display = 'block';
+  statusEl.style.display = 'flex';
   statusEl.className = state.gameState.phase;
   phaseEl.textContent = state.gameState.phase.toUpperCase();
   typeEl.textContent = state.gameState.gameType ? `Mode: ${state.gameState.gameType}` : '';
