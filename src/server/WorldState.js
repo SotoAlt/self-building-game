@@ -9,6 +9,9 @@ import { randomUUID } from 'crypto';
 import { updateLeaderboard, loadLeaderboard } from './db.js';
 
 export class WorldState {
+  static MAX_ENTITIES = 500;
+  static VALID_ENTITY_TYPES = ['platform', 'ramp', 'collectible', 'obstacle', 'trigger', 'decoration'];
+  static VALID_GAME_TYPES = ['reach', 'collect', 'survival', 'king', 'hot_potato', 'race'];
   static DEFAULT_PHYSICS = { gravity: -9.8, friction: 0.3, bounce: 0.5 };
 
   static DEFAULT_ENVIRONMENT = {
@@ -99,9 +102,11 @@ export class WorldState {
   // ============================================
 
   spawnEntity(type, position, size = [1, 1, 1], properties = {}) {
-    const validTypes = ['platform', 'ramp', 'collectible', 'obstacle', 'trigger', 'decoration'];
-    if (!validTypes.includes(type)) {
+    if (!WorldState.VALID_ENTITY_TYPES.includes(type)) {
       throw new Error(`Invalid entity type: ${type}`);
+    }
+    if (this.entities.size >= WorldState.MAX_ENTITIES) {
+      throw new Error(`Entity limit reached (${WorldState.MAX_ENTITIES})`);
     }
 
     const id = `${type}-${randomUUID().slice(0, 8)}`;
@@ -596,8 +601,7 @@ export class WorldState {
     // Cancel any pending lobby reset from a previous game
     clearTimeout(this._lobbyResetTimer);
 
-    const validTypes = ['reach', 'collect', 'survival', 'king', 'hot_potato', 'race'];
-    if (!validTypes.includes(gameType)) {
+    if (!WorldState.VALID_GAME_TYPES.includes(gameType)) {
       throw new Error(`Invalid game type: ${gameType}`);
     }
 

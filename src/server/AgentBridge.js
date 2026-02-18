@@ -5,7 +5,7 @@
  * The agent responds using game-world skill tools (HTTP calls back to game server).
  */
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 
 export class AgentBridge {
   constructor(gatewayUrl, sessionId) {
@@ -39,11 +39,9 @@ export class AgentBridge {
 
   _execAgent(message) {
     return new Promise((resolve, reject) => {
-      // Escape message for shell
-      const escaped = message.replace(/'/g, "'\\''");
-      const cmd = `openclaw agent --session-id "${this.sessionId}" --message '${escaped}' --json --timeout 30`;
+      const args = ['agent', '--session-id', this.sessionId, '--message', message, '--json', '--timeout', '30'];
 
-      exec(cmd, {
+      execFile('openclaw', args, {
         timeout: 35000,
         env: { ...process.env, PATH: process.env.PATH + ':/usr/bin:/usr/local/bin' }
       }, (error, stdout, stderr) => {

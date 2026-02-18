@@ -29,31 +29,16 @@ import { compose, loadCacheFromDisk, getComposerStats } from './Composer.js';
 import { randomizeTemplate } from './ArenaTemplates.js';
 import { ArenaManager } from './ArenaManager.js';
 import { createArenaMiddleware, requireArenaKey } from './arenaMiddleware.js';
+import {
+  PORT, MIN_LOBBY_MS, AUTO_START_DELAY, MIN_GAME_DURATION_MS,
+  ANNOUNCEMENT_COOLDOWN, AGENT_CHAT_COOLDOWN,
+  AFK_IDLE_MS, AFK_KICK_MS, AFK_CHECK_INTERVAL,
+  NEW_TYPE_TEMPLATES, ALL_TEMPLATES, getTemplateGameType,
+  BRIBE_OPTIONS,
+} from './constants.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const PORT = process.env.PORT || 3000;
-const MIN_LOBBY_MS = 5000;
-const AUTO_START_DELAY = 20000;
-const MIN_GAME_DURATION_MS = 30000;
-const ANNOUNCEMENT_COOLDOWN = 5000;
-const AGENT_CHAT_COOLDOWN = 3000;
-const AFK_IDLE_MS = 120000;
-const AFK_KICK_MS = 15000;
-const AFK_CHECK_INTERVAL = 5000;
-
-const NEW_TYPE_TEMPLATES = ['king_plateau', 'king_islands', 'hot_potato_arena', 'hot_potato_platforms', 'checkpoint_dash', 'race_circuit'];
-const ALL_TEMPLATES = ['spiral_tower', 'floating_islands', 'gauntlet', 'shrinking_arena', 'parkour_hell', 'hex_a_gone', 'slime_climb', 'wind_tunnel', 'treasure_trove', 'ice_rink', ...NEW_TYPE_TEMPLATES];
-
-function getTemplateGameType(templateName) {
-  if (templateName.includes('king')) return 'king';
-  if (templateName.includes('hot_potato')) return 'hot_potato';
-  if (templateName.includes('checkpoint') || templateName.includes('race_circuit')) return 'race';
-  if (templateName.includes('shrinking') || templateName.includes('hex_a_gone') || templateName.includes('ice_rink') || templateName === 'blank_canvas') return 'survival';
-  if (templateName.includes('floating') || templateName.includes('treasure')) return 'collect';
-  return 'reach';
-}
 
 const app = express();
 app.use(cors());
@@ -80,32 +65,6 @@ const chain = isRealChain
     })
   : new MockChainInterface();
 
-const BRIBE_OPTIONS = {
-  spawn_obstacles: {
-    label: 'Spawn Obstacles', description: 'Obstacles near other players',
-    cost: 50, costMON: '0.002', costWei: '2000000000000000'
-  },
-  lava_floor: {
-    label: 'Turn Floor to Lava', description: 'Floor becomes deadly lava',
-    cost: 100, costMON: '0.005', costWei: '5000000000000000'
-  },
-  random_spell: {
-    label: 'Cast Random Spell', description: 'Random spell on all players',
-    cost: 30, costMON: '0.001', costWei: '1000000000000000'
-  },
-  move_goal: {
-    label: 'Move the Goal', description: 'Relocate the goal (reach games)',
-    cost: 75, costMON: '0.003', costWei: '3000000000000000'
-  },
-  extra_time: {
-    label: 'Extra Time (+15s)', description: 'Add 15 seconds to the clock',
-    cost: 40, costMON: '0.002', costWei: '2000000000000000'
-  },
-  custom: {
-    label: 'Custom Request', description: 'Free-text request for the Magician',
-    cost: 200, costMON: '0.01', costWei: '10000000000000000'
-  }
-};
 
 // ============================================
 // Arena Manager

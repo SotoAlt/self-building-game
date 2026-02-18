@@ -8,6 +8,10 @@ import Colyseus from 'colyseus';
 const { Room } = Colyseus;
 import { upsertUser } from './db.js';
 import { verifyToken } from './auth.js';
+import {
+  isValidPosition, isValidVelocity, isValidEntityId,
+  clampPosition, clampVelocity,
+} from './validation.js';
 
 function detectRequest(text) {
   const lower = text.toLowerCase();
@@ -67,25 +71,17 @@ export class GameRoom extends Room {
       if (!this.worldState) return;
       if (this._isSpectator(client)) return;
 
-      this.worldState.updatePlayer(client.sessionId, {
-        position: data.position,
-        velocity: data.velocity
-      });
+      if (!isValidPosition(data.position) || !isValidVelocity(data.velocity)) return;
+      const position = clampPosition(data.position);
+      const velocity = clampVelocity(data.velocity);
 
-      // Movement-based AFK prevention: if player moved >5 units from anchor, count as active
-      const player = this.worldState.players.get(client.sessionId);
-      if (player?.activityAnchor && data.position) {
-        const dx = data.position[0] - player.activityAnchor[0];
-        const dz = data.position[2] - player.activityAnchor[2];
-        if (dx * dx + dz * dz > 25) {
-          this.worldState.recordPlayerActivity(client.sessionId);
-        }
-      }
+      // updatePlayer already marks the player active via displacement check
+      this.worldState.updatePlayer(client.sessionId, { position, velocity });
 
       this.broadcast('player_moved', {
         id: client.sessionId,
-        position: data.position,
-        velocity: data.velocity
+        position,
+        velocity
       }, { except: client });
     });
 
@@ -97,6 +93,9 @@ export class GameRoom extends Room {
       const lastDeath = this._deathTimestamps.get(client.sessionId) || 0;
       if (now - lastDeath < 2000) return; // rate limit
       this._deathTimestamps.set(client.sessionId, now);
+
+      if (data.position && !isValidPosition(data.position)) return;
+      if (data.challengeId && !isValidEntityId(data.challengeId)) return;
 
       this.worldState.recordPlayerActivity(client.sessionId);
 
@@ -146,6 +145,7 @@ export class GameRoom extends Room {
     // Challenge completion
     this.onMessage('challenge_complete', (client, data) => {
       if (!this.worldState) return;
+      if (!isValidEntityId(data.challengeId)) return;
 
       const challenge = this.worldState.completeChallenge(data.challengeId, client.sessionId);
       if (!challenge) return;
@@ -163,6 +163,7 @@ export class GameRoom extends Room {
     this.onMessage('collect', (client, data) => {
       if (!this.worldState) return;
       if (this._isSpectator(client)) return;
+      if (!isValidEntityId(data.entityId)) return;
 
       this.worldState.recordPlayerActivity(client.sessionId);
 
@@ -193,6 +194,7 @@ export class GameRoom extends Room {
     this.onMessage('trigger_activated', (client, data) => {
       if (!this.worldState) return;
       if (this._isSpectator(client)) return;
+      if (!isValidEntityId(data.entityId)) return;
       this.worldState.recordPlayerActivity(client.sessionId);
       console.log(`[GameRoom] Trigger activated: ${data.entityId} by ${client.sessionId}`);
 
@@ -241,6 +243,7 @@ export class GameRoom extends Room {
     this.onMessage('platform_step', (client, { entityId }) => {
       if (!this.worldState) return;
       if (this._isSpectator(client)) return;
+      if (!isValidEntityId(entityId)) return;
       this.worldState.recordPlayerActivity(client.sessionId);
       const started = this.worldState.startBreaking(entityId);
       if (!started) return;
@@ -299,7 +302,6 @@ export class GameRoom extends Room {
     const player = this.worldState.addPlayer(client.sessionId, name, type, initialState, userId);
 
     const initState = this.worldState.getState();
-    initState.environment = { ...this.worldState.environment };
     client.send('init', {
       playerId: client.sessionId,
       worldState: initState,
