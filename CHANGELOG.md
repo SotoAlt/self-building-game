@@ -2,6 +2,28 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.44.0] - 2026-02-18
+
+### Changed
+- **Architecture: Chunk 4 — Client Network & UI Extraction** — zero behavioral changes, pure extraction
+  - `src/client/network/NetworkManager.js` (NEW) — safe message sending, exponential backoff reconnection
+  - `src/client/network/MessageHandlers.js` (NEW) — all 33 WebSocket message handlers + onLeave/onError
+  - `src/client/network/HttpApi.js` (NEW) — world state fetching, backup polling
+  - `src/client/scene/FloorManager.js` (NEW) — lava floor, hazard plane, floor type switching, environment
+  - `src/client/ui/Announcements.js` (NEW) — toasts, connection warning, announcements, spell effects
+  - `src/client/ui/AfkOverlay.js` (NEW) — AFK warning, countdown, kicked screen
+  - `src/client/ui/ChatSystem.js` (NEW) — chat input, send, display, agent thinking indicator
+  - `src/client/ui/GameStatusHUD.js` (NEW) — game phase/timer/player count display
+  - `src/client/ui/Leaderboard.js` (NEW) — leaderboard fetching and rendering
+  - `src/client/ui/ArenaLobby.js` (NEW) — arena selection lobby
+  - `src/client/ui/AuthFlow.js` (NEW) — Privy auth, guest/twitter login
+  - `src/client/ui/BribePanel.js` (NEW) — bribe modal and transaction signing
+  - `src/client/ui/ProfilePanel.js` (NEW) — profile button, wallet panel
+  - `src/client/ui/SpectatorOverlay.js` (NEW) — drama meter, kill feed
+  - `src/client/ui/DebugPanel.js` (NEW) — AI/agent toggles, status polling
+  - `src/client/main.js` — removed ~1,830 lines of extracted code (2,109 → 293 lines)
+  - Removed redundant 100ms position send interval (PhysicsEngine already sends at 50ms)
+
 ## [0.42.0] - 2026-02-18
 
 ### Changed
