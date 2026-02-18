@@ -18,59 +18,32 @@ import {
   loginAsGuest, loginWithTwitter, getPrivyUser, getToken, debugAuth, logout,
   getEmbeddedWalletProvider, getEmbeddedWalletAddress, exportWallet
 } from './auth.js';
-
-const TREASURY_ADDRESS = import.meta.env.VITE_TREASURY_ADDRESS || '';
-
-// ============================================
-// Configuration
-// ============================================
-const isLocalhost = window.location.hostname === 'localhost';
-const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const SERVER_URL = isLocalhost
-  ? 'ws://localhost:3000'
-  : `${wsProtocol}//${window.location.host}`;
-const API_URL = isLocalhost
-  ? 'http://localhost:3000'
-  : `${window.location.protocol}//${window.location.host}`;
-
-// Spectator mode detection
-const urlParams = new URLSearchParams(window.location.search);
-const isSpectator = urlParams.get('spectator') === 'true';
-const isDebug = urlParams.get('debug') === 'true';
-
-// Arena selection — defaults to 'chaos', updated after lobby
-let selectedArenaId = urlParams.get('arena') || 'chaos';
-// API base path — scoped to selected arena
-function getApiBase() {
-  if (selectedArenaId === 'chaos') return `${API_URL}/api`;
-  return `${API_URL}/api/arenas/${selectedArenaId}`;
-}
-
-// ============================================
-// Game State
-// ============================================
-const state = {
-  entities: new Map(),
-  players: new Map(),
-  physics: { gravity: -9.8, friction: 0.3, bounce: 0.5 },
-  localPlayer: null,
-  room: null,
-  gameState: { phase: 'lobby' },
-  announcements: new Map(),
-  connected: false,
-  chatFocused: false,
-  activeEffects: [],
-  respawnPoint: [0, 2, 0],
-  isSpectating: false,
-  lobbyCountdownTarget: null,
-  lobbyReadyAt: null,
-};
-
-// Auth state
-let authUser = null;
-
-// Remote players
-const remotePlayers = new Map();
+import {
+  TREASURY_ADDRESS, isLocalhost, SERVER_URL, API_URL, urlParams, isSpectator, isDebug,
+  selectedArenaId, setSelectedArenaId, getApiBase, isMobile, PHYSICS,
+  MIN_PITCH, MAX_PITCH, MIN_DISTANCE, MAX_DISTANCE, SPEC_FLY_SPEED, SPEC_FAST_SPEED,
+  MOVE_INTERVAL, MAX_RECONNECT_ATTEMPTS, JOYSTICK_RADIUS,
+  GROUND_Y, ABYSS_DEATH_Y, LAVA_DEATH_Y, VOID_DEATH_Y, DEATH_COOLDOWN,
+  MAX_VISIBLE_ANNOUNCEMENTS
+} from './config.js';
+import {
+  state, auth, remotePlayers, network, floor, hazardPlaneState,
+  entityMeshes, groupParents, pendingGroups, entityToGroup, particles,
+  boost, collision, death, activatedTriggers, player, playerVelocity,
+  camera as cameraState,
+  afk, countdown
+} from './state.js';
+import {
+  playJumpSound, playDeathSound, playCollectSound, playCountdownBeep,
+  playWinFanfare, playSpellSound, playCrackSound, playBreakSound, playBounceSound
+} from './audio/SoundManager.js';
+import {
+  triggerCameraShake, screenFlash, showVignette,
+  spawnParticles, updateParticles, initScreenEffects
+} from './vfx/ScreenEffects.js';
+import { CameraController } from './CameraController.js';
+import { keys, setupKeyboardInput, toggleHelpOverlay } from './input/InputManager.js';
+import { setupMobileControls, touchJoystick } from './input/MobileControls.js';
 
 // Expose state for debugging
 window.__gameState = state;
@@ -91,27 +64,6 @@ function sendToServer(type, data) {
   }
 }
 
-// Throttle position sends to 20 per second
-let lastMoveTime = 0;
-const MOVE_INTERVAL = 50; // ms
-
-// Physics constants — tuned for Fall Guys / Stumble Guys feel
-const PHYSICS = {
-  GRAVITY:            -76.5,
-  FALL_MULTIPLIER:    2.2,
-  LOW_JUMP_MULTIPLIER: 4.0,
-  TERMINAL_VELOCITY:  -60,
-  JUMP_FORCE:         26.5,
-  COYOTE_TIME:        0.10,
-  JUMP_BUFFER_TIME:   0.10,
-  WALK_SPEED:         16,
-  SPRINT_SPEED:       26,
-  GROUND_ACCEL:       80,
-  GROUND_DECEL:       60,
-  AIR_ACCEL:          30,
-  AIR_DECEL:          10,
-};
-
 function moveToward(current, target, maxDelta) {
   if (Math.abs(target - current) <= maxDelta) return target;
   return current + Math.sign(target - current) * maxDelta;
@@ -125,21 +77,18 @@ function shortAngleDist(from, to) {
 }
 
 // Reconnection logic
-let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 5;
-
 async function attemptReconnect() {
-  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+  if (network.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
     console.error('[Network] Max reconnect attempts reached');
     return;
   }
 
-  reconnectAttempts++;
-  console.log(`[Network] Reconnecting... (attempt ${reconnectAttempts})`);
+  network.reconnectAttempts++;
+  console.log(`[Network] Reconnecting... (attempt ${network.reconnectAttempts})`);
 
   try {
     await connectToServer();
-    reconnectAttempts = 0;
+    network.reconnectAttempts = 0;
     console.log('[Network] Reconnected successfully');
   } catch (e) {
     console.warn('[Network] Reconnect failed, retrying in 2s...');
@@ -198,6 +147,13 @@ createSkyDome(scene);
 // Post-processing pipeline (outlines, bloom, FXAA)
 initPostProcessing(renderer, scene, camera);
 
+// Screen effects (particles, flash, vignette) need scene reference
+initScreenEffects(scene);
+
+// Camera controller — handles player follow, spectator, and desktop mouse events
+const cameraController = new CameraController(camera, renderer);
+cameraController.initDesktopEvents();
+
 // Lava floor plane (hidden by default) — uses animated shader
 const lavaGeometry = new THREE.PlaneGeometry(200, 200, 40, 40);
 const lavaMaterial = createLavaShaderMaterial();
@@ -216,8 +172,6 @@ const hazardPlaneMesh = new THREE.Mesh(hazardPlaneGeom, hazardPlaneMat);
 hazardPlaneMesh.rotation.x = -Math.PI / 2;
 hazardPlaneMesh.visible = false;
 scene.add(hazardPlaneMesh);
-let hazardPlaneState = { active: false, type: 'lava', height: -10 };
-
 function updateHazardPlaneMaterial(type) {
   const newMat = type === 'water' ? createWaterShaderMaterial() : createLavaShaderMaterial();
   registerShaderMaterial(newMat);
@@ -225,11 +179,8 @@ function updateHazardPlaneMaterial(type) {
   hazardPlaneMat = newMat;
 }
 
-// Current floor type tracked on client
-let currentFloorType = 'solid';
-
 function setFloorType(type) {
-  currentFloorType = type;
+  floor.currentType = type;
   ground.visible = type === 'solid';
   gridHelper.visible = type === 'solid';
   lavaFloor.visible = type === 'lava';
@@ -262,405 +213,20 @@ function applyEnvironment(env) {
   if (env.materialTheme !== undefined) setMaterialTheme(env.materialTheme);
 
   // Update ambient particles based on environment
-  const pType = selectParticleType(currentFloorType, env);
+  const pType = selectParticleType(floor.currentType, env);
   initParticles(scene, pType);
 
   console.log('[Environment] Updated');
 }
 
-// ============================================
-// Mobile Detection
-// ============================================
-const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth < 768;
-
-// ============================================
-// Mouse Look Camera
-// ============================================
-let cameraYaw = 0;
-let cameraPitch = 0.3; // slight downward angle
-let cameraDistance = isMobile ? 25 : 20;
-let pointerLocked = false;
-
-const MIN_PITCH = -Math.PI / 6;  // -30 degrees
-const MAX_PITCH = Math.PI / 3;    // 60 degrees
-const MIN_DISTANCE = 8;
-const MAX_DISTANCE = 40;
-
-// Desktop: pointer lock for camera (players only)
-let spectatorDragging = false;
-if (!isMobile) {
-  renderer.domElement.addEventListener('click', () => {
-    if (!state.chatFocused && !isInSpectatorMode()) {
-      renderer.domElement.requestPointerLock();
-    }
-  });
-
-  document.addEventListener('pointerlockchange', () => {
-    pointerLocked = document.pointerLockElement === renderer.domElement;
-    const crosshair = document.getElementById('crosshair');
-    if (crosshair) crosshair.style.display = pointerLocked ? 'block' : 'none';
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (pointerLocked) {
-      cameraYaw -= e.movementX * 0.003;
-      cameraPitch -= e.movementY * 0.003;
-      cameraPitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, cameraPitch));
-    } else if (spectatorDragging && isInSpectatorMode()) {
-      cameraYaw -= e.movementX * 0.003;
-      cameraPitch -= e.movementY * 0.003;
-      cameraPitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, cameraPitch));
-    }
-  });
-
-  // Mouse drag for spectator camera
-  renderer.domElement.addEventListener('mousedown', (e) => {
-    if (isInSpectatorMode() && e.button === 0) {
-      spectatorDragging = true;
-    }
-  });
-  document.addEventListener('mouseup', () => {
-    spectatorDragging = false;
-  });
-}
-
-document.addEventListener('wheel', (e) => {
-  cameraDistance += e.deltaY * 0.02;
-  cameraDistance = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, cameraDistance));
-});
-
-// ============================================
-// Mobile Touch Controls
-// ============================================
-// Virtual joystick state (left thumb)
-const touchJoystick = { active: false, startX: 0, startY: 0, dx: 0, dy: 0, id: null };
-// Touch camera state (right side drag)
-const touchCamera = { active: false, lastX: 0, lastY: 0, id: null };
-
-function setupMobileControls() {
-  if (!isMobile) return;
-
-  // Create touch UI container
-  const touchUI = document.createElement('div');
-  touchUI.id = 'mobile-controls';
-  touchUI.innerHTML = `
-    <div id="joystick-zone"></div>
-    <div id="mobile-buttons">
-      <button id="btn-jump" class="mobile-btn jump-btn">JUMP</button>
-      <button id="btn-sprint" class="mobile-btn sprint-btn">SPRINT</button>
-      <button id="btn-lb-mobile" class="mobile-btn lb-btn">LB</button>
-    </div>
-    <div id="joystick-visual" style="display:none">
-      <div id="joystick-base"></div>
-      <div id="joystick-thumb"></div>
-    </div>
-  `;
-  document.body.appendChild(touchUI);
-
-  // Joystick zone touch handling
-  const joystickZone = document.getElementById('joystick-zone');
-  const joystickVisual = document.getElementById('joystick-visual');
-  const joystickBase = document.getElementById('joystick-base');
-  const joystickThumb = document.getElementById('joystick-thumb');
-  const JOYSTICK_RADIUS = 50;
-
-  joystickZone.addEventListener('touchstart', (e) => {
-    if (touchJoystick.active) return;
-    const touch = e.changedTouches[0];
-    touchJoystick.active = true;
-    touchJoystick.id = touch.identifier;
-    touchJoystick.startX = touch.clientX;
-    touchJoystick.startY = touch.clientY;
-    touchJoystick.dx = 0;
-    touchJoystick.dy = 0;
-
-    joystickVisual.style.display = 'block';
-    joystickVisual.style.left = touch.clientX + 'px';
-    joystickVisual.style.top = touch.clientY + 'px';
-    joystickBase.style.left = '0px';
-    joystickBase.style.top = '0px';
-    joystickThumb.style.left = '0px';
-    joystickThumb.style.top = '0px';
-    e.preventDefault();
-  }, { passive: false });
-
-  joystickZone.addEventListener('touchmove', (e) => {
-    for (const touch of e.changedTouches) {
-      if (touch.identifier === touchJoystick.id) {
-        let dx = touch.clientX - touchJoystick.startX;
-        let dy = touch.clientY - touchJoystick.startY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > JOYSTICK_RADIUS) {
-          dx = dx / dist * JOYSTICK_RADIUS;
-          dy = dy / dist * JOYSTICK_RADIUS;
-        }
-        touchJoystick.dx = dx / JOYSTICK_RADIUS;
-        touchJoystick.dy = dy / JOYSTICK_RADIUS;
-        joystickThumb.style.left = dx + 'px';
-        joystickThumb.style.top = dy + 'px';
-      }
-    }
-    e.preventDefault();
-  }, { passive: false });
-
-  const endJoystick = (e) => {
-    for (const touch of e.changedTouches) {
-      if (touch.identifier === touchJoystick.id) {
-        touchJoystick.active = false;
-        touchJoystick.dx = 0;
-        touchJoystick.dy = 0;
-        touchJoystick.id = null;
-        joystickVisual.style.display = 'none';
-      }
-    }
-  };
-  joystickZone.addEventListener('touchend', endJoystick);
-  joystickZone.addEventListener('touchcancel', endJoystick);
-
-  // Right-side touch for camera rotation (on the renderer/game canvas directly)
-  renderer.domElement.addEventListener('touchstart', (e) => {
-    for (const touch of e.changedTouches) {
-      // Only take touches on the right half that aren't on buttons
-      if (touch.clientX > window.innerWidth * 0.5 && !touchCamera.active) {
-        touchCamera.active = true;
-        touchCamera.id = touch.identifier;
-        touchCamera.lastX = touch.clientX;
-        touchCamera.lastY = touch.clientY;
-      }
-    }
-  }, { passive: true });
-
-  renderer.domElement.addEventListener('touchmove', (e) => {
-    for (const touch of e.changedTouches) {
-      if (touch.identifier === touchCamera.id) {
-        const dx = touch.clientX - touchCamera.lastX;
-        const dy = touch.clientY - touchCamera.lastY;
-        cameraYaw -= dx * 0.005;
-        cameraPitch -= dy * 0.005;
-        cameraPitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, cameraPitch));
-        touchCamera.lastX = touch.clientX;
-        touchCamera.lastY = touch.clientY;
-      }
-    }
-    e.preventDefault();
-  }, { passive: false });
-
-  const endCamera = (e) => {
-    for (const touch of e.changedTouches) {
-      if (touch.identifier === touchCamera.id) {
-        touchCamera.active = false;
-        touchCamera.id = null;
-      }
-    }
-  };
-  renderer.domElement.addEventListener('touchend', endCamera, { passive: true });
-  renderer.domElement.addEventListener('touchcancel', endCamera, { passive: true });
-
-  // Action buttons
-  const jumpBtn = document.getElementById('btn-jump');
-  const sprintBtn = document.getElementById('btn-sprint');
-
-  jumpBtn.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    keys.space = true;
-    jumpBtn.classList.add('pressed');
-  }, { passive: false });
-  jumpBtn.addEventListener('touchend', () => {
-    keys.space = false;
-    jumpBtn.classList.remove('pressed');
-  });
-
-  sprintBtn.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    keys.shift = !keys.shift;
-    sprintBtn.classList.toggle('pressed', keys.shift);
-  }, { passive: false });
-
-  // Leaderboard toggle button (mobile)
-  const lbBtn = document.getElementById('btn-lb-mobile');
-  if (lbBtn) {
-    lbBtn.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      const panel = document.getElementById('leaderboard-panel');
-      if (!panel) return;
-      const isVisible = panel.style.display === 'block';
-      panel.style.display = isVisible ? 'none' : 'block';
-      lbBtn.classList.toggle('pressed', !isVisible);
-      if (!isVisible) fetchLeaderboard();
-    }, { passive: false });
-  }
-
-  // Attempt orientation lock
-  if (screen.orientation?.lock) {
-    screen.orientation.lock('landscape').catch(() => {});
-  }
-
-  // Collapsible chat toggle
-  const chatToggle = document.createElement('button');
-  chatToggle.id = 'chat-toggle-btn';
-  chatToggle.textContent = 'CHAT';
-  document.body.appendChild(chatToggle);
-  const chatPanel = document.getElementById('chat-panel');
-  let chatVisible = true;
-  chatToggle.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    chatVisible = !chatVisible;
-    if (chatPanel) chatPanel.style.display = chatVisible ? 'flex' : 'none';
-    chatToggle.style.borderColor = chatVisible ? '#2ecc71' : 'rgba(255,255,255,0.3)';
-  }, { passive: false });
-
-  // Virtual keyboard handling — move chat up when input focused in landscape
-  const chatInput = document.getElementById('chat-input');
-  if (chatInput && chatPanel) {
-    chatInput.addEventListener('focus', () => {
-      if (window.innerHeight < 500) {
-        chatPanel.style.bottom = '50%';
-      }
-    });
-    chatInput.addEventListener('blur', () => {
-      chatPanel.style.bottom = '';
-    });
-  }
-}
-
-// ============================================
-// Spectator Camera
-// ============================================
-function isInSpectatorMode() {
-  return isSpectator || state.isSpectating;
-}
-
-function clearSpectating() {
-  state.isSpectating = false;
-  const banner = document.getElementById('spectator-banner');
-  if (banner) banner.remove();
-}
-
-let spectatorFollowIndex = -1; // -1 = auto, 0+ = specific player
-let spectatorFreeMode = false;
-const spectatorPos = new THREE.Vector3(0, 20, 0);
-const SPEC_FLY_SPEED = 30;
-const SPEC_FAST_SPEED = 60;
-
-function updateCamera() {
-  if (isInSpectatorMode()) {
-    updateSpectatorCamera();
-    return;
-  }
-
-  if (!playerMesh) return;
-
-  const target = playerMesh.position;
-
-  // Spherical coordinates around player
-  const offsetX = Math.sin(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
-  const offsetY = Math.sin(cameraPitch) * cameraDistance;
-  const offsetZ = Math.cos(cameraYaw) * Math.cos(cameraPitch) * cameraDistance;
-
-  updateCameraShake();
-  camera.position.set(
-    target.x + offsetX + cameraShake.offset.x,
-    target.y + offsetY + 2 + cameraShake.offset.y,
-    target.z + offsetZ + cameraShake.offset.z
-  );
-  camera.lookAt(target.x, target.y + 1, target.z);
-}
-
-function updateSpectatorCamera() {
-  // Free-fly mode: camera at spectatorPos, looking in yaw/pitch direction
-  if (spectatorFreeMode) {
-    camera.position.copy(spectatorPos);
-    const lookTarget = new THREE.Vector3(
-      spectatorPos.x - Math.sin(cameraYaw) * Math.cos(cameraPitch),
-      spectatorPos.y - Math.sin(cameraPitch),
-      spectatorPos.z - Math.cos(cameraYaw) * Math.cos(cameraPitch)
-    );
-    camera.lookAt(lookTarget);
-    return;
-  }
-
-  // Follow target player using mouse-controlled yaw/pitch (no auto-rotation)
-  const allPlayers = Array.from(remotePlayers.entries());
-
-  if (allPlayers.length === 0) {
-    // No players: static elevated view of the world center
-    const dist = 40;
-    const elevAngle = cameraPitch + 0.3;
-    const y = dist * Math.sin(elevAngle);
-    const horiz = dist * Math.cos(elevAngle);
-    camera.position.set(
-      Math.sin(cameraYaw) * horiz,
-      y,
-      Math.cos(cameraYaw) * horiz
-    );
-    camera.lookAt(0, 5, 0);
-    return;
-  }
-
-  let targetMesh;
-  if (spectatorFollowIndex >= 0 && spectatorFollowIndex < allPlayers.length) {
-    targetMesh = allPlayers[spectatorFollowIndex][1];
-  } else {
-    // Auto: follow highest player (most dramatic in platforming)
-    let highest = allPlayers[0][1];
-    for (const [, mesh] of allPlayers) {
-      if (mesh.position.y > highest.position.y) highest = mesh;
-    }
-    targetMesh = highest;
-  }
-
-  if (targetMesh) {
-    const dist = 25;
-    const elevAngle = cameraPitch + 0.3; // slight overhead offset
-    const y = targetMesh.position.y + dist * Math.sin(elevAngle);
-    const horiz = dist * Math.cos(elevAngle);
-    camera.position.set(
-      targetMesh.position.x + Math.sin(cameraYaw) * horiz,
-      y,
-      targetMesh.position.z + Math.cos(cameraYaw) * horiz
-    );
-    camera.lookAt(targetMesh.position.x, targetMesh.position.y + 1, targetMesh.position.z);
-  }
-}
-
-// Get camera-relative forward and right vectors (Y=0 plane)
-function getCameraDirections() {
-  const forward = new THREE.Vector3(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw)).normalize();
-  const right = new THREE.Vector3(-forward.z, 0, forward.x);
-  return { forward, right };
-}
-
-function updateSpectatorMovement(delta) {
-  if (!spectatorFreeMode) return;
-  const speed = keys.shift ? SPEC_FAST_SPEED : SPEC_FLY_SPEED;
-  // Pitch-aware forward (fly in look direction)
-  const forward = new THREE.Vector3(
-    -Math.sin(cameraYaw) * Math.cos(cameraPitch),
-    -Math.sin(cameraPitch),
-    -Math.cos(cameraYaw) * Math.cos(cameraPitch)
-  ).normalize();
-  const right = new THREE.Vector3(-forward.z, 0, forward.x).normalize();
-  const move = new THREE.Vector3();
-  if (keys.w) move.add(forward);
-  if (keys.s) move.sub(forward);
-  if (keys.a) move.sub(right);
-  if (keys.d) move.add(right);
-  if (keys.space) move.y += 1;
-  if (keys.shift && !keys.w && !keys.s && !keys.a && !keys.d) move.y -= 1;
-  if (move.lengthSq() > 0) {
-    move.normalize().multiplyScalar(speed * delta);
-    spectatorPos.add(move);
-  }
-}
+// Convenience wrappers that delegate to cameraController
+function isInSpectatorMode() { return cameraController.isInSpectatorMode(); }
+function clearSpectating() { cameraController.clearSpectating(); }
+function getCameraDirections() { return cameraController.getCameraDirections(); }
 
 // ============================================
 // Entity Rendering
 // ============================================
-const entityMeshes = new Map();
-
-const groupParents = new Map();   // groupId -> THREE.Group
-const pendingGroups = new Map();  // groupId -> debounce timeout ID
-const entityToGroup = new Map();  // entityId -> groupId
 
 function assembleGroup(groupId) {
   if (groupParents.has(groupId)) return;
@@ -944,314 +510,24 @@ function removeEntity(id) {
 }
 
 // ============================================
-// Particle System
-// ============================================
-const particles = [];
-
-function spawnParticles(position, color, count = 20, speed = 5) {
-  const geometry = new THREE.BufferGeometry();
-  const positions = new Float32Array(count * 3);
-  const velocities = [];
-
-  // Support both THREE.Vector3 and [x, y, z] array positions
-  const px = position.x ?? position[0] ?? 0;
-  const py = position.y ?? position[1] ?? 0;
-  const pz = position.z ?? position[2] ?? 0;
-
-  for (let i = 0; i < count; i++) {
-    positions[i * 3] = px;
-    positions[i * 3 + 1] = py;
-    positions[i * 3 + 2] = pz;
-    velocities.push(new THREE.Vector3(
-      (Math.random() - 0.5) * speed,
-      Math.random() * speed,
-      (Math.random() - 0.5) * speed
-    ));
-  }
-
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-  const material = new THREE.PointsMaterial({
-    color: new THREE.Color(color),
-    size: 0.3,
-    transparent: true,
-    opacity: 1
-  });
-
-  const points = new THREE.Points(geometry, material);
-  scene.add(points);
-
-  particles.push({
-    mesh: points,
-    velocities,
-    startTime: Date.now(),
-    lifetime: 1500
-  });
-}
-
-function updateParticles() {
-  const now = Date.now();
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    const elapsed = now - p.startTime;
-
-    if (elapsed >= p.lifetime) {
-      scene.remove(p.mesh);
-      p.mesh.geometry.dispose();
-      p.mesh.material.dispose();
-      particles.splice(i, 1);
-      continue;
-    }
-
-    const positions = p.mesh.geometry.attributes.position.array;
-    const count = positions.length / 3;
-    const dt = 0.016; // ~60fps
-
-    for (let j = 0; j < count; j++) {
-      positions[j * 3] += p.velocities[j].x * dt;
-      positions[j * 3 + 1] += p.velocities[j].y * dt;
-      positions[j * 3 + 2] += p.velocities[j].z * dt;
-      p.velocities[j].y -= 9.8 * dt;
-    }
-
-    p.mesh.geometry.attributes.position.needsUpdate = true;
-    p.mesh.material.opacity = 1 - elapsed / p.lifetime;
-  }
-}
-
-// ============================================
-// Camera Shake System
-// ============================================
-const cameraShake = { intensity: 0, duration: 0, startTime: 0, offset: new THREE.Vector3() };
-
-function triggerCameraShake(intensity, duration) {
-  cameraShake.intensity = intensity;
-  cameraShake.duration = duration;
-  cameraShake.startTime = Date.now();
-}
-
-function updateCameraShake() {
-  const elapsed = Date.now() - cameraShake.startTime;
-  if (elapsed >= cameraShake.duration) {
-    cameraShake.offset.set(0, 0, 0);
-    return;
-  }
-  const decay = 1 - elapsed / cameraShake.duration;
-  const i = cameraShake.intensity * decay;
-  cameraShake.offset.set(
-    (Math.random() - 0.5) * i,
-    (Math.random() - 0.5) * i,
-    (Math.random() - 0.5) * i
-  );
-}
-
-// ============================================
-// Screen Effects
-// ============================================
-
-function createOverlay(zIndex) {
-  const el = document.createElement('div');
-  el.style.cssText = `position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:${zIndex};opacity:0;transition:opacity 0.3s;`;
-  document.body.appendChild(el);
-  return el;
-}
-
-let screenFlashEl = null;
-let vignetteEl = null;
-
-function screenFlash(color, duration = 300) {
-  if (!screenFlashEl) screenFlashEl = createOverlay(300);
-  screenFlashEl.style.background = color;
-  screenFlashEl.style.transition = 'none';
-  screenFlashEl.style.opacity = '0.4';
-  requestAnimationFrame(() => {
-    screenFlashEl.style.transition = `opacity ${duration}ms`;
-    screenFlashEl.style.opacity = '0';
-  });
-}
-
-function showVignette(color, duration = 2000) {
-  if (!vignetteEl) vignetteEl = createOverlay(299);
-  vignetteEl.style.background = `radial-gradient(ellipse at center, transparent 50%, ${color} 100%)`;
-  vignetteEl.style.opacity = '0.6';
-  setTimeout(() => { vignetteEl.style.opacity = '0'; }, duration);
-}
-
-// ============================================
-// Procedural Sound Effects
-// ============================================
-let audioCtx = null;
-
-function getAudioCtx() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  return audioCtx;
-}
-
-function createTone(waveType) {
-  const ctx = getAudioCtx();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.type = waveType;
-  return { ctx, osc, gain, t: ctx.currentTime };
-}
-
-function playSound(fn) {
-  try { fn(); } catch { /* audio not available */ }
-}
-
-function playJumpSound() {
-  playSound(() => {
-    const { osc, gain, t } = createTone('sine');
-    osc.frequency.setValueAtTime(300, t);
-    osc.frequency.exponentialRampToValueAtTime(600, t + 0.1);
-    gain.gain.setValueAtTime(0.15, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-    osc.start(t);
-    osc.stop(t + 0.15);
-  });
-}
-
-function playDeathSound() {
-  playSound(() => {
-    const { osc, gain, t } = createTone('sawtooth');
-    osc.frequency.setValueAtTime(400, t);
-    osc.frequency.exponentialRampToValueAtTime(80, t + 0.5);
-    gain.gain.setValueAtTime(0.12, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-    osc.start(t);
-    osc.stop(t + 0.5);
-  });
-}
-
-function playCollectSound() {
-  playSound(() => {
-    const notes = [523, 659, 784]; // C5, E5, G5 arpeggio
-    notes.forEach((freq, i) => {
-      const { osc, gain, t } = createTone('sine');
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.1, t + i * 0.08);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.08 + 0.2);
-      osc.start(t + i * 0.08);
-      osc.stop(t + i * 0.08 + 0.2);
-    });
-  });
-}
-
-function playCountdownBeep(pitch = 440) {
-  playSound(() => {
-    const { osc, gain, t } = createTone('square');
-    osc.frequency.value = pitch;
-    gain.gain.setValueAtTime(0.08, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-    osc.start(t);
-    osc.stop(t + 0.2);
-  });
-}
-
-function playWinFanfare() {
-  playSound(() => {
-    const notes = [523, 659, 784, 1047]; // C5, E5, G5, C6
-    notes.forEach((freq, i) => {
-      const { osc, gain, t } = createTone('sine');
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.12, t + i * 0.12);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 0.4);
-      osc.start(t + i * 0.12);
-      osc.stop(t + i * 0.12 + 0.4);
-    });
-  });
-}
-
-function playSpellSound() {
-  playSound(() => {
-    const { ctx, osc, gain, t } = createTone('sawtooth');
-    const filter = ctx.createBiquadFilter();
-    osc.disconnect();
-    osc.connect(filter);
-    filter.connect(gain);
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(2000, t);
-    filter.frequency.exponentialRampToValueAtTime(200, t + 0.4);
-    osc.frequency.setValueAtTime(800, t);
-    osc.frequency.exponentialRampToValueAtTime(200, t + 0.4);
-    gain.gain.setValueAtTime(0.08, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-    osc.start(t);
-    osc.stop(t + 0.4);
-  });
-}
-
-function playCrackSound() {
-  playSound(() => {
-    const { osc, gain, t } = createTone('sawtooth');
-    osc.frequency.setValueAtTime(400, t);
-    osc.frequency.exponentialRampToValueAtTime(200, t + 0.15);
-    gain.gain.setValueAtTime(0.08, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-    osc.start(t);
-    osc.stop(t + 0.15);
-  });
-}
-
-function playBreakSound() {
-  playSound(() => {
-    const { osc, gain, t } = createTone('square');
-    osc.frequency.setValueAtTime(200, t);
-    osc.frequency.exponentialRampToValueAtTime(60, t + 0.2);
-    gain.gain.setValueAtTime(0.1, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-    osc.start(t);
-    osc.stop(t + 0.25);
-  });
-}
-
-function playBounceSound() {
-  playSound(() => {
-    const notes = [300, 600, 800];
-    notes.forEach((freq, i) => {
-      const { osc, gain, t } = createTone('sine');
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.12, t + i * 0.06);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + 0.15);
-      osc.start(t + i * 0.06);
-      osc.stop(t + i * 0.06 + 0.15);
-    });
-  });
-}
-
-// Speed boost state
-let speedBoostUntil = 0;
-
-// ============================================
 // Collision Detection (Wall-Slide)
 // ============================================
-const GROUND_Y = 1;         // Standing height on solid/safe floor
-const ABYSS_DEATH_Y = -20;  // Fall-death threshold for 'none' floor
-const LAVA_DEATH_Y = 0;     // Death threshold for lava floor
-const VOID_DEATH_Y = -50;   // Absolute void death for any floor type
 
 const playerBox = new THREE.Box3();
 const entityBox = new THREE.Box3();
 
-let standingOnEntity = null; // Track what entity we're standing on
-let frameDelta = 0.016; // Updated each frame for conveyor/wind calculations
-
 function checkCollisions() {
-  if (!playerMesh) return;
+  if (!player.mesh) return;
 
   // Manual AABB — ignores decoration children (eyes, glow ring)
-  const pp = playerMesh.position;
+  const pp = player.mesh.position;
   playerBox.min.set(pp.x - 0.5, pp.y - 1.0, pp.z - 0.5);
   playerBox.max.set(pp.x + 0.5, pp.y + 1.0, pp.z + 0.5);
 
   let standingOnPlatform = false;
   let platformY = 0;
   let platformVelocity = null;
-  standingOnEntity = null;
+  collision.standingOnEntity = null;
 
   for (const [, mesh] of entityMeshes) {
     const entity = mesh.userData.entity;
@@ -1274,7 +550,7 @@ function checkCollisions() {
       continue;
     }
     if (entity.type === 'obstacle') {
-      if (state.gameState.phase === 'playing' && Date.now() >= respawnInvulnUntil) {
+      if (state.gameState.phase === 'playing' && Date.now() >= death.respawnInvulnUntil) {
         playerDie();
       }
       continue;
@@ -1283,21 +559,21 @@ function checkCollisions() {
       if (entity.properties?.isBounce) {
         const force = entity.properties.bounceForce || 18;
         playerVelocity.y = force;
-        isGrounded = false;
-        isJumping = true;
-        spawnParticles(playerMesh.position, '#2ecc71', 15, 4);
+        player.isGrounded = false;
+        player.isJumping = true;
+        spawnParticles(player.mesh.position, '#2ecc71', 15, 4);
         playBounceSound();
         continue;
       }
       if (entity.properties?.isSpeedBoost) {
         const duration = entity.properties.boostDuration || 3000;
-        speedBoostUntil = Date.now() + duration;
-        spawnParticles(playerMesh.position, '#e67e22', 8, 2);
+        boost.speedBoostUntil = Date.now() + duration;
+        spawnParticles(player.mesh.position, '#e67e22', 8, 2);
         continue;
       }
       if (entity.properties?.isWind) {
         const force = entity.properties.windForce || [0, 0, 0];
-        const dt = frameDelta;
+        const dt = collision.frameDelta;
         playerVelocity.x += force[0] * dt;
         playerVelocity.y += force[1] * dt;
         playerVelocity.z += force[2] * dt;
@@ -1308,19 +584,19 @@ function checkCollisions() {
     }
 
     if (entity.type === 'platform' || entity.type === 'ramp') {
-      const overlapX = (0.5 + halfSize[0]) - Math.abs(playerMesh.position.x - ep.x);
-      const overlapY = (1 + halfSize[1]) - Math.abs(playerMesh.position.y - ep.y);
-      const overlapZ = (0.5 + halfSize[2]) - Math.abs(playerMesh.position.z - ep.z);
+      const overlapX = (0.5 + halfSize[0]) - Math.abs(player.mesh.position.x - ep.x);
+      const overlapY = (1 + halfSize[1]) - Math.abs(player.mesh.position.y - ep.y);
+      const overlapZ = (0.5 + halfSize[2]) - Math.abs(player.mesh.position.z - ep.z);
 
       if (overlapX <= 0 || overlapY <= 0 || overlapZ <= 0) continue;
 
-      const playerBottom = playerMesh.position.y - 1;
+      const playerBottom = player.mesh.position.y - 1;
       const platformTop = ep.y + halfSize[1];
 
       if (playerBottom >= platformTop - 0.5 && playerVelocity.y <= 0) {
         standingOnPlatform = true;
         platformY = platformTop + 1;
-        standingOnEntity = entity;
+        collision.standingOnEntity = entity;
 
         if (entity.properties?.breakable && !mesh.userData._breakNotified) {
           mesh.userData._breakNotified = true;
@@ -1339,12 +615,12 @@ function checkCollisions() {
         }
       } else {
         if (overlapX < overlapZ) {
-          const pushDir = playerMesh.position.x > ep.x ? 1 : -1;
-          playerMesh.position.x += overlapX * pushDir;
+          const pushDir = player.mesh.position.x > ep.x ? 1 : -1;
+          player.mesh.position.x += overlapX * pushDir;
           playerVelocity.x = 0;
         } else {
-          const pushDir = playerMesh.position.z > ep.z ? 1 : -1;
-          playerMesh.position.z += overlapZ * pushDir;
+          const pushDir = player.mesh.position.z > ep.z ? 1 : -1;
+          player.mesh.position.z += overlapZ * pushDir;
           playerVelocity.z = 0;
         }
       }
@@ -1352,21 +628,21 @@ function checkCollisions() {
   }
 
   if (standingOnPlatform) {
-    playerMesh.position.y = platformY;
+    player.mesh.position.y = platformY;
     playerVelocity.y = 0;
-    isGrounded = true;
-    isJumping = false;
+    player.isGrounded = true;
+    player.isJumping = false;
 
     if (platformVelocity) {
-      playerMesh.position.x += platformVelocity.x;
-      playerMesh.position.z += platformVelocity.z;
+      player.mesh.position.x += platformVelocity.x;
+      player.mesh.position.z += platformVelocity.z;
     }
     // Conveyor belt push
-    if (standingOnEntity?.properties?.isConveyor) {
-      const dir = standingOnEntity.properties.conveyorDir || [1, 0, 0];
-      const speed = standingOnEntity.properties.conveyorSpeed || 6;
-      playerVelocity.x += dir[0] * speed * frameDelta;
-      playerVelocity.z += dir[2] * speed * frameDelta;
+    if (collision.standingOnEntity?.properties?.isConveyor) {
+      const dir = collision.standingOnEntity.properties.conveyorDir || [1, 0, 0];
+      const speed = collision.standingOnEntity.properties.conveyorSpeed || 6;
+      playerVelocity.x += dir[0] * speed * collision.frameDelta;
+      playerVelocity.z += dir[2] * speed * collision.frameDelta;
     }
   }
 }
@@ -1380,16 +656,13 @@ function collectItem(entity) {
   console.log(`[Collect] Picked up ${entity.id}`);
 }
 
-let lastDeathTime = 0;
-const DEATH_COOLDOWN = 2000; // 2 seconds between deaths
-
 function playerDie() {
-  if (!playerMesh || state.localPlayer?.state === 'dead') return;
+  if (!player.mesh || state.localPlayer?.state === 'dead') return;
 
   // Prevent rapid death loops
   const now = Date.now();
-  if (now - lastDeathTime < DEATH_COOLDOWN) return;
-  lastDeathTime = now;
+  if (now - death.lastDeathTime < DEATH_COOLDOWN) return;
+  death.lastDeathTime = now;
 
   console.log('[Player] Died!');
 
@@ -1397,37 +670,35 @@ function playerDie() {
     state.localPlayer.state = 'dead';
   }
 
-  sendToServer('died', { position: playerMesh.position.toArray() });
+  sendToServer('died', { position: player.mesh.position.toArray() });
 
   // Enhanced death VFX
-  spawnParticles(playerMesh.position, '#e74c3c', 35, 8);
-  spawnParticles(playerMesh.position, '#ff6600', 15, 5);
+  spawnParticles(player.mesh.position, '#e74c3c', 35, 8);
+  spawnParticles(player.mesh.position, '#ff6600', 15, 5);
   playDeathSound();
   triggerCameraShake(0.5, 300);
   screenFlash('#e74c3c', 400);
 
-  playerMesh.material.color.setHex(0xff0000);
-  playerMesh.material.emissive.setHex(0xff0000);
+  player.mesh.material.color.setHex(0xff0000);
+  player.mesh.material.emissive.setHex(0xff0000);
 
   setTimeout(respawnPlayer, 1500);
 }
 
-let respawnInvulnUntil = 0;
-
 function respawnPlayer() {
-  if (!playerMesh) return;
+  if (!player.mesh) return;
 
   const rp = state.respawnPoint || [0, 2, 0];
-  playerMesh.position.set(rp[0], rp[1], rp[2]);
+  player.mesh.position.set(rp[0], rp[1], rp[2]);
   playerVelocity.set(0, 0, 0);
-  isJumping = false;
-  coyoteTimer = 0;
-  jumpBufferTimer = 0;
-  playerMesh.material.color.setHex(0x00ff88);
-  playerMesh.material.emissive.setHex(0x00ff88);
+  player.isJumping = false;
+  player.coyoteTimer = 0;
+  player.jumpBufferTimer = 0;
+  player.mesh.material.color.setHex(0x00ff88);
+  player.mesh.material.emissive.setHex(0x00ff88);
 
   // Brief invulnerability after respawn (prevents fall-death loops)
-  respawnInvulnUntil = Date.now() + 2000;
+  death.respawnInvulnUntil = Date.now() + 2000;
 
   if (state.localPlayer) {
     state.localPlayer.state = 'alive';
@@ -1436,8 +707,6 @@ function respawnPlayer() {
   sendToServer('respawn', {});
   console.log('[Player] Respawned');
 }
-
-const activatedTriggers = new Map(); // entityId -> timestamp
 
 function triggerEvent(entity) {
   const now = Date.now();
@@ -1452,18 +721,10 @@ function triggerEvent(entity) {
 // ============================================
 // Player
 // ============================================
-let playerMesh = null;
-const playerVelocity = new THREE.Vector3();
-const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
-let isGrounded = true;
-let coyoteTimer = 0;
-let jumpBufferTimer = 0;
-let isJumping = false;
-let jumpHeld = false;
 
 function createPlayer() {
-  playerMesh = createPlayerCharacter();
-  scene.add(playerMesh);
+  player.mesh = createPlayerCharacter();
+  scene.add(player.mesh);
 }
 
 // Check if a spell effect is currently active
@@ -1474,11 +735,11 @@ function hasEffect(effectType) {
 }
 
 function updatePlayer(delta) {
-  if (!playerMesh) return;
+  if (!player.mesh) return;
 
   // Clamp delta to prevent physics explosions on tab-switch
   delta = Math.min(delta, 0.05);
-  frameDelta = delta; // expose for conveyor/wind in checkCollisions
+  collision.frameDelta = delta; // expose for conveyor/wind in checkCollisions
 
   // --- Spell modifiers ---
   let targetSpeed = keys.shift ? PHYSICS.SPRINT_SPEED : PHYSICS.WALK_SPEED;
@@ -1487,7 +748,7 @@ function updatePlayer(delta) {
 
   if (hasEffect('speed_boost')) targetSpeed = 30;
   if (hasEffect('slow_motion')) targetSpeed = 10;
-  if (Date.now() < speedBoostUntil) targetSpeed *= 2;
+  if (Date.now() < boost.speedBoostUntil) targetSpeed *= 2;
   if (hasEffect('low_gravity')) spellGravityMult = 0.3;
   if (hasEffect('high_gravity')) spellGravityMult = 2.5;
   if (hasEffect('bouncy')) jumpForce *= 1.5;
@@ -1516,10 +777,10 @@ function updatePlayer(delta) {
   const targetVelZ = moveDir.z * targetSpeed;
   const hasInput = moveDir.lengthSq() > 0.01;
 
-  const onIce = standingOnEntity?.properties?.isIce;
+  const onIce = collision.standingOnEntity?.properties?.isIce;
 
   let accel;
-  if (!isGrounded) {
+  if (!player.isGrounded) {
     accel = hasInput ? PHYSICS.AIR_ACCEL : PHYSICS.AIR_DECEL;
   } else if (onIce) {
     // Ice reduces acceleration to 15% and deceleration to 8% for a sliding feel
@@ -1545,87 +806,87 @@ function updatePlayer(delta) {
   playerVelocity.y = Math.max(playerVelocity.y, PHYSICS.TERMINAL_VELOCITY);
 
   // --- Coyote time & jump buffer ---
-  if (isGrounded) {
-    coyoteTimer = PHYSICS.COYOTE_TIME;
+  if (player.isGrounded) {
+    player.coyoteTimer = PHYSICS.COYOTE_TIME;
   } else {
-    coyoteTimer -= delta;
+    player.coyoteTimer -= delta;
   }
 
-  if (keys.space && !jumpHeld) {
-    jumpBufferTimer = PHYSICS.JUMP_BUFFER_TIME;
+  if (keys.space && !player.jumpHeld) {
+    player.jumpBufferTimer = PHYSICS.JUMP_BUFFER_TIME;
   }
-  jumpBufferTimer -= delta;
-  jumpHeld = keys.space;
+  player.jumpBufferTimer -= delta;
+  player.jumpHeld = keys.space;
 
   // --- Execute jump ---
-  const canJump = isGrounded || coyoteTimer > 0;
-  if (canJump && jumpBufferTimer > 0 && !isJumping) {
+  const canJump = player.isGrounded || player.coyoteTimer > 0;
+  if (canJump && player.jumpBufferTimer > 0 && !player.isJumping) {
     playerVelocity.y = jumpForce;
-    isJumping = true;
-    isGrounded = false;
-    coyoteTimer = 0;
-    jumpBufferTimer = 0;
+    player.isJumping = true;
+    player.isGrounded = false;
+    player.coyoteTimer = 0;
+    player.jumpBufferTimer = 0;
     playJumpSound();
   }
 
   // --- Apply velocity ---
-  playerMesh.position.x += playerVelocity.x * delta;
-  playerMesh.position.y += playerVelocity.y * delta;
-  playerMesh.position.z += playerVelocity.z * delta;
+  player.mesh.position.x += playerVelocity.x * delta;
+  player.mesh.position.y += playerVelocity.y * delta;
+  player.mesh.position.z += playerVelocity.z * delta;
 
   // --- Face movement direction ---
   const hSpeed = Math.sqrt(playerVelocity.x ** 2 + playerVelocity.z ** 2);
   if (hSpeed > 0.5) {
     const targetYaw = Math.atan2(playerVelocity.x, playerVelocity.z);
-    playerMesh.rotation.y += shortAngleDist(playerMesh.rotation.y, targetYaw) * Math.min(1, 15 * delta);
+    player.mesh.rotation.y += shortAngleDist(player.mesh.rotation.y, targetYaw) * Math.min(1, 15 * delta);
   }
 
   // Reset before this frame's collision detection
-  isGrounded = false;
+  player.isGrounded = false;
 
   // --- Ground collision ---
   const phase = state.gameState.phase;
   const inSafePhase = phase === 'lobby' || phase === 'building' || phase === 'countdown' || phase === 'ended';
-  const invulnerable = Date.now() < respawnInvulnUntil;
+  const invulnerable = Date.now() < death.respawnInvulnUntil;
   // All floors act solid during safe phases so players don't fall through
-  const hasFloor = currentFloorType === 'solid' || inSafePhase;
+  const hasFloor = floor.currentType === 'solid' || inSafePhase;
 
   if (hasFloor) {
-    if (playerMesh.position.y < GROUND_Y) {
-      playerMesh.position.y = GROUND_Y;
+    if (player.mesh.position.y < GROUND_Y) {
+      player.mesh.position.y = GROUND_Y;
       playerVelocity.y = 0;
-      isGrounded = true;
-      isJumping = false;
+      player.isGrounded = true;
+      player.isJumping = false;
     }
-  } else if (currentFloorType === 'none') {
-    if (playerMesh.position.y < ABYSS_DEATH_Y && !invulnerable) {
+  } else if (floor.currentType === 'none') {
+    if (player.mesh.position.y < ABYSS_DEATH_Y && !invulnerable) {
       playerDie();
     }
-  } else if (currentFloorType === 'lava') {
-    if (playerMesh.position.y < LAVA_DEATH_Y && !invulnerable) {
-      spawnParticles(playerMesh.position, '#ff4500', 20, 6);
-      spawnParticles(playerMesh.position, '#ffaa00', 10, 4);
+  } else if (floor.currentType === 'lava') {
+    if (player.mesh.position.y < LAVA_DEATH_Y && !invulnerable) {
+      spawnParticles(player.mesh.position, '#ff4500', 20, 6);
+      spawnParticles(player.mesh.position, '#ffaa00', 10, 4);
       playerDie();
     }
   }
   // Hazard plane death (rising lava/water)
-  if (hazardPlaneState.active && phase === 'playing' && playerMesh.position.y < hazardPlaneState.height && !invulnerable) {
-    spawnParticles(playerMesh.position, hazardPlaneState.type === 'lava' ? '#ff4500' : '#3498db', 20, 6);
+  if (hazardPlaneState.active && phase === 'playing' && player.mesh.position.y < hazardPlaneState.height && !invulnerable) {
+    spawnParticles(player.mesh.position, hazardPlaneState.type === 'lava' ? '#ff4500' : '#3498db', 20, 6);
     playerDie();
   }
   // Void death (Y < -50) stays always active as ultimate safety net
-  if (playerMesh.position.y < VOID_DEATH_Y && !invulnerable) {
+  if (player.mesh.position.y < VOID_DEATH_Y && !invulnerable) {
     playerDie();
   }
 
-  updateCamera();
+  cameraController.updateCamera();
 
   // Send position to server (throttled)
   const now = performance.now();
-  if (now - lastMoveTime >= MOVE_INTERVAL) {
-    lastMoveTime = now;
+  if (now - network.lastMoveTime >= MOVE_INTERVAL) {
+    network.lastMoveTime = now;
     sendToServer('move', {
-      position: playerMesh.position.toArray(),
+      position: player.mesh.position.toArray(),
       velocity: playerVelocity.toArray()
     });
   }
@@ -1634,92 +895,6 @@ function updatePlayer(delta) {
 // ============================================
 // Input
 // ============================================
-
-/** Toggle the help overlay. Pass true to show, false to hide, or omit to flip.
- *  Returns true if the overlay was open (and is now closed). */
-function toggleHelpOverlay(forceShow) {
-  const el = document.getElementById('help-overlay');
-  if (!el) return false;
-  const isVisible = el.style.display !== 'none';
-  if (forceShow === false) {
-    if (!isVisible) return false;
-    el.style.display = 'none';
-    return true;
-  }
-  el.style.display = (forceShow === true || !isVisible) ? 'flex' : 'none';
-  return false;
-}
-
-document.addEventListener('keydown', (e) => {
-  // Don't process game keys when chat is focused
-  if (state.chatFocused) {
-    if (e.key === 'Escape') {
-      document.getElementById('chat-input').blur();
-      state.chatFocused = false;
-    }
-    return;
-  }
-
-  // Escape closes help overlay
-  if (e.key === 'Escape') {
-    if (toggleHelpOverlay(false)) return;
-  }
-
-  const key = e.key.toLowerCase();
-  if (key in keys) keys[key] = true;
-  if (key === ' ' && !e.repeat) { keys.space = true; e.preventDefault(); }
-  if (e.key === 'Shift') keys.shift = true;
-
-  // Enter to focus chat
-  if (e.key === 'Enter') {
-    const chatInput = document.getElementById('chat-input');
-    if (chatInput) {
-      chatInput.focus();
-      state.chatFocused = true;
-      if (document.pointerLockElement) {
-        document.exitPointerLock();
-      }
-    }
-  }
-
-  // Spectator: WASD activates free-fly mode, number keys return to follow mode
-  if (isInSpectatorMode() && (key === 'w' || key === 'a' || key === 's' || key === 'd')) {
-    if (!spectatorFreeMode) {
-      spectatorFreeMode = true;
-      spectatorPos.copy(camera.position);
-    }
-  }
-  if (isInSpectatorMode() && key >= '0' && key <= '9') {
-    spectatorFreeMode = false;
-    spectatorFollowIndex = key === '0' ? -1 : parseInt(key) - 1;
-  }
-
-  // ? to toggle help overlay
-  if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
-    toggleHelpOverlay();
-  }
-
-  // L to toggle leaderboard
-  if (key === 'l') {
-    const panel = document.getElementById('leaderboard-panel');
-    if (!panel) return;
-
-    const isVisible = panel.style.display === 'block';
-    panel.style.display = isVisible ? 'none' : 'block';
-
-    if (!isVisible) {
-      fetchLeaderboard();
-    }
-  }
-});
-
-document.addEventListener('keyup', (e) => {
-  if (state.chatFocused) return;
-  const key = e.key.toLowerCase();
-  if (key in keys) keys[key] = false;
-  if (key === ' ') keys.space = false;
-  if (e.key === 'Shift') keys.shift = false;
-});
 
 // ============================================
 // Chat System
@@ -2018,7 +1193,7 @@ function createChatBubbleSprite(text) {
 
 function showChatBubble(senderId, text) {
   const isLocalPlayer = state.room && senderId === state.room.sessionId;
-  const mesh = isLocalPlayer ? playerMesh : remotePlayers.get(senderId);
+  const mesh = isLocalPlayer ? player.mesh : remotePlayers.get(senderId);
   if (!mesh) return;
 
   const existing = mesh.children.find(c => c.userData.isChatBubble);
@@ -2029,7 +1204,7 @@ function showChatBubble(senderId, text) {
 
 function updateChatBubbles() {
   const now = Date.now();
-  const meshes = [playerMesh, ...remotePlayers.values()];
+  const meshes = [player.mesh, ...remotePlayers.values()];
   for (const mesh of meshes) {
     if (!mesh) continue;
     const bubble = mesh.children.find(c => c.userData.isChatBubble);
@@ -2104,31 +1279,29 @@ function showConnectionWarning(disconnected) {
 }
 
 // AFK Warning UI
-let _afkOverlay = null;
-let _afkCountdownInterval = null;
 
 function showAfkWarning(token, timeout) {
   hideAfkWarning();
 
-  _afkOverlay = document.createElement('div');
-  _afkOverlay.id = 'afk-overlay';
-  _afkOverlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;';
+  afk.overlay = document.createElement('div');
+  afk.overlay.id = 'afk-overlay';
+  afk.overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;';
 
   const title = document.createElement('div');
   title.style.cssText = 'color:#ff6b6b;font-size:32px;font-weight:bold;margin-bottom:16px;text-shadow:0 0 20px rgba(255,107,107,0.5);';
   title.textContent = 'ARE YOU STILL THERE?';
 
-  const countdown = document.createElement('div');
-  countdown.style.cssText = 'color:#fff;font-size:20px;margin-bottom:24px;';
+  const countdownEl = document.createElement('div');
+  countdownEl.style.cssText = 'color:#fff;font-size:20px;margin-bottom:24px;';
   let remaining = Math.ceil(timeout / 1000);
-  countdown.textContent = `You'll be kicked in ${remaining}s...`;
-  _afkCountdownInterval = setInterval(() => {
+  countdownEl.textContent = `You'll be kicked in ${remaining}s...`;
+  afk.countdownInterval = setInterval(() => {
     remaining--;
     if (remaining <= 0) {
-      clearInterval(_afkCountdownInterval);
-      countdown.textContent = 'Kicking...';
+      clearInterval(afk.countdownInterval);
+      countdownEl.textContent = 'Kicking...';
     } else {
-      countdown.textContent = `You'll be kicked in ${remaining}s...`;
+      countdownEl.textContent = `You'll be kicked in ${remaining}s...`;
     }
   }, 1000);
 
@@ -2142,10 +1315,10 @@ function showAfkWarning(token, timeout) {
     hideAfkWarning();
   };
 
-  _afkOverlay.appendChild(title);
-  _afkOverlay.appendChild(countdown);
-  _afkOverlay.appendChild(btn);
-  document.body.appendChild(_afkOverlay);
+  afk.overlay.appendChild(title);
+  afk.overlay.appendChild(countdownEl);
+  afk.overlay.appendChild(btn);
+  document.body.appendChild(afk.overlay);
 
   // Any keypress also dismisses (hideAfkWarning cleans up this listener)
   const keyHandler = () => {
@@ -2153,20 +1326,20 @@ function showAfkWarning(token, timeout) {
     hideAfkWarning();
   };
   document.addEventListener('keydown', keyHandler);
-  _afkOverlay._keyHandler = keyHandler;
+  afk.overlay._keyHandler = keyHandler;
 }
 
 function hideAfkWarning() {
-  if (_afkCountdownInterval) {
-    clearInterval(_afkCountdownInterval);
-    _afkCountdownInterval = null;
+  if (afk.countdownInterval) {
+    clearInterval(afk.countdownInterval);
+    afk.countdownInterval = null;
   }
-  if (_afkOverlay) {
-    if (_afkOverlay._keyHandler) {
-      document.removeEventListener('keydown', _afkOverlay._keyHandler);
+  if (afk.overlay) {
+    if (afk.overlay._keyHandler) {
+      document.removeEventListener('keydown', afk.overlay._keyHandler);
     }
-    _afkOverlay.remove();
-    _afkOverlay = null;
+    afk.overlay.remove();
+    afk.overlay = null;
   }
 }
 
@@ -2193,8 +1366,6 @@ function showAfkKickedScreen() {
   overlay.appendChild(btn);
   document.body.appendChild(overlay);
 }
-
-const MAX_VISIBLE_ANNOUNCEMENTS = 3;
 
 function enforceAnnouncementLimit(container) {
   while (container.children.length >= MAX_VISIBLE_ANNOUNCEMENTS) {
@@ -2257,14 +1428,10 @@ function showSpellEffect(spell) {
 // Game State UI
 // ============================================
 
-// Tracked so we can clear it if a new countdown starts or the phase changes
-let countdownIntervalId = null;
-let lastLobbyCountdownTick = 0;
-
 function clearCountdownInterval() {
-  if (countdownIntervalId !== null) {
-    clearInterval(countdownIntervalId);
-    countdownIntervalId = null;
+  if (countdown.intervalId !== null) {
+    clearInterval(countdown.intervalId);
+    countdown.intervalId = null;
   }
 }
 
@@ -2321,7 +1488,7 @@ function updateGameStateUI() {
   } else if (state.gameState.phase === 'countdown') {
     // Countdown display is driven by the interval in game_state_changed handler.
     // Only set the initial text if the interval has not started yet.
-    if (countdownIntervalId === null) {
+    if (countdown.intervalId === null) {
       timerEl.textContent = '5...';
       timerEl.style.color = '#f39c12';
     }
@@ -2361,16 +1528,16 @@ function applyWorldState(worldData) {
   if (worldData.floorType) setFloorType(worldData.floorType);
   if (worldData.environment) applyEnvironment(worldData.environment);
   if (worldData.hazardPlane) {
-    hazardPlaneState = { ...hazardPlaneState, ...worldData.hazardPlane };
+    Object.assign(hazardPlaneState, worldData.hazardPlane);
     hazardPlaneMesh.visible = hazardPlaneState.active;
     hazardPlaneMesh.position.y = hazardPlaneState.height;
     updateHazardPlaneMaterial(hazardPlaneState.type);
   }
   if (worldData.players) {
-    for (const player of worldData.players) {
-      if (state.room && player.id === state.room.sessionId) continue;
-      state.players.set(player.id, player);
-      updateRemotePlayer(player);
+    for (const p of worldData.players) {
+      if (state.room && p.id === state.room.sessionId) continue;
+      state.players.set(p.id, p);
+      updateRemotePlayer(p);
     }
   }
   for (const entity of worldData.entities || []) {
@@ -2399,12 +1566,12 @@ async function fetchInitialState() {
 async function connectToServer() {
   try {
     const client = new Client(SERVER_URL);
-    const user = authUser?.user;
+    const user = auth.user?.user;
     const playerName = user?.twitterUsername || user?.name || `Player-${Date.now().toString(36)}`;
     const joinOptions = { name: playerName, arenaId: selectedArenaId };
 
-    if (authUser?.token) {
-      joinOptions.token = authUser.token;
+    if (auth.user?.token) {
+      joinOptions.token = auth.user.token;
     }
     if (user?.type) {
       joinOptions.type = user.type;
@@ -2481,10 +1648,10 @@ async function connectToServer() {
     });
 
     // Player events
-    room.onMessage('player_joined', (player) => {
-      console.log('[Event] Player joined:', player.name);
-      state.players.set(player.id, player);
-      updateRemotePlayer(player);
+    room.onMessage('player_joined', (p) => {
+      console.log('[Event] Player joined:', p.name);
+      state.players.set(p.id, p);
+      updateRemotePlayer(p);
       updateUI();
     });
 
@@ -2496,18 +1663,18 @@ async function connectToServer() {
 
     room.onMessage('player_moved', ({ id, position, velocity }) => {
       if (id === room.sessionId) return;
-      let player = state.players.get(id);
-      if (!player) {
-        player = { id, position };
-        state.players.set(id, player);
+      let p = state.players.get(id);
+      if (!p) {
+        p = { id, position };
+        state.players.set(id, p);
       }
-      player.position = position;
-      updateRemotePlayer(player);
+      p.position = position;
+      updateRemotePlayer(p);
     });
 
     room.onMessage('player_died', (data) => {
-      const player = state.players.get(data.id);
-      const name = player?.name || data.id?.slice(0, 8) || 'Player';
+      const p = state.players.get(data.id);
+      const name = p?.name || data.id?.slice(0, 8) || 'Player';
       addKillFeedEntry(`${name} died`);
     });
 
@@ -2628,15 +1795,15 @@ async function connectToServer() {
       // Scale effects with particle burst
       const SPELL_SCALES = { giant: 2, tiny: 0.4 };
       const scale = SPELL_SCALES[spell.type];
-      if (scale && playerMesh) {
-        playerMesh.scale.setScalar(scale);
-        spawnParticles(playerMesh.position, '#9b59b6', 30, 6);
+      if (scale && player.mesh) {
+        player.mesh.scale.setScalar(scale);
+        spawnParticles(player.mesh.position, '#9b59b6', 30, 6);
       }
 
       // Auto-expire
       setTimeout(() => {
         state.activeEffects = (state.activeEffects || []).filter(e => e.id !== spell.id);
-        if (scale && playerMesh) playerMesh.scale.setScalar(1);
+        if (scale && player.mesh) player.mesh.scale.setScalar(1);
       }, spell.duration);
     });
 
@@ -2649,14 +1816,14 @@ async function connectToServer() {
     });
 
     room.onMessage('hazard_plane_changed', (data) => {
-      hazardPlaneState = { ...hazardPlaneState, ...data };
+      Object.assign(hazardPlaneState, data);
       hazardPlaneMesh.visible = data.active;
       hazardPlaneMesh.position.y = hazardPlaneState.height;
       updateHazardPlaneMaterial(data.type);
     });
 
     room.onMessage('hazard_plane_update', (data) => {
-      hazardPlaneState = { ...hazardPlaneState, ...data };
+      Object.assign(hazardPlaneState, data);
       hazardPlaneMesh.position.y = data.height;
     });
 
@@ -2666,7 +1833,7 @@ async function connectToServer() {
 
     room.onMessage('effects_cleared', () => {
       state.activeEffects = [];
-      if (playerMesh) playerMesh.scale.set(1, 1, 1);
+      if (player.mesh) player.mesh.scale.set(1, 1, 1);
     });
 
     // Clean world on lobby transition — remove all entity meshes
@@ -2689,18 +1856,18 @@ async function connectToServer() {
       pendingGroups.clear();
       // Reset hazard plane
       hazardPlaneMesh.visible = false;
-      hazardPlaneState = { active: false, type: 'lava', height: -10 };
+      Object.assign(hazardPlaneState, { active: false, type: 'lava', height: -10 });
       updateUI();
     });
 
     // Teleport all players to start position (Fall Guys countdown)
     room.onMessage('players_teleported', (data) => {
-      if (playerMesh && data.position) {
-        playerMesh.position.set(data.position[0], data.position[1], data.position[2]);
+      if (player.mesh && data.position) {
+        player.mesh.position.set(data.position[0], data.position[1], data.position[2]);
         playerVelocity.set(0, 0, 0);
-        isJumping = false;
-        coyoteTimer = 0;
-        jumpBufferTimer = 0;
+        player.isJumping = false;
+        player.coyoteTimer = 0;
+        player.jumpBufferTimer = 0;
       }
     });
 
@@ -2761,7 +1928,7 @@ async function connectToServer() {
         timerEl.textContent = '5...';
         timerEl.style.color = '#f39c12';
         let countdownSec = 5;
-        countdownIntervalId = setInterval(() => {
+        countdown.intervalId = setInterval(() => {
           countdownSec--;
           if (countdownSec > 0) {
             timerEl.textContent = `${countdownSec}...`;
@@ -2783,7 +1950,7 @@ async function connectToServer() {
           timerEl.style.color = '#f1c40f';
           screenFlash('#f1c40f', 600);
           playWinFanfare();
-          if (playerMesh) spawnParticles(playerMesh.position, '#f1c40f', 40, 10);
+          if (player.mesh) spawnParticles(player.mesh.position, '#f1c40f', 40, 10);
         } else if (gameState.result === 'win') {
           // Another player won
           timerEl.textContent = 'GAME OVER';
@@ -2847,14 +2014,14 @@ function animate() {
   const time = performance.now() / 1000;
 
   if (isInSpectatorMode()) {
-    updateSpectatorMovement(delta);
+    cameraController.updateSpectatorMovement(delta, keys);
   } else {
     updatePlayer(delta);
     checkCollisions();
   }
 
-  if (playerMesh && !isInSpectatorMode()) {
-    updateSquashStretch(playerMesh, playerVelocity.y, isGrounded);
+  if (player.mesh && !isInSpectatorMode()) {
+    updateSquashStretch(player.mesh, playerVelocity.y, player.isGrounded);
   }
 
   for (const [, mesh] of remotePlayers) {
@@ -2962,15 +2129,15 @@ function animate() {
   updateConveyorScrolls(delta);
   updateEnvironmentEffects(delta, camera.position);
   updateParticles();
-  updateOutlineObjects(entityMeshes, groupParents, playerMesh, remotePlayers);
+  updateOutlineObjects(entityMeshes, groupParents, player.mesh, remotePlayers);
   updateChatBubbles();
 
-  if (isInSpectatorMode()) updateCamera();
+  if (isInSpectatorMode()) cameraController.updateCamera();
 
   // Tick lobby countdown display (~1Hz)
   if (state.gameState.phase === 'lobby' && state.lobbyCountdownTarget) {
-    if (time - lastLobbyCountdownTick > 1) {
-      lastLobbyCountdownTick = time;
+    if (time - countdown.lastLobbyTick > 1) {
+      countdown.lastLobbyTick = time;
       updateGameStateUI();
     }
   }
@@ -2987,7 +2154,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   resizePostProcessing(window.innerWidth, window.innerHeight);
   if (isMobile) {
-    cameraDistance = (window.innerWidth > window.innerHeight) ? 22 : 25;
+    cameraState.distance = (window.innerWidth > window.innerHeight) ? 22 : 25;
   }
 });
 
@@ -3251,7 +2418,7 @@ function setupBribeUI() {
   }
 
   async function signAndSendTransaction(option) {
-    if (authUser?.user?.type === 'guest') {
+    if (auth.user?.user?.type === 'guest') {
       showToast('Login with Twitter to unlock bribes', 'error');
       return null;
     }
@@ -3498,7 +2665,7 @@ function setupProfileButton() {
   const walletPanel = document.getElementById('wallet-panel');
   if (!profileBtn || !walletPanel) return;
 
-  const user = authUser?.user;
+  const user = auth.user?.user;
   if (!user) return;
 
   const isAuthenticated = user.type === 'authenticated';
@@ -3825,14 +2992,14 @@ async function init() {
 
   if (isSpectator) {
     // Skip login for spectators
-    authUser = { token: null, user: { name: 'Spectator', type: 'spectator' } };
+    auth.user = { token: null, user: { name: 'Spectator', type: 'spectator' } };
   } else {
-    authUser = await startAuthFlow();
+    auth.user = await startAuthFlow();
   }
 
   // Arena selection — skip if arena is specified via URL param
   if (!urlParams.get('arena') && !isSpectator) {
-    selectedArenaId = await showArenaLobby();
+    setSelectedArenaId(await showArenaLobby());
   }
   console.log(`[Game] Selected arena: ${selectedArenaId}`);
 
@@ -3848,11 +3015,12 @@ async function init() {
   }
 
   setupChat();
+  setupKeyboardInput({ isInSpectatorMode, fetchLeaderboard, camera });
   fetchLeaderboard();
   if (isSpectator) setupSpectatorOverlay();
   else setupBribeUI();
   if (isDebug) setupDebugPanel();
-  if (isMobile && !isSpectator) setupMobileControls();
+  if (isMobile && !isSpectator) setupMobileControls({ keys, rendererDomElement: renderer.domElement, fetchLeaderboard });
 
   // Load existing chat history
   try {
@@ -3893,9 +3061,9 @@ async function init() {
   setInterval(pollForUpdates, 2000);
   setInterval(fetchLeaderboard, 10000);
   setInterval(() => {
-    if (playerMesh && state.room) {
+    if (player.mesh && state.room) {
       sendToServer('move', {
-        position: playerMesh.position.toArray(),
+        position: player.mesh.position.toArray(),
         velocity: playerVelocity.toArray()
       });
     }

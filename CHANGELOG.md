@@ -2,6 +2,20 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.41.0] - 2026-02-18
+
+### Changed
+- **Architecture: Chunk 1 Foundation** — zero behavioral changes, pure extraction
+  - `src/server/constants.js` (NEW) — extracted 65 lines of magic numbers, templates, BRIBE_OPTIONS from index.js
+  - `src/server/validation.js` (NEW) — input validation for WebSocket messages (position, velocity, entityId)
+  - `src/server/GameRoom.js` — validates all 6 data-bearing WS handlers (move, died, collect, challenge_complete, trigger_activated, platform_step)
+  - `src/server/AgentBridge.js` — `exec()` → `execFile()` to eliminate shell injection risk
+  - `src/server/WorldState.js` — MAX_ENTITIES=500 guard, static VALID_ENTITY_TYPES/VALID_GAME_TYPES
+  - `src/client/styles/game.css` (NEW) — 1,550 lines extracted from index.html inline style block
+  - `src/client/styles/mobile.css` (NEW) — 107 lines extracted from main.js dynamic style injection
+  - `index.html` — removed 1,552-line `<style>` block (now 298 lines)
+  - `src/client/main.js` — CSS imports replace dynamic injection (-112 lines)
+
 ## [0.40.0] - 2026-02-12
 
 ### Fixed
