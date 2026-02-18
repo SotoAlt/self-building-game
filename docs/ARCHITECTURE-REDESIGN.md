@@ -84,7 +84,9 @@
 
 ---
 
-## CHUNK 2: Client Leaf Module Extraction (Low Risk)
+## CHUNK 2: Client Leaf Module Extraction ✅ COMPLETE (Feb 18, 2026)
+
+> Extracted ~850 lines from main.js into 7 new modules. Pre-allocated Vector3s in CameraController eliminate 6 per-frame GC allocations. Mutable state grouped into objects (player.mesh, camera.yaw, etc.) instead of individual setter functions.
 
 ### Phase 2A: State & Config
 
