@@ -114,34 +114,30 @@
 
 ---
 
-## CHUNK 3: Client Entity & Physics System (Medium Risk)
+## CHUNK 3: Client Entity & Physics System ✅ COMPLETE (Feb 18, 2026)
+
+> Implementation simplified vs. original plan: kept physics+collision together (too tightly coupled to split), kept chat bubbles with remote players (natural coupling), deferred ObjectPool/SpatialHash/material cache to Chunk 9. main.js: 3,075 → 2,124 lines (-951).
 
 ### Phase 3A: Entity System
 
-**Files to create:**
+**Files created:**
 
-- `src/client/entities/EntityFactory.js` — extract lines 828-957: `createBeveledBox()`, `getGeometry()`, `createEntityMesh()`. Add material sharing cache keyed by `${type}-${color}-${theme}`
-- `src/client/entities/EntityManager.js` — extract lines 770-1055: `addEntity()`, `updateEntity()`, `removeEntity()`, group assembly with debounce
-- `src/client/entities/EntityAnimations.js` — extract animate loop lines 3007-3062: collectible bob, obstacle pulse, decoration flicker, goal spin, cracking shake
-- `src/client/entities/ObjectPool.js` — NEW: generic `Pool` class with `acquire()`, `release()`, `prewarm()`
-- `src/client/rendering/ParticleSystem.js` — extract lines 1057-1131, refactor to use `ObjectPool` (pool 15 pre-allocated particle systems)
+- `src/client/entities/EntityFactory.js` (140 lines) — pure factory functions: `createBeveledBox()`, `getGeometry()`, `createEntityMesh()`
+- `src/client/entities/EntityManager.js` (273 lines) — entity lifecycle, group assembly with debounce, per-frame entity/group animations
 
-### Phase 3B: Physics
+### Phase 3B: Physics & Collision
 
-**Files to create:**
+**Files created:**
 
-- `src/client/physics/SpatialHash.js` — NEW: grid-based spatial partitioning (cell size 8), `insert()`, `query()`, `clear()`. Rebuilt each frame before collision
-- `src/client/physics/CollisionSystem.js` — extract lines 1340-1491: AABB collision using SpatialHash queries instead of iterating all entities. Pre-allocate `platformVelocity` Vector3
-- `src/client/physics/PhysicsEngine.js` — extract lines 1564-1743: `PHYSICS` constants, `moveToward()`, `updatePlayer()`, spell modifiers. Pre-allocate `moveDir` Vector3
+- `src/client/physics/PhysicsEngine.js` (411 lines) — player physics, AABB collision, death/respawn, triggers, pre-allocated Vector3s for moveDir and platformVelocity
 
 ### Phase 3C: Remote Players & Chat Bubbles
 
-**Files to create:**
+**Files created:**
 
-- `src/client/rendering/RemotePlayers.js` — extract lines 2005-2183: create/update/remove remote player meshes, name sprites, interpolation
-- `src/client/rendering/ChatBubbles.js` — extract lines 2061-2155: bubble sprites with dispose/create lifecycle
+- `src/client/rendering/RemotePlayers.js` (207 lines) — remote player meshes, name sprites, chat bubbles, interpolation
 
-**Verification**: Entity spawning, destruction, group assembly, particles, collision detection, platform riding, ice/conveyor/wind, death zones, remote player interpolation.
+**Verification**: Build passes, browser test confirms entity rendering, physics, player movement, camera follow, ground collision, chat panel, lobby HUD — zero console errors.
 
 ---
 

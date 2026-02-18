@@ -6,11 +6,13 @@
 import './styles/game.css';
 import './styles/mobile.css';
 import * as THREE from 'three';
-import { GEOMETRY_TEMPLATES } from './GeometryTemplates.js';
-import { createEntityToonMaterial, createGroundToonMaterial, getEntityColor, setMaterialTheme } from './ToonMaterials.js';
+import { createGroundToonMaterial, setMaterialTheme } from './ToonMaterials.js';
 import { initPostProcessing, renderFrame, resizePostProcessing, updateOutlineObjects } from './PostProcessing.js';
-import { createLavaShaderMaterial, createWaterShaderMaterial, createWindShaderMaterial, registerShaderMaterial, updateShaderTime, registerConveyorMaterial, updateConveyorScrolls } from './SurfaceShaders.js';
-import { createPlayerCharacter, createRemotePlayerCharacter, updateSquashStretch } from './PlayerVisuals.js';
+import { createLavaShaderMaterial, createWaterShaderMaterial, registerShaderMaterial, updateShaderTime, updateConveyorScrolls } from './SurfaceShaders.js';
+import { updateSquashStretch } from './PlayerVisuals.js';
+import { initEntityManager, addEntity, updateEntity, removeEntity, clearAllEntities, animateEntities, animateGroups } from './entities/EntityManager.js';
+import { initPhysics, updatePlayer, checkCollisions, createPlayer } from './physics/PhysicsEngine.js';
+import { initRemotePlayers, updateRemotePlayer, removeRemotePlayer, showChatBubble, updateChatBubbles, interpolateRemotePlayers } from './rendering/RemotePlayers.js';
 import { createSkyDome, updateSkyColors, initParticles, updateEnvironmentEffects, selectParticleType } from './EnvironmentEffects.js';
 import { Client } from 'colyseus.js';
 import {
@@ -20,21 +22,19 @@ import {
 } from './auth.js';
 import {
   TREASURY_ADDRESS, SERVER_URL, API_URL, urlParams, isSpectator, isDebug,
-  selectedArenaId, setSelectedArenaId, getApiBase, isMobile, PHYSICS,
-  MOVE_INTERVAL, MAX_RECONNECT_ATTEMPTS,
-  GROUND_Y, ABYSS_DEATH_Y, LAVA_DEATH_Y, VOID_DEATH_Y, DEATH_COOLDOWN,
-  MAX_VISIBLE_ANNOUNCEMENTS
+  selectedArenaId, setSelectedArenaId, getApiBase, isMobile,
+  MAX_RECONNECT_ATTEMPTS, MAX_VISIBLE_ANNOUNCEMENTS
 } from './config.js';
 import {
   state, auth, remotePlayers, network, floor, hazardPlaneState,
-  entityMeshes, groupParents, pendingGroups, entityToGroup, particles,
-  boost, collision, death, activatedTriggers, player, playerVelocity,
+  entityMeshes, groupParents, particles,
+  player, playerVelocity,
   camera as cameraState,
   afk, countdown
 } from './state.js';
 import {
-  playJumpSound, playDeathSound, playCollectSound, playCountdownBeep,
-  playWinFanfare, playSpellSound, playCrackSound, playBreakSound, playBounceSound
+  playCollectSound, playCountdownBeep,
+  playWinFanfare, playSpellSound, playCrackSound, playBreakSound
 } from './audio/SoundManager.js';
 import {
   triggerCameraShake, screenFlash, showVignette,
@@ -61,18 +61,6 @@ function sendToServer(type, data) {
     attemptReconnect();
     return false;
   }
-}
-
-function moveToward(current, target, maxDelta) {
-  if (Math.abs(target - current) <= maxDelta) return target;
-  return current + Math.sign(target - current) * maxDelta;
-}
-
-function shortAngleDist(from, to) {
-  let diff = to - from;
-  while (diff > Math.PI) diff -= Math.PI * 2;
-  while (diff < -Math.PI) diff += Math.PI * 2;
-  return diff;
 }
 
 // Reconnection logic
@@ -143,17 +131,25 @@ scene.add(gridHelper);
 // Sky gradient dome
 createSkyDome(scene);
 
-// Post-processing pipeline (outlines, bloom, FXAA)
 initPostProcessing(renderer, scene, camera);
 
-// Screen effects (particles, flash, vignette) need scene reference
 initScreenEffects(scene);
 
-// Camera controller — handles player follow, spectator, and desktop mouse events
+initEntityManager(scene, updateUI);
+
 const cameraController = new CameraController(camera, renderer);
 cameraController.initDesktopEvents();
 
-// Lava floor plane (hidden by default) — uses animated shader
+initPhysics({
+  scene,
+  sendToServer,
+  getCameraDirections: () => cameraController.getCameraDirections(),
+  updateCamera: () => cameraController.updateCamera(),
+});
+
+initRemotePlayers(scene);
+
+// Lava floor plane (hidden by default)
 const lavaGeometry = new THREE.PlaneGeometry(200, 200, 40, 40);
 const lavaMaterial = createLavaShaderMaterial();
 registerShaderMaterial(lavaMaterial);
@@ -163,7 +159,7 @@ lavaFloor.position.y = -0.5;
 lavaFloor.visible = false;
 scene.add(lavaFloor);
 
-// Rising hazard plane (lava/water that rises during gameplay) — animated shaders
+// Rising hazard plane (lava/water)
 const hazardPlaneGeom = new THREE.PlaneGeometry(400, 400, 40, 40);
 let hazardPlaneMat = createLavaShaderMaterial();
 registerShaderMaterial(hazardPlaneMat);
@@ -184,7 +180,6 @@ function setFloorType(type) {
   gridHelper.visible = type === 'solid';
   lavaFloor.visible = type === 'lava';
 
-  // Update ambient particles based on floor type
   const pType = selectParticleType(type, null);
   initParticles(scene, pType);
 
@@ -208,692 +203,16 @@ function applyEnvironment(env) {
   if (env.sunIntensity != null) directionalLight.intensity = env.sunIntensity;
   if (env.sunPosition) directionalLight.position.set(...env.sunPosition);
 
-  // Apply material theme for this arena
   if (env.materialTheme !== undefined) setMaterialTheme(env.materialTheme);
 
-  // Update ambient particles based on environment
   const pType = selectParticleType(floor.currentType, env);
   initParticles(scene, pType);
 
   console.log('[Environment] Updated');
 }
 
-// Convenience wrappers that delegate to cameraController
 function isInSpectatorMode() { return cameraController.isInSpectatorMode(); }
 function clearSpectating() { cameraController.clearSpectating(); }
-function getCameraDirections() { return cameraController.getCameraDirections(); }
-
-// ============================================
-// Entity Rendering
-// ============================================
-
-function assembleGroup(groupId) {
-  if (groupParents.has(groupId)) return;
-
-  const childMeshes = [];
-  for (const [eid, gid] of entityToGroup) {
-    if (gid === groupId && entityMeshes.has(eid)) {
-      childMeshes.push(entityMeshes.get(eid));
-    }
-  }
-  if (childMeshes.length < 2) return;
-
-  const group = new THREE.Group();
-  const firstMesh = childMeshes[0];
-  group.position.copy(firstMesh.position);
-
-  for (const mesh of childMeshes) {
-    scene.remove(mesh);
-    mesh.position.sub(group.position);
-    group.add(mesh);
-  }
-
-  scene.add(group);
-  groupParents.set(groupId, group);
-
-  const firstEntity = firstMesh.userData.entity;
-  const props = firstEntity?.properties;
-  group.userData = { isGroupParent: true, entity: firstEntity };
-
-  if (props?.kinematic || props?.chase) {
-    group.userData.targetPosition = firstMesh.userData.targetPosition
-      ? firstMesh.userData.targetPosition.clone()
-      : null;
-  }
-  if (props?.rotating) {
-    group.userData.rotating = true;
-    group.userData.speed = props.speed || 1;
-    for (const mesh of childMeshes) {
-      mesh.userData.rotating = false;
-    }
-  }
-}
-
-function scheduleGroupAssembly(groupId) {
-  if (groupParents.has(groupId)) return;
-  if (pendingGroups.has(groupId)) clearTimeout(pendingGroups.get(groupId));
-  const DEBOUNCE_MS = 150;
-  pendingGroups.set(groupId, setTimeout(() => {
-    pendingGroups.delete(groupId);
-    assembleGroup(groupId);
-  }, DEBOUNCE_MS));
-}
-
-function createBeveledBox(sx, sy, sz) {
-  const bevel = Math.max(0.12, Math.min((sx + sz) / 2 * 0.06, sy * 0.4));
-  const hx = sx / 2 - bevel;
-  const hz = sz / 2 - bevel;
-
-  // Rounded-rectangle cross-section (XZ plane)
-  const profile = new THREE.Shape();
-  profile.moveTo(-hx, -hz);
-  profile.lineTo(hx, -hz);
-  profile.quadraticCurveTo(hx + bevel, -hz, hx + bevel, -hz + bevel);
-  profile.lineTo(hx + bevel, hz);
-  profile.quadraticCurveTo(hx + bevel, hz + bevel, hx, hz + bevel);
-  profile.lineTo(-hx, hz + bevel);
-  profile.quadraticCurveTo(-hx - bevel, hz + bevel, -hx - bevel, hz);
-  profile.lineTo(-hx - bevel, -hz + bevel);
-  profile.quadraticCurveTo(-hx - bevel, -hz, -hx, -hz);
-
-  const geo = new THREE.ExtrudeGeometry(profile, {
-    depth: sy,
-    bevelEnabled: true,
-    bevelSize: bevel,
-    bevelThickness: bevel,
-    bevelSegments: 2,
-  });
-
-  // Extrude goes along Z; rotate so height is along Y and center vertically
-  geo.rotateX(-Math.PI / 2);
-  geo.translate(0, -sy / 2, 0);
-  return geo;
-}
-
-function getGeometry(entity) {
-  const shape = entity.properties?.shape;
-  const [sx, sy, sz] = entity.size || [1, 1, 1];
-
-  // Type-based defaults when no explicit shape is set
-  if (!shape) {
-    if (entity.type === 'collectible') {
-      return new THREE.IcosahedronGeometry(0.5, 0);
-    }
-    if (entity.type === 'trigger' && entity.properties?.isGoal) {
-      return new THREE.TorusGeometry(Math.max(sx, sz) / 2, Math.min(sx, sz) / 6, 12, 32);
-    }
-    if (entity.type === 'platform' || entity.type === 'ramp') {
-      return createBeveledBox(sx, sy, sz);
-    }
-    return new THREE.BoxGeometry(sx, sy, sz);
-  }
-
-  // Named templates (lathe, extrude, tube shapes defined in GeometryTemplates)
-  if (GEOMETRY_TEMPLATES[shape]) {
-    return GEOMETRY_TEMPLATES[shape](sx, sy, sz);
-  }
-
-  // Primitive shapes
-  const maxDim = Math.max(sx, sy, sz) / 2;
-  switch (shape) {
-    case 'sphere':       return new THREE.SphereGeometry(maxDim, 16, 16);
-    case 'cylinder':     return new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 16);
-    case 'cone':         return new THREE.ConeGeometry(sx / 2, sy, 16);
-    case 'pyramid':      return new THREE.ConeGeometry(sx / 2, sy, 4);
-    case 'torus':        return new THREE.TorusGeometry(sx / 2, Math.min(sx, sz) / 6, 8, 24);
-    case 'dodecahedron': return new THREE.DodecahedronGeometry(maxDim);
-    case 'icosahedron':  return new THREE.IcosahedronGeometry(maxDim, 0);
-    case 'octahedron':   return new THREE.OctahedronGeometry(maxDim);
-    case 'ring':         return new THREE.TorusGeometry(sx / 2, Math.max(0.2, sx / 8), 8, 32);
-    default:             return new THREE.BoxGeometry(sx, sy, sz);
-  }
-}
-
-function createEntityMesh(entity) {
-  const geometry = getGeometry(entity);
-  const props = entity.properties || {};
-  const color = getEntityColor(entity.type, props.color);
-
-  // Wind zones use a special shader material
-  let material;
-  if (props.isWind) {
-    material = createWindShaderMaterial(props.windForce || [1, 0, 0]);
-    registerShaderMaterial(material);
-  } else {
-    material = createEntityToonMaterial(entity);
-  }
-
-  // Register conveyor materials for UV scroll animation
-  if (props.isConveyor && material.map) {
-    registerConveyorMaterial(material, props.conveyorSpeed || 6, props.conveyorDir || [1, 0, 0]);
-  }
-
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(...entity.position);
-  if (props.rotation) {
-    mesh.rotation.set(props.rotation[0] || 0, props.rotation[1] || 0, props.rotation[2] || 0);
-  }
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  mesh.userData = { entity, rotating: props.rotating, speed: props.speed || 1 };
-
-  if (entity.type === 'collectible') {
-    // Larger pulsing glow sphere
-    const glowGeometry = new THREE.SphereGeometry(1.0, 16, 16);
-    const glowMaterial = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.2,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-    mesh.add(glow);
-  }
-
-  // Goal triggers get a glow too
-  if (entity.type === 'trigger' && props.isGoal) {
-    const [sx, sy, sz] = entity.size || [3, 3, 3];
-    const goalGlow = new THREE.Mesh(
-      new THREE.SphereGeometry(Math.max(sx, sy, sz) * 0.6, 16, 16),
-      new THREE.MeshBasicMaterial({
-        color,
-        transparent: true,
-        opacity: 0.15,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      })
-    );
-    mesh.add(goalGlow);
-  }
-
-  return mesh;
-}
-
-function addEntity(entity) {
-  if (entityMeshes.has(entity.id)) return;
-
-  const mesh = createEntityMesh(entity);
-  scene.add(mesh);
-  entityMeshes.set(entity.id, mesh);
-  state.entities.set(entity.id, entity);
-
-  const groupId = entity.properties?.groupId;
-  if (groupId) {
-    entityToGroup.set(entity.id, groupId);
-    scheduleGroupAssembly(groupId);
-  }
-
-  updateUI();
-}
-
-function setTargetPosition(obj, position) {
-  if (!obj.userData.targetPosition) {
-    obj.userData.targetPosition = new THREE.Vector3(...position);
-  } else {
-    obj.userData.targetPosition.set(...position);
-  }
-}
-
-function trackLastPosition(obj) {
-  if (!obj.userData.lastPosition) {
-    obj.userData.lastPosition = obj.position.clone();
-  } else {
-    obj.userData.lastPosition.copy(obj.position);
-  }
-}
-
-function updateEntity(entity) {
-  const mesh = entityMeshes.get(entity.id);
-  if (!mesh) return addEntity(entity);
-
-  const groupId = entityToGroup.get(entity.id);
-  const group = groupId ? groupParents.get(groupId) : null;
-
-  setTargetPosition(mesh, entity.position);
-
-  const eProps = entity.properties;
-  if (group && (eProps?.kinematic || eProps?.chase)) {
-    setTargetPosition(group, entity.position);
-    group.userData.entity = entity;
-  } else if (!eProps?.kinematic && !group) {
-    mesh.position.set(...entity.position);
-  }
-
-  if (entity.size) {
-    mesh.geometry.dispose();
-    mesh.geometry = getGeometry(entity);
-  }
-  if (entity.properties?.color) {
-    mesh.material.color.set(entity.properties.color);
-    mesh.material.emissive.set(entity.properties.color);
-  }
-  if (entity.properties?.rotation && !entity.properties?.rotating) {
-    mesh.rotation.set(
-      entity.properties.rotation[0] || 0,
-      entity.properties.rotation[1] || 0,
-      entity.properties.rotation[2] || 0
-    );
-  }
-  mesh.userData.entity = entity;
-  mesh.userData.rotating = entity.properties?.rotating;
-  mesh.userData.speed = entity.properties?.speed || 1;
-
-  state.entities.set(entity.id, entity);
-  updateUI();
-}
-
-function removeEntity(id) {
-  const mesh = entityMeshes.get(id);
-  if (mesh) {
-    const groupId = entityToGroup.get(id);
-    if (groupId && groupParents.has(groupId)) {
-      const group = groupParents.get(groupId);
-      group.remove(mesh);
-      if (group.children.length === 0) {
-        scene.remove(group);
-        groupParents.delete(groupId);
-      }
-    } else {
-      scene.remove(mesh);
-    }
-    mesh.traverse((child) => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
-    });
-    entityMeshes.delete(id);
-  }
-  entityToGroup.delete(id);
-  state.entities.delete(id);
-  updateUI();
-}
-
-// ============================================
-// Collision Detection (Wall-Slide)
-// ============================================
-
-const playerBox = new THREE.Box3();
-const entityBox = new THREE.Box3();
-
-function checkCollisions() {
-  if (!player.mesh) return;
-
-  // Manual AABB — ignores decoration children (eyes, glow ring)
-  const pp = player.mesh.position;
-  playerBox.min.set(pp.x - 0.5, pp.y - 1.0, pp.z - 0.5);
-  playerBox.max.set(pp.x + 0.5, pp.y + 1.0, pp.z + 0.5);
-
-  let standingOnPlatform = false;
-  let platformY = 0;
-  let platformVelocity = null;
-  collision.standingOnEntity = null;
-
-  for (const [, mesh] of entityMeshes) {
-    const entity = mesh.userData.entity;
-    if (!entity) continue;
-
-    const isGrouped = mesh.parent && mesh.parent !== scene;
-    const ep = isGrouped
-      ? { x: mesh.parent.position.x + mesh.position.x,
-          y: mesh.parent.position.y + mesh.position.y,
-          z: mesh.parent.position.z + mesh.position.z }
-      : mesh.position;
-    const halfSize = entity.size.map(s => s / 2);
-    entityBox.min.set(ep.x - halfSize[0], ep.y - halfSize[1], ep.z - halfSize[2]);
-    entityBox.max.set(ep.x + halfSize[0], ep.y + halfSize[1], ep.z + halfSize[2]);
-
-    if (!playerBox.intersectsBox(entityBox)) continue;
-
-    if (entity.type === 'collectible') {
-      collectItem(entity);
-      continue;
-    }
-    if (entity.type === 'obstacle') {
-      if (state.gameState.phase === 'playing' && Date.now() >= death.respawnInvulnUntil) {
-        playerDie();
-      }
-      continue;
-    }
-    if (entity.type === 'trigger') {
-      if (entity.properties?.isBounce) {
-        const force = entity.properties.bounceForce || 18;
-        playerVelocity.y = force;
-        player.isGrounded = false;
-        player.isJumping = true;
-        spawnParticles(player.mesh.position, '#2ecc71', 15, 4);
-        playBounceSound();
-        continue;
-      }
-      if (entity.properties?.isSpeedBoost) {
-        const duration = entity.properties.boostDuration || 3000;
-        boost.speedBoostUntil = Date.now() + duration;
-        spawnParticles(player.mesh.position, '#e67e22', 8, 2);
-        continue;
-      }
-      if (entity.properties?.isWind) {
-        const force = entity.properties.windForce || [0, 0, 0];
-        const dt = collision.frameDelta;
-        playerVelocity.x += force[0] * dt;
-        playerVelocity.y += force[1] * dt;
-        playerVelocity.z += force[2] * dt;
-        continue;
-      }
-      triggerEvent(entity);
-      continue;
-    }
-
-    if (entity.type === 'platform' || entity.type === 'ramp') {
-      const overlapX = (0.5 + halfSize[0]) - Math.abs(player.mesh.position.x - ep.x);
-      const overlapY = (1 + halfSize[1]) - Math.abs(player.mesh.position.y - ep.y);
-      const overlapZ = (0.5 + halfSize[2]) - Math.abs(player.mesh.position.z - ep.z);
-
-      if (overlapX <= 0 || overlapY <= 0 || overlapZ <= 0) continue;
-
-      const playerBottom = player.mesh.position.y - 1;
-      const platformTop = ep.y + halfSize[1];
-
-      if (playerBottom >= platformTop - 0.5 && playerVelocity.y <= 0) {
-        standingOnPlatform = true;
-        platformY = platformTop + 1;
-        collision.standingOnEntity = entity;
-
-        if (entity.properties?.breakable && !mesh.userData._breakNotified) {
-          mesh.userData._breakNotified = true;
-          sendToServer('platform_step', { entityId: entity.id });
-        }
-
-        if (entity.properties?.kinematic) {
-          const moveSrc = isGrouped ? mesh.parent : mesh;
-          if (moveSrc.userData.lastPosition) {
-            platformVelocity = new THREE.Vector3(
-              moveSrc.position.x - moveSrc.userData.lastPosition.x,
-              moveSrc.position.y - moveSrc.userData.lastPosition.y,
-              moveSrc.position.z - moveSrc.userData.lastPosition.z
-            );
-          }
-        }
-      } else {
-        if (overlapX < overlapZ) {
-          const pushDir = player.mesh.position.x > ep.x ? 1 : -1;
-          player.mesh.position.x += overlapX * pushDir;
-          playerVelocity.x = 0;
-        } else {
-          const pushDir = player.mesh.position.z > ep.z ? 1 : -1;
-          player.mesh.position.z += overlapZ * pushDir;
-          playerVelocity.z = 0;
-        }
-      }
-    }
-  }
-
-  if (standingOnPlatform) {
-    player.mesh.position.y = platformY;
-    playerVelocity.y = 0;
-    player.isGrounded = true;
-    player.isJumping = false;
-
-    if (platformVelocity) {
-      player.mesh.position.x += platformVelocity.x;
-      player.mesh.position.z += platformVelocity.z;
-    }
-    // Conveyor belt push
-    if (collision.standingOnEntity?.properties?.isConveyor) {
-      const dir = collision.standingOnEntity.properties.conveyorDir || [1, 0, 0];
-      const speed = collision.standingOnEntity.properties.conveyorSpeed || 6;
-      playerVelocity.x += dir[0] * speed * collision.frameDelta;
-      playerVelocity.z += dir[2] * speed * collision.frameDelta;
-    }
-  }
-}
-
-function collectItem(entity) {
-  sendToServer('collect', { entityId: entity.id });
-  spawnParticles(entity.position, '#f1c40f', 20, 4);
-  spawnParticles(entity.position, '#ffffff', 8, 2); // golden sparkle trail
-  playCollectSound();
-  removeEntity(entity.id);
-  console.log(`[Collect] Picked up ${entity.id}`);
-}
-
-function playerDie() {
-  if (!player.mesh || state.localPlayer?.state === 'dead') return;
-
-  // Prevent rapid death loops
-  const now = Date.now();
-  if (now - death.lastDeathTime < DEATH_COOLDOWN) return;
-  death.lastDeathTime = now;
-
-  console.log('[Player] Died!');
-
-  if (state.localPlayer) {
-    state.localPlayer.state = 'dead';
-  }
-
-  sendToServer('died', { position: player.mesh.position.toArray() });
-
-  // Enhanced death VFX
-  spawnParticles(player.mesh.position, '#e74c3c', 35, 8);
-  spawnParticles(player.mesh.position, '#ff6600', 15, 5);
-  playDeathSound();
-  triggerCameraShake(0.5, 300);
-  screenFlash('#e74c3c', 400);
-
-  player.mesh.material.color.setHex(0xff0000);
-  player.mesh.material.emissive.setHex(0xff0000);
-
-  setTimeout(respawnPlayer, 1500);
-}
-
-function respawnPlayer() {
-  if (!player.mesh) return;
-
-  const rp = state.respawnPoint || [0, 2, 0];
-  player.mesh.position.set(rp[0], rp[1], rp[2]);
-  playerVelocity.set(0, 0, 0);
-  player.isJumping = false;
-  player.coyoteTimer = 0;
-  player.jumpBufferTimer = 0;
-  player.mesh.material.color.setHex(0x00ff88);
-  player.mesh.material.emissive.setHex(0x00ff88);
-
-  // Brief invulnerability after respawn (prevents fall-death loops)
-  death.respawnInvulnUntil = Date.now() + 2000;
-
-  if (state.localPlayer) {
-    state.localPlayer.state = 'alive';
-  }
-
-  sendToServer('respawn', {});
-  console.log('[Player] Respawned');
-}
-
-function triggerEvent(entity) {
-  const now = Date.now();
-  const lastActivation = activatedTriggers.get(entity.id) || 0;
-  if (now - lastActivation < 2000) return; // 2s debounce
-
-  activatedTriggers.set(entity.id, now);
-  console.log(`[Trigger] Activated: ${entity.id}`);
-  sendToServer('trigger_activated', { entityId: entity.id });
-}
-
-// ============================================
-// Player
-// ============================================
-
-function createPlayer() {
-  player.mesh = createPlayerCharacter();
-  scene.add(player.mesh);
-}
-
-// Check if a spell effect is currently active
-function hasEffect(effectType) {
-  if (!state.activeEffects) return false;
-  const now = Date.now();
-  return state.activeEffects.some(e => e.type === effectType && now - e.startTime < e.duration);
-}
-
-function updatePlayer(delta) {
-  if (!player.mesh) return;
-
-  // Clamp delta to prevent physics explosions on tab-switch
-  delta = Math.min(delta, 0.05);
-  collision.frameDelta = delta; // expose for conveyor/wind in checkCollisions
-
-  // --- Spell modifiers ---
-  let targetSpeed = keys.shift ? PHYSICS.SPRINT_SPEED : PHYSICS.WALK_SPEED;
-  let jumpForce = PHYSICS.JUMP_FORCE;
-  let spellGravityMult = 1;
-
-  if (hasEffect('speed_boost')) targetSpeed = 30;
-  if (hasEffect('slow_motion')) targetSpeed = 10;
-  if (Date.now() < boost.speedBoostUntil) targetSpeed *= 2;
-  if (hasEffect('low_gravity')) spellGravityMult = 0.3;
-  if (hasEffect('high_gravity')) spellGravityMult = 2.5;
-  if (hasEffect('bouncy')) jumpForce *= 1.5;
-  if (hasEffect('giant')) { targetSpeed = 14; jumpForce *= 1.2; }
-  if (hasEffect('tiny')) { targetSpeed = 25; jumpForce *= 0.6; }
-
-  // --- Camera-relative input direction ---
-  const { forward, right } = getCameraDirections();
-  const moveDir = new THREE.Vector3();
-  const inputSign = hasEffect('invert_controls') ? -1 : 1;
-
-  if (isMobile && touchJoystick.active) {
-    moveDir.addScaledVector(forward, -touchJoystick.dy * inputSign);
-    moveDir.addScaledVector(right, touchJoystick.dx * inputSign);
-  } else {
-    if (keys.w) moveDir.addScaledVector(forward, inputSign);
-    if (keys.s) moveDir.addScaledVector(forward, -inputSign);
-    if (keys.d) moveDir.addScaledVector(right, inputSign);
-    if (keys.a) moveDir.addScaledVector(right, -inputSign);
-  }
-  // Clamp to unit length but allow analog (mobile joystick) sub-unit values
-  if (moveDir.length() > 1) moveDir.normalize();
-
-  // --- Horizontal movement with acceleration ---
-  const targetVelX = moveDir.x * targetSpeed;
-  const targetVelZ = moveDir.z * targetSpeed;
-  const hasInput = moveDir.lengthSq() > 0.01;
-
-  const onIce = collision.standingOnEntity?.properties?.isIce;
-
-  let accel;
-  if (!player.isGrounded) {
-    accel = hasInput ? PHYSICS.AIR_ACCEL : PHYSICS.AIR_DECEL;
-  } else if (onIce) {
-    // Ice reduces acceleration to 15% and deceleration to 8% for a sliding feel
-    accel = hasInput ? PHYSICS.GROUND_ACCEL * 0.15 : PHYSICS.GROUND_DECEL * 0.08;
-  } else {
-    accel = hasInput ? PHYSICS.GROUND_ACCEL : PHYSICS.GROUND_DECEL;
-  }
-
-  playerVelocity.x = moveToward(playerVelocity.x, targetVelX, accel * delta);
-  playerVelocity.z = moveToward(playerVelocity.z, targetVelZ, accel * delta);
-
-  // --- Gravity (asymmetric for game feel) ---
-  const serverGravityScale = state.physics.gravity / -9.8;
-  const gravity = PHYSICS.GRAVITY * serverGravityScale * spellGravityMult;
-
-  if (playerVelocity.y < 0) {
-    playerVelocity.y += gravity * PHYSICS.FALL_MULTIPLIER * delta;
-  } else if (playerVelocity.y > 0 && !keys.space) {
-    playerVelocity.y += gravity * PHYSICS.LOW_JUMP_MULTIPLIER * delta;
-  } else {
-    playerVelocity.y += gravity * delta;
-  }
-  playerVelocity.y = Math.max(playerVelocity.y, PHYSICS.TERMINAL_VELOCITY);
-
-  // --- Coyote time & jump buffer ---
-  if (player.isGrounded) {
-    player.coyoteTimer = PHYSICS.COYOTE_TIME;
-  } else {
-    player.coyoteTimer -= delta;
-  }
-
-  if (keys.space && !player.jumpHeld) {
-    player.jumpBufferTimer = PHYSICS.JUMP_BUFFER_TIME;
-  }
-  player.jumpBufferTimer -= delta;
-  player.jumpHeld = keys.space;
-
-  // --- Execute jump ---
-  const canJump = player.isGrounded || player.coyoteTimer > 0;
-  if (canJump && player.jumpBufferTimer > 0 && !player.isJumping) {
-    playerVelocity.y = jumpForce;
-    player.isJumping = true;
-    player.isGrounded = false;
-    player.coyoteTimer = 0;
-    player.jumpBufferTimer = 0;
-    playJumpSound();
-  }
-
-  // --- Apply velocity ---
-  player.mesh.position.x += playerVelocity.x * delta;
-  player.mesh.position.y += playerVelocity.y * delta;
-  player.mesh.position.z += playerVelocity.z * delta;
-
-  // --- Face movement direction ---
-  const hSpeed = Math.sqrt(playerVelocity.x ** 2 + playerVelocity.z ** 2);
-  if (hSpeed > 0.5) {
-    const targetYaw = Math.atan2(playerVelocity.x, playerVelocity.z);
-    player.mesh.rotation.y += shortAngleDist(player.mesh.rotation.y, targetYaw) * Math.min(1, 15 * delta);
-  }
-
-  // Reset before this frame's collision detection
-  player.isGrounded = false;
-
-  // --- Ground collision ---
-  const phase = state.gameState.phase;
-  const inSafePhase = phase === 'lobby' || phase === 'building' || phase === 'countdown' || phase === 'ended';
-  const invulnerable = Date.now() < death.respawnInvulnUntil;
-  // All floors act solid during safe phases so players don't fall through
-  const hasFloor = floor.currentType === 'solid' || inSafePhase;
-
-  if (hasFloor) {
-    if (player.mesh.position.y < GROUND_Y) {
-      player.mesh.position.y = GROUND_Y;
-      playerVelocity.y = 0;
-      player.isGrounded = true;
-      player.isJumping = false;
-    }
-  } else if (floor.currentType === 'none') {
-    if (player.mesh.position.y < ABYSS_DEATH_Y && !invulnerable) {
-      playerDie();
-    }
-  } else if (floor.currentType === 'lava') {
-    if (player.mesh.position.y < LAVA_DEATH_Y && !invulnerable) {
-      spawnParticles(player.mesh.position, '#ff4500', 20, 6);
-      spawnParticles(player.mesh.position, '#ffaa00', 10, 4);
-      playerDie();
-    }
-  }
-  // Hazard plane death (rising lava/water)
-  if (hazardPlaneState.active && phase === 'playing' && player.mesh.position.y < hazardPlaneState.height && !invulnerable) {
-    spawnParticles(player.mesh.position, hazardPlaneState.type === 'lava' ? '#ff4500' : '#3498db', 20, 6);
-    playerDie();
-  }
-  // Void death (Y < -50) stays always active as ultimate safety net
-  if (player.mesh.position.y < VOID_DEATH_Y && !invulnerable) {
-    playerDie();
-  }
-
-  cameraController.updateCamera();
-
-  // Send position to server (throttled)
-  const now = performance.now();
-  if (now - network.lastMoveTime >= MOVE_INTERVAL) {
-    network.lastMoveTime = now;
-    sendToServer('move', {
-      position: player.mesh.position.toArray(),
-      velocity: playerVelocity.toArray()
-    });
-  }
-}
-
-// ============================================
-// Input
-// ============================================
 
 // ============================================
 // Chat System
@@ -954,7 +273,6 @@ function showAgentThinking() {
   agentThinkingEl.innerHTML = '<span class="text" style="opacity:0.6;font-style:italic">Magician is thinking...</span>';
   container.appendChild(agentThinkingEl);
   container.scrollTop = container.scrollHeight;
-  // Auto-remove after 30s if agent doesn't respond
   agentThinkingTimeout = setTimeout(removeAgentThinking, 30000);
 }
 
@@ -1062,186 +380,6 @@ function updateLeaderboardUI(leaderboard) {
 
     row.append(rank, name, wins, games);
     entries.appendChild(row);
-  }
-}
-
-// ============================================
-// Remote Player Rendering (with interpolation)
-// ============================================
-
-function createRemotePlayerMesh(player) {
-  const hue = Math.random();
-  const color = new THREE.Color().setHSL(hue, 0.7, 0.5);
-  const mesh = createRemotePlayerCharacter(color);
-
-  // Add name label
-  mesh.add(createNameSprite(player.name));
-
-  mesh.userData.playerName = player.name || 'Player';
-
-  // Initialize interpolation target
-  mesh.userData.targetPosition = new THREE.Vector3();
-  if (player.position) {
-    mesh.userData.targetPosition.set(...player.position);
-    mesh.position.set(...player.position);
-  }
-
-  return mesh;
-}
-
-function createNameSprite(name) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.fillRect(0, 0, 256, 64);
-  ctx.fillStyle = 'white';
-  ctx.font = 'bold 24px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(name || 'Player', 128, 40);
-  const texture = new THREE.CanvasTexture(canvas);
-  const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-  const sprite = new THREE.Sprite(spriteMaterial);
-  sprite.scale.set(3, 0.75, 1);
-  sprite.position.y = 2;
-  sprite.userData.isNameSprite = true;
-  return sprite;
-}
-
-function rebuildNameSprite(mesh, name) {
-  // Remove old name sprite
-  const old = mesh.children.find(c => c.userData.isNameSprite);
-  if (old) {
-    if (old.material?.map) old.material.map.dispose();
-    if (old.material) old.material.dispose();
-    mesh.remove(old);
-  }
-  mesh.add(createNameSprite(name));
-  mesh.userData.playerName = name;
-}
-
-function disposeBubbleSprite(mesh, sprite) {
-  if (sprite.material?.map) sprite.material.map.dispose();
-  if (sprite.material) sprite.material.dispose();
-  mesh.remove(sprite);
-}
-
-function createChatBubbleSprite(text) {
-  const MAX_CHARS = 60;
-  const FONT_SIZE = 26;
-  const FONT_FAMILY = '"Segoe UI", Arial, sans-serif';
-  const PADDING_X = 28;
-  const PADDING_Y = 12;
-  const POINTER_HEIGHT = 10;
-  const CHAT_DURATION = 5000;
-  const SPRITE_SCALE = 4;
-  const SPRITE_HEIGHT = 2.8;
-  const RENDER_ORDER = 999;
-
-  const display = text.length > MAX_CHARS ? text.slice(0, MAX_CHARS - 1) + '\u2026' : text;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d');
-
-  const fontStr = `bold ${FONT_SIZE}px ${FONT_FAMILY}`;
-  ctx.font = fontStr;
-  const textWidth = ctx.measureText(display).width;
-
-  const bubbleW = Math.min(canvas.width - 4, textWidth + PADDING_X * 2);
-  const bubbleH = FONT_SIZE + PADDING_Y * 2;
-  const borderRadius = bubbleH / 2;
-  const left = (canvas.width - bubbleW) / 2;
-  const top = (canvas.height - POINTER_HEIGHT - bubbleH) / 2;
-  const centerX = canvas.width / 2;
-
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-  ctx.beginPath();
-  ctx.moveTo(left + borderRadius, top);
-  ctx.lineTo(left + bubbleW - borderRadius, top);
-  ctx.arcTo(left + bubbleW, top, left + bubbleW, top + borderRadius, borderRadius);
-  ctx.lineTo(left + bubbleW, top + bubbleH - borderRadius);
-  ctx.arcTo(left + bubbleW, top + bubbleH, left + bubbleW - borderRadius, top + bubbleH, borderRadius);
-  ctx.lineTo(centerX + 8, top + bubbleH);
-  ctx.lineTo(centerX, top + bubbleH + POINTER_HEIGHT);
-  ctx.lineTo(centerX - 8, top + bubbleH);
-  ctx.lineTo(left + borderRadius, top + bubbleH);
-  ctx.arcTo(left, top + bubbleH, left, top + bubbleH - borderRadius, borderRadius);
-  ctx.lineTo(left, top + borderRadius);
-  ctx.arcTo(left, top, left + borderRadius, top, borderRadius);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(display, centerX, top + bubbleH / 2);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
-  const sprite = new THREE.Sprite(material);
-  sprite.scale.set(SPRITE_SCALE, 1, 1);
-  sprite.position.y = SPRITE_HEIGHT;
-  sprite.userData.isChatBubble = true;
-  sprite.userData.chatExpiry = Date.now() + CHAT_DURATION;
-  sprite.renderOrder = RENDER_ORDER;
-  return sprite;
-}
-
-function showChatBubble(senderId, text) {
-  const isLocalPlayer = state.room && senderId === state.room.sessionId;
-  const mesh = isLocalPlayer ? player.mesh : remotePlayers.get(senderId);
-  if (!mesh) return;
-
-  const existing = mesh.children.find(c => c.userData.isChatBubble);
-  if (existing) disposeBubbleSprite(mesh, existing);
-
-  mesh.add(createChatBubbleSprite(text));
-}
-
-function updateChatBubbles() {
-  const now = Date.now();
-  const meshes = [player.mesh, ...remotePlayers.values()];
-  for (const mesh of meshes) {
-    if (!mesh) continue;
-    const bubble = mesh.children.find(c => c.userData.isChatBubble);
-    if (!bubble) continue;
-    const remaining = bubble.userData.chatExpiry - now;
-    if (remaining <= 0) {
-      disposeBubbleSprite(mesh, bubble);
-    } else if (remaining < 500) {
-      bubble.material.opacity = remaining / 500;
-    }
-  }
-}
-
-function updateRemotePlayer(player) {
-  let mesh = remotePlayers.get(player.id);
-
-  if (!mesh) {
-    mesh = createRemotePlayerMesh(player);
-    remotePlayers.set(player.id, mesh);
-    scene.add(mesh);
-  } else if (player.name && mesh.userData.playerName !== player.name) {
-    rebuildNameSprite(mesh, player.name);
-  }
-
-  if (player.position) {
-    // Set target for interpolation (don't snap)
-    mesh.userData.targetPosition.set(...player.position);
-  }
-}
-
-function removeRemotePlayer(id) {
-  const mesh = remotePlayers.get(id);
-  if (mesh) {
-    scene.remove(mesh);
-    mesh.geometry.dispose();
-    mesh.material.dispose();
-    remotePlayers.delete(id);
-    console.log(`[Remote] Removed player: ${id}`);
   }
 }
 
@@ -1838,22 +976,7 @@ async function connectToServer() {
     // Clean world on lobby transition — remove all entity meshes
     room.onMessage('world_cleared', () => {
       console.log('[Event] World cleared — removing all entities');
-      for (const mesh of entityMeshes.values()) {
-        scene.remove(mesh);
-        mesh.traverse((child) => {
-          if (child.geometry) child.geometry.dispose();
-          if (child.material) child.material.dispose();
-        });
-      }
-      entityMeshes.clear();
-      state.entities.clear();
-      // Clear group tracking
-      for (const group of groupParents.values()) scene.remove(group);
-      groupParents.clear();
-      entityToGroup.clear();
-      for (const tid of pendingGroups.values()) clearTimeout(tid);
-      pendingGroups.clear();
-      // Reset hazard plane
+      clearAllEntities();
       hazardPlaneMesh.visible = false;
       Object.assign(hazardPlaneState, { active: false, type: 'lava', height: -10 });
       updateUI();
@@ -2023,98 +1146,9 @@ function animate() {
     updateSquashStretch(player.mesh, playerVelocity.y, player.isGrounded);
   }
 
-  for (const [, mesh] of remotePlayers) {
-    if (mesh.userData.targetPosition) {
-      const dx = mesh.userData.targetPosition.x - mesh.position.x;
-      const dz = mesh.userData.targetPosition.z - mesh.position.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist > 0.05) {
-        const targetYaw = Math.atan2(dx, dz);
-        mesh.rotation.y += shortAngleDist(mesh.rotation.y, targetYaw) * 0.15;
-      }
-      mesh.position.lerp(mesh.userData.targetPosition, 0.15);
-    }
-  }
-
-  for (const [, group] of groupParents) {
-    if (group.userData.targetPosition) {
-      trackLastPosition(group);
-      group.position.lerp(group.userData.targetPosition, 0.2);
-    }
-    if (group.userData.rotating) {
-      group.rotation.y += (group.userData.speed || 1) * delta;
-    } else {
-      const props = group.userData.entity?.properties;
-      // Face movement direction for chase/patrol groups
-      if (props?._facing !== undefined) {
-        group.rotation.y += shortAngleDist(group.rotation.y, props._facing) * 0.12;
-      }
-      // Bob for floating/flying groups
-      if (props?.isFloating) {
-        const baseY = group.userData.targetPosition
-          ? group.userData.targetPosition.y
-          : group.position.y;
-        group.position.y = baseY + Math.sin(Date.now() * 0.002) * 0.4;
-      }
-    }
-  }
-
-  for (const [, mesh] of entityMeshes) {
-    const isGrouped = mesh.parent && mesh.parent !== scene;
-    const entity = mesh.userData.entity;
-    const eType = entity?.type;
-    const eProps = entity?.properties;
-
-    if (eProps?.kinematic && !isGrouped) {
-      trackLastPosition(mesh);
-      if (mesh.userData.targetPosition) {
-        mesh.position.lerp(mesh.userData.targetPosition, 0.2);
-      }
-    }
-
-    if (mesh.userData.rotating && !isGrouped) {
-      mesh.rotation.y += mesh.userData.speed * delta;
-    }
-
-    if (mesh.userData.cracking) {
-      const elapsed = (Date.now() - mesh.userData.crackStart) / 1000;
-      mesh.position.x += (Math.random() - 0.5) * 0.04;
-      mesh.position.z += (Math.random() - 0.5) * 0.04;
-      if (mesh.material) {
-        mesh.material.transparent = true;
-        mesh.material.opacity = Math.max(0.2, 1 - elapsed * 1.5);
-      }
-    }
-
-    // ─── Entity idle animations ─────────────────────────
-    if (eType === 'collectible') {
-      const baseY = entity.position[1];
-      mesh.rotation.y += delta;
-      mesh.position.y = baseY + Math.sin(time * 1.5 + mesh.id * 0.7) * 0.15;
-      const glow = mesh.children[0];
-      if (glow?.material) {
-        glow.material.opacity = 0.15 + Math.sin(time * 2.5) * 0.12;
-      }
-    } else if (eType === 'obstacle' && !isGrouped) {
-      if (mesh.material?.emissiveIntensity !== undefined) {
-        mesh.material.emissiveIntensity = 0.3 + Math.sin(time * 0.8 + mesh.id * 1.1) * 0.2;
-      }
-      const pulse = 1 + Math.sin(time * 1.6 + mesh.id * 0.5) * 0.02;
-      mesh.scale.set(pulse, pulse, pulse);
-    } else if (eType === 'decoration' && !isGrouped && !mesh.userData.rotating) {
-      mesh.rotation.y += 0.3 * delta;
-      if (eProps?.emissive && mesh.material?.emissiveIntensity !== undefined) {
-        mesh.material.emissiveIntensity = 0.5 + Math.sin(time * 4 + mesh.id * 2.3) * 0.2 + Math.sin(time * 7) * 0.1;
-      }
-    } else if (eType === 'trigger' && eProps?.isGoal && !isGrouped) {
-      mesh.rotation.y += 1.5 * delta;
-      const pulse = 1 + Math.sin(time * 2) * 0.05;
-      mesh.scale.set(pulse, pulse, pulse);
-      if (mesh.material?.emissiveIntensity !== undefined) {
-        mesh.material.emissiveIntensity = 0.5 + Math.sin(time * 3) * 0.25;
-      }
-    }
-  }
+  interpolateRemotePlayers();
+  animateGroups(delta);
+  animateEntities(delta, time);
 
   if (lavaFloor.visible) {
     lavaFloor.position.y = -0.5 + Math.sin(time * 1.0) * 0.1;

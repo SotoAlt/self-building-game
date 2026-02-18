@@ -2,6 +2,16 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.42.0] - 2026-02-18
+
+### Changed
+- **Architecture: Chunk 3 — Client Entity & Physics System** — zero behavioral changes, pure extraction
+  - `src/client/entities/EntityFactory.js` (NEW) — pure factory functions: `createBeveledBox()`, `getGeometry()`, `createEntityMesh()`
+  - `src/client/entities/EntityManager.js` (NEW) — entity lifecycle, group assembly, per-frame entity/group animations
+  - `src/client/physics/PhysicsEngine.js` (NEW) — player physics, AABB collision, death/respawn, triggers, pre-allocated Vector3s
+  - `src/client/rendering/RemotePlayers.js` (NEW) — remote player meshes, name sprites, chat bubbles, interpolation
+  - `src/client/main.js` — removed ~950 lines of extracted code, added module init calls
+
 ## [0.41.0] - 2026-02-18
 
 ### Changed
