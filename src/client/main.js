@@ -19,10 +19,9 @@ import {
   getEmbeddedWalletProvider, getEmbeddedWalletAddress, exportWallet
 } from './auth.js';
 import {
-  TREASURY_ADDRESS, isLocalhost, SERVER_URL, API_URL, urlParams, isSpectator, isDebug,
+  TREASURY_ADDRESS, SERVER_URL, API_URL, urlParams, isSpectator, isDebug,
   selectedArenaId, setSelectedArenaId, getApiBase, isMobile, PHYSICS,
-  MIN_PITCH, MAX_PITCH, MIN_DISTANCE, MAX_DISTANCE, SPEC_FLY_SPEED, SPEC_FAST_SPEED,
-  MOVE_INTERVAL, MAX_RECONNECT_ATTEMPTS, JOYSTICK_RADIUS,
+  MOVE_INTERVAL, MAX_RECONNECT_ATTEMPTS,
   GROUND_Y, ABYSS_DEATH_Y, LAVA_DEATH_Y, VOID_DEATH_Y, DEATH_COOLDOWN,
   MAX_VISIBLE_ANNOUNCEMENTS
 } from './config.js';
