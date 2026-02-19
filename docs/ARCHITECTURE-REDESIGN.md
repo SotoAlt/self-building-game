@@ -1,8 +1,8 @@
 # Chaos Arena: Complete Architecture Redesign Plan
 
-> **Status**: Documentation complete. Implementation starts in a future session.
-> **Version**: v0.38.0 baseline
-> **Date**: February 17, 2026
+> **Status**: Chunks 1-5 COMPLETE. Next: Chunk 6 (WorldState decomposition) or Chunk 7 (shared code).
+> **Version**: v0.46.0 (was v0.38.0 baseline)
+> **Date**: February 17-18, 2026
 
 ## Executive Summary
 
@@ -18,20 +18,20 @@
 
 ## Codebase Health Snapshot
 
-| Metric | Current | Target |
-|--------|---------|--------|
-| Largest server file | 1,808 lines (index.js) | ~200 lines |
-| Largest client file | 4,018 lines (main.js) | ~150 lines |
-| Server modules | 15 files | 40+ focused files |
-| Client modules | 11 files | 35+ focused files |
-| Collision detection | O(n) brute force | O(1) spatial hash |
-| Per-frame allocations | ~6 Vector3/frame | 0 (pre-allocated) |
-| Object pooling | None | Particles, meshes |
-| Colyseus state sync | Manual broadcasts (50+ message types) | Schema delta sync (deferred) |
-| Mobile optimization | Basic (pixelRatio cap) | Adaptive quality tiers |
-| Input abstraction | None (raw keys + touch) | Unified action map |
-| Reconnection | 5 retries, flat 2s delay | Exponential backoff, state restore |
-| CSS | 1,570 lines inline in HTML | 15 modular CSS files |
+| Metric | Baseline (v0.38) | Current (v0.46) | Target |
+|--------|-----------------|-----------------|--------|
+| Largest server file | 1,808 lines (index.js) | 313 lines (index.js) ✅ | ~200 lines |
+| Largest client file | 4,018 lines (main.js) | 293 lines (main.js) ✅ | ~150 lines |
+| Server modules | 15 files | 27 files | 40+ focused files |
+| Client modules | 11 files | 35+ files ✅ | 35+ focused files |
+| Collision detection | O(n) brute force | O(n) brute force | O(1) spatial hash |
+| Per-frame allocations | ~6 Vector3/frame | 0 (pre-allocated) ✅ | 0 (pre-allocated) |
+| Object pooling | None | None | Particles, meshes |
+| Colyseus state sync | Manual broadcasts | Manual broadcasts | Schema delta sync (deferred) |
+| Mobile optimization | Basic (pixelRatio cap) | Basic (pixelRatio cap) | Adaptive quality tiers |
+| Input abstraction | None (raw keys + touch) | Unified action map ✅ | Unified action map |
+| Reconnection | 5 retries, flat 2s delay | Exponential backoff ✅ | Exponential backoff, state restore |
+| CSS | 1,570 lines inline in HTML | 2 modular CSS files ✅ | Modular CSS files |
 
 ---
 
