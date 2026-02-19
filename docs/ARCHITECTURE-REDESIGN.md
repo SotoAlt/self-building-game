@@ -1,7 +1,7 @@
 # Chaos Arena: Complete Architecture Redesign Plan
 
-> **Status**: Chunks 1-5 COMPLETE. Next: Chunk 6 (WorldState decomposition) or Chunk 7 (shared code).
-> **Version**: v0.46.0 (was v0.38.0 baseline)
+> **Status**: Chunks 1-6 COMPLETE. Next: Chunk 7 (shared code & cross-device) or Chunk 9 (performance).
+> **Version**: v0.48.0 (was v0.38.0 baseline)
 > **Date**: February 17-18, 2026
 
 ## Executive Summary
@@ -18,11 +18,11 @@
 
 ## Codebase Health Snapshot
 
-| Metric | Baseline (v0.38) | Current (v0.46) | Target |
+| Metric | Baseline (v0.38) | Current (v0.48) | Target |
 |--------|-----------------|-----------------|--------|
 | Largest server file | 1,808 lines (index.js) | 313 lines (index.js) ✅ | ~200 lines |
 | Largest client file | 4,018 lines (main.js) | 293 lines (main.js) ✅ | ~150 lines |
-| Server modules | 15 files | 27 files | 40+ focused files |
+| Server modules | 15 files | 36 files | 40+ focused files |
 | Client modules | 11 files | 35+ files ✅ | 35+ focused files |
 | Collision detection | O(n) brute force | O(n) brute force | O(1) spatial hash |
 | Per-frame allocations | ~6 Vector3/frame | 0 (pre-allocated) ✅ | 0 (pre-allocated) |
@@ -230,32 +230,29 @@ Each route file exports `mountXxxRoutes(router, ctx)` where `ctx` is a dependenc
 
 ---
 
-## CHUNK 6: Server WorldState Decomposition (Medium-High Risk)
+## CHUNK 6: Server WorldState Decomposition ✅ COMPLETE (Feb 18, 2026)
+
+> Split WorldState.js (1,058 lines) into 8 focused managers in `src/server/managers/` + facade (280 lines). Managers use `managers/` directory (not `state/` as originally planned). Cross-manager wiring via constructor callbacks — managers never import each other. Zero consumer file changes.
 
 ### Phase 6: Split WorldState into Sub-Managers
 
-**Files to create** (under `src/server/state/`):
+**Files created** (under `src/server/managers/`):
 
-| Manager | Extracted from WorldState | Approx Lines |
-|---------|--------------------------|-------------|
-| `EntityManager.js` | entities Map, spawnEntity, modifyEntity, destroyEntity, clearEntities, group ops, breakable platforms, kinematic/chase updates | ~350 |
-| `PlayerManager.js` | players Map, add/update/remove, AFK tracking, spectator activation, `getActiveHumanCount()` | ~150 |
-| `GameStateMachine.js` | phase transitions, startGame/endGame, resetGameState, cooldowns, timers, gameHistory | ~180 |
-| `EnvironmentManager.js` | physics, floor, environment, hazard plane, respawn point | ~150 |
-| `SpellManager.js` | castSpell, cooldowns, activeEffects, SPELL_TYPES | ~80 |
-| `ChatManager.js` | messages, announcements, events, counters | ~100 |
-| `LeaderboardManager.js` | leaderboard Map, recordGameResult, DB sync | ~60 |
+| Manager | Lines | Content |
+|---------|-------|---------|
+| `EntityManager.js` | 266 | Entities, breakable platforms, kinematic/chase updates, groups, `DEFAULT_COLORS` derived `VALID_ENTITY_TYPES` |
+| `GameStateMachine.js` | 174 | Phase lifecycle, timers, game history, `createLobbyState()` factory |
+| `EnvironmentManager.js` | 150 | Physics, floor, environment, hazard plane, respawn, hoisted validation constants |
+| `PlayerManager.js` | 116 | Players, AFK detection, spectator activation |
+| `ChatManager.js` | 68 | Messages, announcements, events |
+| `ChallengeManager.js` | 65 | Challenges, statistics |
+| `SpellManager.js` | 60 | Spell casting, cooldowns, active effects |
+| `LeaderboardManager.js` | 54 | Scores, DB sync |
+| `index.js` | 8 | Barrel re-export |
 
-**WorldState.js becomes a facade** (~200 lines): composes all managers, exposes identical public API via delegation. `this.entities` and `this.players` remain direct references to the sub-manager Maps for backward compatibility.
+**WorldState.js** (280 lines): facade with property getters/setters, ~40 one-liner delegations, orchestrated `clearEntities()` (entity + env + spell reset), `updateChasingEntities()` bridge (collects alive positions from PlayerManager), composite `statistics` getter.
 
-**Critical**: Cross-manager wiring via callbacks (not imports) to avoid circular deps:
-
-```js
-entityMgr.setPlayerPositionProvider(() => playerMgr.getAlivePositions());
-gameStateMachine.setEntityClearer(() => entityMgr.clearEntities());
-```
-
-**Verification**: Full game cycle (join -> lobby -> countdown -> play -> death -> respawn -> game end -> lobby), agent context endpoint, spell casting, AFK detection.
+**Verification**: Build passes, 15+ API endpoints return correct data, static constants (`WorldState.SPELL_TYPES`, etc.) resolve, `gameState` direct mutation works (live reference passthrough), full game cycle on production.
 
 ---
 
@@ -419,7 +416,7 @@ src/
       AIPlayerService.js        # spawn/despawn AI players
       ArenaCallbackService.js   # setupArenaCallbacks
       TickService.js            # 100ms tick loop
-    state/
+    managers/
       EntityManager.js          # Entities, groups, breakable platforms
       PlayerManager.js          # Players, AFK, spectators
       GameStateMachine.js       # Phase transitions, timers
@@ -427,6 +424,8 @@ src/
       SpellManager.js           # Spells, cooldowns, effects
       ChatManager.js            # Messages, announcements
       LeaderboardManager.js     # Scores, DB sync
+      ChallengeManager.js       # Challenges, statistics
+      index.js                  # Barrel re-export
     validation/
       schemas.js                # Input validation
     games/                      # 6 game types (unchanged)

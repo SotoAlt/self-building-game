@@ -2,6 +2,21 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.48.0] - 2026-02-18
+
+### Changed
+- **Architecture: Chunk 6 — WorldState Decomposition** — zero consumer changes, facade preserves identical API
+  - `src/server/managers/EntityManager.js` (NEW, 266 lines) — entities, breakable platforms, kinematic/chase updates, groups
+  - `src/server/managers/PlayerManager.js` (NEW, 116 lines) — players, AFK detection, spectator activation
+  - `src/server/managers/GameStateMachine.js` (NEW, 174 lines) — phase lifecycle, timers, game history, variety tracking
+  - `src/server/managers/EnvironmentManager.js` (NEW, 150 lines) — physics, floor, environment, hazard plane, respawn
+  - `src/server/managers/SpellManager.js` (NEW, 60 lines) — spell casting, cooldowns, active effects
+  - `src/server/managers/ChatManager.js` (NEW, 68 lines) — messages, announcements, events
+  - `src/server/managers/LeaderboardManager.js` (NEW, 54 lines) — scores, DB sync
+  - `src/server/managers/ChallengeManager.js` (NEW, 65 lines) — challenges, statistics
+  - `src/server/managers/index.js` (NEW) — barrel re-export
+  - `src/server/WorldState.js` — rewritten as facade: 1,058 → 280 lines (73% reduction), delegates to 8 managers via callbacks
+
 ## [0.46.0] - 2026-02-18
 
 ### Changed
