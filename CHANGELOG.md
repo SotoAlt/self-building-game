@@ -2,6 +2,35 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.50.0] - 2026-02-19
+
+### Added
+- **Shared constants** (`src/shared/constants.js`) — single source of truth for entity types, game types, spell types/cooldown, floor types, default physics, and default environment. Imported by both server managers and client modules.
+- **Adaptive quality tiers** — 4 tiers (ultra/high/medium/low) with bidirectional FPS scaling in `PostProcessing.js`
+  - Degrade: <30fps sustained for 3s drops one tier
+  - Recover: >55fps sustained for 15s raises one tier (capped by `maxTier`)
+  - Hardware detection: mobile capped at `medium`, desktop auto-selects by core count + screen resolution
+  - Shadow control: 2048px (ultra), 1024px (high), off (medium/low) with proper shadow map disposal
+  - Exports: `getParticleBudget()`, `getCurrentTier()`, `setMaxTier()`
+- **Reconnection with exponential backoff** — 1s→2s→4s→8s→16s→30s cap, max 10 attempts
+  - Token-based `client.reconnect()` tried first, fresh `joinOrCreate` fallback
+  - Full-screen reconnecting overlay with spinner and attempt count
+  - "Connection Lost" screen with reload button after max attempts
+- **Server-side reconnection grace period** — `allowReconnection(client, 20)` holds player slot for 20s on unexpected disconnect
+  - Player state preserved during grace period
+  - `player_temporarily_left` / `player_reconnected` broadcasts for remote player mesh greying
+  - AFK checks skip players in reconnection grace period
+
+### Changed
+- Server managers (`EntityManager`, `GameStateMachine`, `SpellManager`, `EnvironmentManager`) now import from `src/shared/constants.js` and re-export on static properties
+- Client `PhysicsEngine.js` uses `ENTITY_TYPES`, `SPELL`, `FLOOR_TYPES`, `DEFAULT_SERVER_PHYSICS` instead of hardcoded strings
+- Client `MessageHandlers.js` uses `GAME_TYPES.KING` and `SPELL.*` constants for vignette/scale lookups
+- Client `state.js` uses `DEFAULT_SERVER_PHYSICS` spread for initial physics
+- `config.js`: `MAX_RECONNECT_ATTEMPTS` raised from 5 to 10, added `RECONNECT_BASE_DELAY` and `RECONNECT_MAX_DELAY`
+- `NetworkManager.js` rewritten with exponential backoff and token-based reconnect
+- `GameRoom.onLeave()` now async with `consented` parameter — clean leaves remove immediately, unexpected leaves get 20s grace
+- Backup HTTP polling now conditional (only when disconnected) and interval raised to 10s
+
 ## [0.48.0] - 2026-02-18
 
 ### Changed

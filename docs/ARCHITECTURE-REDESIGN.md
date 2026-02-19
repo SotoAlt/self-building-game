@@ -1,8 +1,8 @@
 # Chaos Arena: Complete Architecture Redesign Plan
 
-> **Status**: Chunks 1-6 COMPLETE. Next: Chunk 7 (shared code & cross-device) or Chunk 9 (performance).
-> **Version**: v0.48.0 (was v0.38.0 baseline)
-> **Date**: February 17-18, 2026
+> **Status**: Chunks 1-7 COMPLETE. Next: Chunk 9 (performance optimization). Chunk 8 (Schema) deferred.
+> **Version**: v0.50.0 (was v0.38.0 baseline)
+> **Date**: February 17-19, 2026
 
 ## Executive Summary
 
@@ -28,9 +28,9 @@
 | Per-frame allocations | ~6 Vector3/frame | 0 (pre-allocated) ✅ | 0 (pre-allocated) |
 | Object pooling | None | None | Particles, meshes |
 | Colyseus state sync | Manual broadcasts | Manual broadcasts | Schema delta sync (deferred) |
-| Mobile optimization | Basic (pixelRatio cap) | Basic (pixelRatio cap) | Adaptive quality tiers |
+| Mobile optimization | Basic (pixelRatio cap) | 4-tier adaptive quality ✅ | Adaptive quality tiers |
 | Input abstraction | None (raw keys + touch) | Unified action map ✅ | Unified action map |
-| Reconnection | 5 retries, flat 2s delay | Exponential backoff ✅ | Exponential backoff, state restore |
+| Reconnection | 5 retries, flat 2s delay | Exponential backoff + 20s grace ✅ | Exponential backoff, state restore |
 | CSS | 1,570 lines inline in HTML | 2 modular CSS files ✅ | Modular CSS files |
 
 ---
@@ -256,34 +256,39 @@ Each route file exports `mountXxxRoutes(router, ctx)` where `ctx` is a dependenc
 
 ---
 
-## CHUNK 7: Shared Code & Cross-Device (Medium Risk)
+## CHUNK 7: Shared Code & Cross-Device ✅ COMPLETE (Feb 19, 2026)
+
+> Created `src/shared/constants.js` as single source of truth imported by both server managers (re-exported on static properties) and client modules (replacing hardcoded string literals). Rewrote `PostProcessing.js` with 4 adaptive quality tiers, bidirectional FPS scaling, hardware detection, and shadow control. Implemented exponential backoff reconnection with 20s server-side grace period via `allowReconnection()`.
 
 ### Phase 7A: Shared Constants
 
-**Files to create:**
-
-- `src/shared/constants.js` — physics values (gravity -76.5, jump 26.5, speeds), entity types, game types, spell types. Used by both client and server to ensure identical behavior.
+- `src/shared/constants.js` (NEW) — `ENTITY_TYPES`, `GAME_TYPES`, `SPELL`/`SPELL_TYPES`/`SPELL_COOLDOWN`, `FLOOR_TYPES`, `DEFAULT_SERVER_PHYSICS`, `DEFAULT_ENVIRONMENT`, `DEFAULT_ENTITY_COLORS`, `MAX_ENTITIES`
+- Server managers import + re-export on static properties (zero consumer changes)
+- Client replaces hardcoded string literals in `PhysicsEngine.js`, `MessageHandlers.js`, `state.js`
 
 ### Phase 7B: Adaptive Quality Tiers
 
-Enhancement to `QualityManager.js`:
+`PostProcessing.js` rewritten with 4 tiers, bidirectional scaling, hardware detection:
 
-| Tier | pixelRatio | Shadows | Post-Processing | Particles/Burst |
-|------|-----------|---------|----------------|-----------------|
-| ultra | 2.0 | 2048 | Full | 20 |
-| high | 1.5 | 1024 | Bloom only | 15 |
-| medium | 1.25 | Off | FXAA only | 10 |
-| low | 1.0 | Off | Off | 5 |
+| Tier | pixelRatio | Shadows | Outline | Bloom | FXAA | Particles |
+|------|-----------|---------|---------|-------|------|-----------|
+| ultra | 2.0 | 2048 | yes | yes | yes | 20 |
+| high | 1.5 | 1024 | no | yes | yes | 15 |
+| medium | 1.25 | off | no | no | yes | 10 |
+| low | 1.0 | off | no | no | no | 5 |
 
-- Device detection: `navigator.hardwareConcurrency`, screen size, `navigator.gpu`
-- Mobile auto-caps at `medium`
-- FPS monitoring: degrade at <30fps (3s sustained), recover at >55fps (15s sustained)
+- `detectInitialTier()`: mobile capped at `medium`, desktop by core count + screen pixels
+- Degrade at <30fps (3s sustained), recover at >55fps (15s sustained)
+- Shadow map disposal on tier transitions
 
 ### Phase 7C: Reconnection Improvements
 
-- Colyseus `allowReconnection(client, 20)` in `GameRoom.onLeave()` for 20s window
-- Client: exponential backoff (1s, 2s, 4s... 30s max), "Reconnecting..." overlay, state restore on rejoin
-- Conditional backup polling (only when WS disconnected)
+- `NetworkManager.js` rewritten: exponential backoff 1s→2s→4s→8s→16s→30s, max 10 attempts
+- `GameRoom.onLeave()` async with `consented` — 20s `allowReconnection()` grace period
+- Token reconnect first, fresh `joinOrCreate` fallback
+- Reconnecting overlay (spinner + attempt count) and "Connection Lost" reload screen
+- Remote players grey out during temporary disconnect, restore on reconnect
+- AFK checks skip players in reconnection grace period
 
 ---
 
