@@ -1,65 +1,32 @@
-# Self-Building Game: The Chaos Magician
+# Self-Building Game: The Chaos Arena
 
-An AI agent builds a 3D multiplayer game in real-time while players play and audiences watch.
+An AI agent ("Chaos Magician") builds a 3D multiplayer game in real-time while players play and audiences watch via livestream.
 
-**Track**: Gaming Arena Agent Bounty | **Stack**: Three.js + Colyseus + OpenClaw
+**Live**: [chaos.waweapps.win](https://chaos.waweapps.win) | **Track**: Gaming Arena Agent Bounty
 
 ---
 
-## What It Does
+## How It Works
 
-- An AI "Chaos Magician" (chaos magic apprentice) controls the game world — composing platforms, obstacles, creatures, and decorations with 23 shapes and 16 geometry templates
-- Players join via browser and navigate the 3D world with WASD + jump controls (mobile touch supported)
-- The agent runs 6 mini-game types (reach, collect, survival, king of the hill, hot potato, race) across 16 arena templates with randomized parameters and Fall Guys-style obstacles
-- Players chat with the agent using @agent mentions — the agent twists requests chaotically instead of obeying
-- 6 entity types (platform, ramp, collectible, obstacle, trigger, decoration) with 8 shape properties + 16 geometry templates
-- Compose system: agent generates multi-entity recipes (dragons, spiders, forests) cached to disk for instant re-spawning
-- Fall Guys-style countdown: players teleport to start, move freely during 3-2-1
-- Mid-game joiners become spectators until the next round
-- Agent greets new players by name within 3-15s
-- Chat bridge connects Twitch, Discord, and Telegram — audiences interact with the agent across platforms
-- Cel-shaded toon rendering with post-processing outlines, procedural textures, and environment effects
-
-## Architecture
-
-```
-Browser (Three.js + Colyseus WebSocket)
-    |
-    | nginx reverse proxy (SSL + WebSocket + SSE)
-    |
-Game Server (Express + Colyseus, port 3000)
-    |           |            |
-    | HTTP API  | PostgreSQL | SSE Event Stream
-    |           |            |
-OpenClaw Agent (Chaos Magician)
-    |
-    | AgentLoop.js (in-server, drama-based scheduling)
-    |
-Claude (Anthropic) via OpenClaw Gateway
-```
-
-**Game Server** hosts the world state, player sync, mini-game engine, and 50+ HTTP API endpoints.
-**Browser Client** renders the 3D world with Three.js and connects via WebSocket. Mobile touch controls supported.
-**agent-runner.js** runs on the host (not in Docker), calculates drama score, detects session phases, and invokes the AI agent every 2s ticks (async, non-blocking) with 15-45s invoke intervals.
-**chat-bridge.js** connects Twitch, Discord, and Telegram chats — external messages appear in-game, agent responses relay back.
-**OpenClaw Gateway** manages agent sessions and routes messages to Claude (Anthropic).
-**AI Agent** (Chaos Magician) controls the game via HTTP API calls — spawning arenas, starting games, casting spells, welcoming players, and chatting.
-**PostgreSQL** persists leaderboards, game history, and user data across restarts.
-**AI Players** (Explorer Bot, Chaos Bot) provide activity when human players are scarce.
+- An AI **Chaos Magician** (powered by Claude via OpenClaw) controls the game world autonomously — composing arenas, starting games, casting spells, and reacting to player behavior
+- **Players** join via browser (desktop or mobile) and compete in 6 game types across 16 arena templates
+- The agent's **drama score** (0-100) drives how aggressively it intervenes — from chill lobby vibes to chaotic spell-flinging
+- **External audiences** on Twitch, Discord, and Telegram interact with the agent via chat bridge
+- **Multiple arenas**: any AI agent can create and host its own arena via the HTTP API
 
 ## Tech Stack
 
 | Component | Technology |
 |-----------|------------|
-| 3D Rendering | Three.js |
+| 3D Rendering | Three.js (cel-shaded toon style) |
 | Multiplayer | Colyseus (WebSocket) |
 | Server | Express + Node.js |
 | AI Agent | OpenClaw + Claude (Anthropic) |
-| Database | PostgreSQL |
-| Build Tool | Vite |
-| Deployment | Docker + docker-compose |
+| Database | PostgreSQL (with in-memory fallback) |
+| Build | Vite |
+| Deployment | Docker + nginx + Let's Encrypt |
 
-## Run Locally
+## Quick Start
 
 ```bash
 git clone https://github.com/SotoAlt/self-building-game.git
@@ -69,137 +36,107 @@ npm run dev
 ```
 
 Opens game client at `localhost:5173`, game server at `localhost:3000`.
-No PostgreSQL required for local dev (runs in-memory).
+No PostgreSQL required for local dev — the server falls back to in-memory storage.
 
-## Production Deployment
+## Production
 
-Live at **https://chaos.waweapps.win**
-
-Deployed on Hetzner (178.156.239.120) with Docker + nginx + Let's Encrypt SSL.
+Live at **https://chaos.waweapps.win** on Hetzner VPS (Docker + nginx + Let's Encrypt SSL).
 
 ```bash
-# Deploy (installs Docker if needed, syncs files, gets SSL cert, starts services)
+# Deploy
 bash deploy.sh
 
-# Check logs
+# Logs
 ssh root@178.156.239.120 'cd /opt/self-building-game && docker compose logs -f game'
 
-# Restart game server
+# Restart
 ssh root@178.156.239.120 'cd /opt/self-building-game && docker compose restart game'
-
-# Full rebuild
-ssh root@178.156.239.120 'cd /opt/self-building-game && docker compose up -d --build'
 ```
 
-Spectator mode: **https://chaos.waweapps.win/?spectator=true**
+Spectator mode: `https://chaos.waweapps.win/?spectator=true`
 
-### Local Docker
+## Architecture
+
+```
+Browser Client (Three.js + Colyseus)
+    |
+    | nginx (SSL + WebSocket + SSE)
+    |
+Game Server (Express + Colyseus, port 3000)
+    |           |            |            |
+    | HTTP API  | PostgreSQL | SSE Stream | ArenaManager
+    |           |            |            |
+    +-- Chaos Arena (agent-runner.js -> OpenClaw -> Claude)
+    +-- External Arena N (any AI agent -> HTTP API)
+```
+
+See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the full system architecture — module-by-module breakdown, data flow diagrams, and file inventory.
+
+## Project Structure
+
+```
+src/
+  server/           46 JS files (~9,000 lines)
+    index.js        Bootstrap + Colyseus setup
+    WorldState.js   Facade over 8 sub-managers
+    GameRoom.js     WebSocket handlers (50+ message types)
+    MiniGame.js     Game base class + trick system
+    AgentLoop.js    Drama score + agent scheduling
+    managers/       8 focused state managers
+    routes/         7 route files (world, game, bribe, agent, public, arena, auth)
+    services/       gameService, arenaService
+    games/          6 game types (reach, collect, survival, king, hot_potato, race)
+  client/           38 JS/JSX files (~6,500 lines)
+    main.js         Orchestrator (273 lines) — wires 34 modules
+    entities/       EntityFactory (geometry cache), EntityManager (lifecycle)
+    physics/        PhysicsEngine (AABB), SpatialHash (O(1) lookups)
+    network/        NetworkManager, MessageHandlers, HttpApi
+    rendering/      RemotePlayers (interpolation)
+    ui/             11 UI modules (HUD, chat, lobby, bribe, profile, etc.)
+    audio/          SoundManager (procedural tones)
+    vfx/            ScreenEffects (shake, flash, particles)
+  shared/           constants.js (entity types, game types, spells, physics)
+config/openclaw/    Agent skill definitions + SOUL.md personality
+agent-runner.js     Chaos arena agent loop (runs on host)
+chat-bridge.js      Twitch/Discord/Telegram bridge
+```
+
+## Game Types
+
+| Type | Description | Win Condition |
+|------|-------------|---------------|
+| `reach` | Race to a goal | First to reach goal trigger |
+| `collect` | Gather collectibles | Most collected at timeout |
+| `survival` | Stay alive | Last standing or longest alive |
+| `king` | Control hill zones | First to 30 points or highest at timeout |
+| `hot_potato` | Pass the curse | Last standing after multi-round elimination |
+| `race` | Hit checkpoints in order | First to complete all checkpoints |
+
+## Agent System
+
+- **agent-runner.js** is the sole agent system — runs on VPS host, polls game state every 2 seconds
+- Drama score (0-100) drives invoke frequency — quiet lobby = rare actions, chaotic game = every tick
+- Agent composes arenas via `POST /api/world/compose`, starts games with `POST /api/game/start`
+- Max 3 world-changing actions per invocation to prevent overwhelming players
+- Variety enforcement: bans recently played game types and templates
+- Auto-start fallback: if agent doesn't start a game within 45s, a random template auto-starts
+
+See **[docs/ARCHITECTURE.md#agent-system](docs/ARCHITECTURE.md#agent-system)** for full details.
+
+## Multi-Arena Platform
+
+Any AI agent can create and host its own arena:
 
 ```bash
-cp .env.example .env
-docker-compose up --build
+# Create arena
+curl -X POST https://chaos.waweapps.win/api/arenas \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My Arena", "description": "Custom arena"}'
+# Returns: { arenaId, apiKey }
+
+# Discover API
+curl https://chaos.waweapps.win/skill.md
 ```
-
-## Agent Capabilities (30 Tools)
-
-| Tool | Description |
-|------|-------------|
-| `compose` | Compose anything — known prefabs, cached creations, or new recipes with multi-entity groups |
-| `destroy_prefab` | Destroy all entities in a composed group |
-| `modify_entity` | Update position, size, color, movement of entities |
-| `destroy_entity` | Remove entities from the world |
-| `set_physics` | Change gravity, friction, bounce globally |
-| `get_world_state` | Read full world state |
-| `get_player_positions` | Track all player locations |
-| `create_challenge` | Create reach/collect/survive/time_trial objectives |
-| `get_challenge_status` | Check challenge progress |
-| `announce` | Send announcements to all players |
-| `start_game` | Launch a mini-game (reach, collect, survival, king, hot_potato, race) with optional template |
-| `end_game` | End current mini-game |
-| `get_game_state` | Check game phase and timer |
-| `get_game_types` | List available mini-game types |
-| `send_chat_message` | Chat with players |
-| `get_chat_messages` | Read player chat messages |
-| `cast_spell` | Cast effects (low gravity, speed boost, inverted controls, etc.) |
-| `clear_spells` | Remove all active spell effects |
-| `add_trick` | Inject tricks mid-game (time/score/death triggers) |
-| `get_context` | Unified polling: players, chat, events, game state |
-| `clear_world` | Remove all entities from the world |
-| `load_template` | Spawn a pre-built arena layout (16 templates) |
-| `set_respawn` | Set player respawn position |
-| `set_floor` | Change floor type (solid, none, lava) |
-| `set_environment` | Change sky color, fog, lighting |
-| `get_drama_score` | Check current drama level (0-100) |
-| `start_building` | Enter building phase between games |
-| `check_bribes` | View pending player bribes |
-| `honor_bribe` | Acknowledge and act on a player bribe |
-| `spawn_prefab` | **Deprecated** — redirects to compose |
-
-## API Endpoints
-
-```
-GET  /api/health              - Server health check
-GET  /api/stats               - Aggregate stats (games, players, uptime)
-GET  /api/world/state         - Full world state
-POST /api/world/compose       - Compose anything (prefabs, cached, or new recipes)
-POST /api/world/spawn         - BLOCKED — returns 400 redirecting to compose
-POST /api/world/spawn-prefab  - BLOCKED — returns 400 redirecting to compose
-POST /api/world/destroy-group - Destroy all entities in a group
-POST /api/world/modify        - Update entity
-POST /api/world/destroy       - Remove entity
-POST /api/world/floor         - Set floor type (solid/none/lava)
-POST /api/world/environment   - Change sky, fog, lighting
-POST /api/physics/set         - Change physics
-GET  /api/players             - Player positions
-POST /api/game/start          - Start mini-game (with optional template param)
-POST /api/game/end            - End current game
-POST /api/game/trick          - Add trick mid-game
-GET  /api/game/state          - Game state
-GET  /api/leaderboard         - Top 10 players
-GET  /api/chat/messages       - Chat messages
-POST /api/chat/send           - Agent sends message (3s rate limit)
-POST /api/chat/bridge         - External platform chat (Twitch/Discord/Telegram)
-POST /api/spell/cast          - Cast spell effect (playing phase only, 10s cooldown)
-POST /api/announce            - Global announcement (5s rate limit)
-GET  /api/agent/context       - Unified agent context (gameHistory, variety hints)
-POST /api/agent/pause         - Kill switch — pause agent
-POST /api/agent/resume        - Resume agent
-GET  /api/agent/status        - Agent status (phase, drama, paused)
-POST /api/bribe               - Submit bribe
-POST /api/bribe/:id/honor     - Agent honors a bribe
-GET  /api/public/state        - Public game state (no auth)
-GET  /api/public/leaderboard  - Public leaderboard
-GET  /api/public/events       - Public event polling
-GET  /api/public/stats        - Session statistics
-GET  /api/stream/events       - SSE event feed
-POST /api/webhooks/register   - Register webhook URL
-POST /api/ai-players/toggle   - Enable/disable AI bots
-```
-
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `src/server/index.js` | Express API (50+ endpoints) + Colyseus server + game loop |
-| `src/server/WorldState.js` | Source of truth: entities, players, physics, chat, leaderboard, spectator mgmt |
-| `src/server/GameRoom.js` | Colyseus room: player sync, chat, mid-game spectator detection |
-| `src/server/MiniGame.js` | Mini-game base class with trick system, random obstacles, time randomization |
-| `src/server/AgentLoop.js` | Drama score, phase tracking, player welcome system, cooldown guard |
-| `src/server/AgentBridge.js` | OpenClaw CLI bridge with welcome prompts + variety hints |
-| `src/server/Composer.js` | Compose system — recipe validation, disk cache, prefab resolution |
-| `src/server/Prefabs.js` | 23 named entity presets with behaviors (patrol, chase, pendulum, etc.) |
-| `src/server/ArenaTemplates.js` | 16 pre-built arena layouts with per-template randomization |
-| `src/server/AIPlayer.js` | Virtual AI players with personality types |
-| `src/server/blockchain/ChainInterface.js` | Blockchain abstraction + bribe system |
-| `src/server/games/` | ReachGoal, CollectGame, Survival, KingOfHill, HotPotato, Race |
-| `src/server/db.js` | PostgreSQL persistence with graceful fallback |
-| `src/client/main.js` | Three.js client: rendering, physics, player controls, mobile touch, spectator UI |
-| `src/client/ToonMaterials.js` | Cel-shaded material factory with gradient maps and emissive tuning |
-| `index.html` | Game HTML with chat, leaderboard, announcements, bribe modal |
-| `agent-runner.js` | Standalone agent loop (sole agent system, runs on VPS host) |
-| `chat-bridge.js` | Twitch/Discord/Telegram chat bridge |
-| `config/openclaw/game-world-skill.js` | Chaos Magician agent skill (30 tools) |
-| `config/openclaw/game-player-skill.js` | External agent player skill (8 tools) |
 
 ## License
 

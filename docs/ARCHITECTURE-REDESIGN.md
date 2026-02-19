@@ -1,7 +1,7 @@
 # Chaos Arena: Complete Architecture Redesign Plan
 
-> **Status**: Chunks 1-7 COMPLETE. Next: Chunk 9 (performance optimization). Chunk 8 (Schema) deferred.
-> **Version**: v0.50.0 (was v0.38.0 baseline)
+> **Status**: Chunks 1-7, 9 COMPLETE. Chunk 8 (Schema) deferred. Architecture redesign finished.
+> **Version**: v0.52.0 (was v0.38.0 baseline)
 > **Date**: February 17-19, 2026
 
 ## Executive Summary
@@ -24,9 +24,9 @@
 | Largest client file | 4,018 lines (main.js) | 293 lines (main.js) ✅ | ~150 lines |
 | Server modules | 15 files | 36 files | 40+ focused files |
 | Client modules | 11 files | 35+ files ✅ | 35+ focused files |
-| Collision detection | O(n) brute force | O(n) brute force | O(1) spatial hash |
+| Collision detection | O(n) brute force | O(1) spatial hash ✅ | O(1) spatial hash |
 | Per-frame allocations | ~6 Vector3/frame | 0 (pre-allocated) ✅ | 0 (pre-allocated) |
-| Object pooling | None | None | Particles, meshes |
+| Object pooling | None | Particles, materials ✅ | Particles, meshes |
 | Colyseus state sync | Manual broadcasts | Manual broadcasts | Schema delta sync (deferred) |
 | Mobile optimization | Basic (pixelRatio cap) | 4-tier adaptive quality ✅ | Adaptive quality tiers |
 | Input abstraction | None (raw keys + touch) | Unified action map ✅ | Unified action map |
@@ -319,31 +319,32 @@ GameRoomState (9 fields: players MapSchema, entities MapSchema, gameState, envir
 
 ---
 
-## CHUNK 9: Performance Optimization Pass
+## CHUNK 9: Performance Optimization Pass ✅ COMPLETE (Feb 19, 2026)
 
-### Priority 1 — Biggest wins, easiest
+> 5 phases: particle pooling with Float32Array velocities + budget enforcement, geometry/material caching (111 hex_a_gone platforms → 1 cached geometry), 2D spatial hash for O(1) collision lookups, rAF-debounced UI + leaderboard JSON caching, server entity indexing with secondary index Sets for kinematic/chase/group queries.
 
-1. **Pre-allocate Vector3 instances** (Chunk 2C/3B) — eliminates ~6 allocs/frame
-2. **Remove redundant 100ms move send** (Chunk 4A) — pure deletion
-3. **Conditional backup polling** (Chunk 4A) — saves bandwidth when WS healthy
+### Phase 9A: Particle Pooling & Budget Enforcement ✅
+- `ScreenEffects.js`: Float32Array velocities (zero per-spawn Vector3 allocations), material pool by color hex, particle budget from quality tier (evicts oldest), real delta time from game loop
 
-### Priority 2 — Medium effort, significant impact
+### Phase 9B: Geometry & Material Caching ✅
+- `EntityFactory.js`: `_geometryCache` Map keyed by `type|shape|sx|sy|sz` — 111 identical platforms share 1 geometry. Glow geometry caching for collectibles and goals.
+- `ToonMaterials.js`: `_materialCache` Map for non-animated types (platforms, ramps, collectibles, non-goal triggers). Animated types (obstacles, decorations, goals) skip cache.
+- `EntityManager.js`: Clone-on-write for material mutations (color change, cracking opacity). Cache clearing on `clearAllEntities()`.
 
-4. **Object pool for particles** (Chunk 3A) — eliminates GC pauses
-5. **Spatial hash for collision** (Chunk 3B) — O(n) -> O(1) lookups
-6. **Material sharing cache** (Chunk 3A) — fewer draw calls
+### Phase 9C: Spatial Hash for Collision ✅
+- `SpatialHash.js` (NEW): 2D grid (XZ plane), cell size 8, 3×3 neighborhood query. ~90% reduction in per-frame collision checks (111 → ~5-15).
+- `PhysicsEngine.js`: `spatialHashQuery()` replaces brute-force iteration. Pre-allocated `_tempEp` for grouped entity positions. Inline half-size computation (no `.map()` allocation).
 
-### Priority 3 — Larger effort
+### Phase 9D: UI Debouncing & DOM Optimization ✅
+- `GameStatusHUD.js`: `updateUI()` debounced via `requestAnimationFrame` — 111 rapid `addEntity` calls → 1 DOM update. Entity list skipped in non-debug mode.
+- `Leaderboard.js`: Cached `JSON.stringify(leaderboard)` skips DOM rebuild when scores unchanged.
 
-7. **InstancedMesh** for repeated platforms (e.g., hex_a_gone's 111 platforms)
-8. **Bidirectional quality scaling** (Chunk 4C)
-9. **Mobile-specific rendering** (Lambert materials, no bloom)
+### Phase 9E: Server Entity Indexing ✅
+- `EntityManager.js` (server): `_kinematicIds` Set, `_chasingIds` Set, `_groupIndex` Map — maintained on spawn/modify/destroy/clear. `updateKinematicEntities` iterates only indexed IDs (0 iterations on hex_a_gone). `destroyGroup`/`getEntitiesByGroup` use O(1) index lookup.
 
-### Priority 4 — Polish
-
-10. **Leaderboard DOM caching** (only update changed entries)
-11. **Debounce `updateUI()`** to once per 100ms
-12. **Reduce outline pass frequency** on low tiers
+### Remaining (nice-to-have, not blocking)
+- **InstancedMesh** for repeated platforms (e.g., hex_a_gone) — further GPU optimization
+- **Mobile-specific rendering** — mostly covered by 4-tier adaptive quality system
 
 ---
 
@@ -382,6 +383,13 @@ CHUNK 7 (Cross-Device)      ── Depends on 4C + 6
   Phase 7C: Reconnection           (2 hours)
 
 CHUNK 8 (Schema Migration)  ── DEFERRED
+
+CHUNK 9 (Performance)       ── Depends on 3, 4B, 6
+  Phase 9A: Particle Pooling         ✅
+  Phase 9B: Geometry/Material Cache  ✅
+  Phase 9C: Spatial Hash             ✅
+  Phase 9D: UI Debouncing            ✅
+  Phase 9E: Server Entity Indexing   ✅
 ```
 
 **Chunks 1-4 (client) and Chunks 1,5-6 (server) can proceed in parallel.**

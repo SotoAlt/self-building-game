@@ -8,4 +8,23 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #6756 | 4:31 PM | 🔵 | Full-Featured Three.js Game Client Architecture | ~465 |
+
+### Feb 11, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #12348 | 7:13 PM | 🔵 | Client Countdown Timer Management via game_state_changed Handler | ~371 |
+| #12329 | 6:57 PM | 🔵 | Basic Geometric Primitive Shape Generation | ~420 |
+| #12321 | 6:56 PM | 🔵 | Compose System Geometry Templates for Custom Entity Creation | ~570 |
+| #12287 | 6:52 PM | 🔵 | GeometryTemplates helper functions - lathe, extrude, tube with aggressive scaling | ~588 |
+| #12278 | 6:51 PM | 🔵 | Column and arch geometry thinness diagnosis - aggressive scaling factors cause invisibility | ~678 |
+| #12252 | 6:48 PM | 🔵 | Client rendering setup - Three.js scene with toon shading, dynamic floors, and environment system | ~809 |
+| #12239 | 6:47 PM | 🔵 | Client architecture - Three.js multiplayer with Colyseus, Privy auth, and toon-shaded rendering | ~705 |
+
+### Feb 14, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #12936 | 10:55 AM | 🔵 | Three.js post-processing pipeline with adaptive quality tiers | ~447 |
+| #12934 | 10:54 AM | 🔵 | Post-processing pipeline integration in main client | ~249 |
 </claude-mem-context>

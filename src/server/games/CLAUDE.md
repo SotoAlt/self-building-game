@@ -14,4 +14,12 @@
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
 | #7459 | 12:06 PM | ⚖️ | Comprehensive Phase 2 Implementation Plan Created | ~780 |
+
+### Feb 11, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #12301 | 6:53 PM | 🔵 | Race game mechanics - sequential checkpoint system with color coding, auto-generation, and timeout fallback | ~792 |
+| #12271 | 6:50 PM | 🔵 | MiniGame end trigger - goal activation calls this.end with win result and playerId | ~255 |
+| #12224 | 6:45 PM | 🔵 | Race game mode - sequential checkpoint racing with dynamic obstacles and tricks | ~610 |
 </claude-mem-context>

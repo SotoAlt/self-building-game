@@ -15,4 +15,31 @@
 |----|------|---|-------|------|
 | #7454 | 12:04 PM | 🔵 | Game Server API Test Suite | ~376 |
 | #7449 | 12:03 PM | 🔵 | GameRoom Multiplayer Server Architecture | ~488 |
+
+### Feb 11, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #12347 | 7:13 PM | 🔵 | MiniGame Base Class Architecture and Game Mechanics System | ~662 |
+| #12334 | 6:58 PM | ✅ | Added Minimum Game Duration Constant | ~318 |
+| #12326 | 6:57 PM | 🔵 | Lobby Timer and Active Game Rejection Guards | ~403 |
+| #12325 | " | 🔵 | Game Server Timing Configuration Constants | ~373 |
+| #12303 | 6:53 PM | 🔵 | Game end endpoint - phase validation with mini-game delegation and manual agentLoop notification | ~622 |
+| #12299 | " | 🔵 | Game start validation chain - five-layer guard system before game initialization | ~569 |
+| #12297 | 6:52 PM | 🔵 | Template application and lobby timer enforcement | ~493 |
+| #12283 | 6:51 PM | 🔵 | Game lifecycle phase transitions - countdown, end, reset with cooldown management | ~627 |
+| #12278 | " | 🔵 | Column and arch geometry thinness diagnosis - aggressive scaling factors cause invisibility | ~678 |
+| #12277 | " | 🔵 | MiniGame cleanup and entity tracking - gameId tagging for automatic removal | ~481 |
+| #12273 | 6:50 PM | 🔵 | MiniGame end lifecycle - result broadcasting, leaderboard recording, and delayed cleanup | ~554 |
+| #12269 | " | 🔵 | Game start implementation - template application with history tracking and doStartGame delegation | ~574 |
+| #12266 | " | 🔵 | Game start endpoint with template loading and atomic arena setup | ~559 |
+| #12264 | 6:49 PM | 🔵 | Agent control endpoints - pause/resume functionality for manual agent management | ~399 |
+| #12262 | " | 🔵 | Agent context endpoint implementation - comprehensive state aggregation for AI decision-making | ~754 |
+| #12260 | " | 🔵 | Agent context endpoint provides comprehensive game state snapshot for AI decision-making | ~367 |
+| #12256 | 6:48 PM | 🔵 | Arena templates - 12 pre-designed layouts with entities, environments, and visual themes | ~903 |
+| #12243 | 6:47 PM | 🔵 | Game control endpoints - start/end mechanics, announcements, chat, and mini-game tricks | ~800 |
+| #12235 | 6:46 PM | 🔵 | Bribe system with blockchain verification, auto-execution, and transaction tracking | ~754 |
+| #12233 | " | 🔵 | Arena callback system and authentication endpoints | ~582 |
+| #12214 | 6:45 PM | 🔵 | Server architecture - multi-arena platform with Colyseus, blockchain integration, and arena management | ~687 |
+| #12209 | " | 🔵 | AgentLoop architecture - autonomous AI agent heartbeat system with phase detection and drama scoring | ~567 |
 </claude-mem-context>
