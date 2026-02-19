@@ -2,6 +2,22 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.46.0] - 2026-02-18
+
+### Changed
+- **Architecture: Chunk 5 — Server Route Extraction** — zero API changes, pure extraction
+  - `src/server/services/gameService.js` (NEW) — template loading, game start, auto-start, guard helpers
+  - `src/server/services/arenaService.js` (NEW) — arena callbacks, AI players, auto-bribe execution
+  - `src/server/routes/authRoutes.js` (NEW) — 3 auth endpoints (privy, guest, me)
+  - `src/server/routes/arenaRoutes.js` (NEW) — 6 arena CRUD endpoints
+  - `src/server/routes/worldRoutes.js` (NEW) — 16 world/physics endpoints
+  - `src/server/routes/gameRoutes.js` (NEW) — 17 game lifecycle, chat, leaderboard endpoints
+  - `src/server/routes/bribeRoutes.js` (NEW) — 12 bribe, spell, transaction endpoints
+  - `src/server/routes/agentRoutes.js` (NEW) — 15 agent, AI, SSE, webhook endpoints
+  - `src/server/routes/publicRoutes.js` (NEW) — 10 public API + agent-player endpoints
+  - `src/server/routes/index.js` (NEW) — barrel re-export
+  - `src/server/index.js` — removed ~1,455 lines of extracted code (1,768 → 313 lines)
+
 ## [0.44.0] - 2026-02-18
 
 ### Changed

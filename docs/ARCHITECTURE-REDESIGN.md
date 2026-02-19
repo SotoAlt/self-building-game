@@ -186,7 +186,9 @@
 
 ---
 
-## CHUNK 5: Server Route Extraction (Low-Medium Risk)
+## CHUNK 5: Server Route Extraction ✅ COMPLETE (Feb 18, 2026)
+
+> Extracted 70+ route handlers and 10 helper functions from index.js into 7 route files + 2 service files. index.js: 1,768 → 313 lines (82% reduction). Zero API changes.
 
 ### Phase 5A: Route Files
 
