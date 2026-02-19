@@ -1,5 +1,5 @@
 /**
- * Announcements, toasts, spell effects, and connection warnings.
+ * Announcements, toasts, spell effects, and reconnect overlay.
  */
 
 import { state } from '../state.js';
@@ -16,21 +16,6 @@ export function showToast(message, type = 'success') {
     el.classList.add('fade-out');
     setTimeout(() => el.remove(), 400);
   }, 3000);
-}
-
-export function showConnectionWarning(disconnected) {
-  let banner = document.getElementById('connection-warning');
-  if (disconnected) {
-    if (!banner) {
-      banner = document.createElement('div');
-      banner.id = 'connection-warning';
-      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#d32f2f;color:#fff;text-align:center;padding:6px;font-size:14px;font-weight:bold;';
-      banner.textContent = 'Disconnected — reconnecting...';
-      document.body.appendChild(banner);
-    }
-  } else if (banner) {
-    banner.remove();
-  }
 }
 
 export function enforceAnnouncementLimit(container) {
@@ -67,6 +52,42 @@ export function showAnnouncement(announcement) {
   }, duration - 500);
 
   console.log(`[Announcement] ${announcement.type}: ${announcement.text}`);
+}
+
+/**
+ * Show reconnecting overlay.
+ * @param {number} attempt - Current attempt number, or -1 for "Connection Lost" with reload button.
+ */
+export function showReconnectOverlay(attempt) {
+  let overlay = document.getElementById('reconnect-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'reconnect-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);color:#fff;font-family:inherit;';
+    document.body.appendChild(overlay);
+  }
+
+  if (attempt === -1) {
+    overlay.innerHTML = `
+      <div style="font-size:28px;font-weight:bold;margin-bottom:12px;color:#e74c3c;">Connection Lost</div>
+      <div style="font-size:16px;margin-bottom:24px;color:#aaa;">Could not reconnect to the server.</div>
+      <button id="reconnect-reload-btn" style="padding:12px 32px;font-size:18px;border:none;border-radius:8px;background:#3498db;color:#fff;cursor:pointer;">Reload</button>
+    `;
+    document.getElementById('reconnect-reload-btn')?.addEventListener('click', () => window.location.reload());
+  } else {
+    overlay.innerHTML = `
+      <div style="width:40px;height:40px;border:4px solid rgba(255,255,255,0.2);border-top:4px solid #fff;border-radius:50%;animation:reconnect-spin 0.8s linear infinite;margin-bottom:16px;"></div>
+      <div style="font-size:22px;font-weight:bold;margin-bottom:8px;">Reconnecting...</div>
+      <div style="font-size:14px;color:#aaa;">Attempt ${attempt}</div>
+      <style>@keyframes reconnect-spin { to { transform: rotate(360deg); } }</style>
+    `;
+  }
+}
+
+export function hideReconnectOverlay() {
+  document.getElementById('reconnect-overlay')?.remove();
+  // Also remove old-style connection warning banner
+  document.getElementById('connection-warning')?.remove();
 }
 
 export function showSpellEffect(spell) {

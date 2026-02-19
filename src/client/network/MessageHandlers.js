@@ -2,20 +2,32 @@
  * WebSocket message handlers — all room.onMessage + onLeave/onError.
  */
 
+import { GAME_TYPES, SPELL } from '../../shared/constants.js';
 import { state, hazardPlaneState, entityMeshes, remotePlayers, player, playerVelocity, countdown } from '../state.js';
 import { addEntity, updateEntity, removeEntity, clearAllEntities } from '../entities/EntityManager.js';
 import { updateRemotePlayer, removeRemotePlayer } from '../rendering/RemotePlayers.js';
 import { displayChatMessage } from '../ui/ChatSystem.js';
-import { showToast, showConnectionWarning, showAnnouncement, showSpellEffect } from '../ui/Announcements.js';
+import { showToast, showAnnouncement, showSpellEffect, hideReconnectOverlay } from '../ui/Announcements.js';
 import { showAfkWarning, hideAfkWarning, showAfkKickedScreen } from '../ui/AfkOverlay.js';
 import { updateGameStateUI, clearCountdownInterval, updateUI } from '../ui/GameStatusHUD.js';
 import { fetchLeaderboard } from '../ui/Leaderboard.js';
 import { addKillFeedEntry } from '../ui/SpectatorOverlay.js';
 import { setFloorType, applyEnvironment, updateHazardPlaneMaterial, getHazardPlaneMesh } from '../scene/FloorManager.js';
 import { applyWorldState } from './HttpApi.js';
-import { attemptReconnect } from './NetworkManager.js';
+import { attemptReconnect, storeReconnectionToken } from './NetworkManager.js';
 import { triggerCameraShake, screenFlash, showVignette, spawnParticles } from '../vfx/ScreenEffects.js';
 import { playCollectSound, playCountdownBeep, playWinFanfare, playSpellSound, playCrackSound, playBreakSound } from '../audio/SoundManager.js';
+
+const SPELL_VIGNETTE_COLORS = {
+  [SPELL.SPEED_BOOST]: 'rgba(46,204,113,0.3)',
+  [SPELL.INVERT_CONTROLS]: 'rgba(155,89,182,0.4)',
+  [SPELL.LOW_GRAVITY]: 'rgba(52,152,219,0.2)',
+};
+
+const SPELL_SCALE_VALUES = {
+  [SPELL.GIANT]: 2,
+  [SPELL.TINY]: 0.4,
+};
 
 let _clearSpectating = null;
 
@@ -26,16 +38,17 @@ export function initMessageHandlers({ clearSpectating }) {
 export function registerMessageHandlers(room) {
   room.onLeave((code) => {
     console.warn('[Network] Disconnected from room, code:', code);
+    storeReconnectionToken();
     state.room = null;
     state.connected = false;
     if (code === 4000) {
       showAfkKickedScreen();
       return;
     }
-    showConnectionWarning(true);
-    if (code !== 1000) {
-      setTimeout(attemptReconnect, 1000);
-    }
+    // Clean close (tab closed, intentional leave) — no reconnect
+    if (code === 1000) return;
+    // Unexpected disconnect — start exponential backoff reconnect
+    attemptReconnect();
   });
 
   room.onError((code, message) => {
@@ -96,6 +109,23 @@ export function registerMessageHandlers(room) {
     updateUI();
   });
 
+  room.onMessage('player_temporarily_left', ({ id }) => {
+    const mesh = remotePlayers.get(id);
+    if (mesh?.material) {
+      mesh.material.opacity = 0.3;
+      mesh.material.transparent = true;
+    }
+  });
+
+  room.onMessage('player_reconnected', ({ id, name }) => {
+    const mesh = remotePlayers.get(id);
+    if (mesh?.material) {
+      mesh.material.opacity = 1;
+      mesh.material.transparent = false;
+    }
+    showToast(`${name || 'Player'} reconnected`, 'success');
+  });
+
   room.onMessage('player_moved', ({ id, position, velocity }) => {
     if (id === room.sessionId) return;
     let p = state.players.get(id);
@@ -128,7 +158,7 @@ export function registerMessageHandlers(room) {
   room.onMessage('score_update', (data) => {
     const overlay = document.getElementById('score-overlay');
     if (!overlay) return;
-    if (data.gameType !== 'king') { overlay.style.display = 'none'; return; }
+    if (data.gameType !== GAME_TYPES.KING) { overlay.style.display = 'none'; return; }
     overlay.style.display = 'block';
     const target = data.targetScore || 30;
     const sorted = Object.entries(data.scores).sort((a, b) => b[1].score - a[1].score);
@@ -205,16 +235,10 @@ export function registerMessageHandlers(room) {
     triggerCameraShake(0.3, 200);
     playSpellSound();
 
-    const SPELL_VIGNETTES = {
-      speed_boost: 'rgba(46,204,113,0.3)',
-      invert_controls: 'rgba(155,89,182,0.4)',
-      low_gravity: 'rgba(52,152,219,0.2)',
-    };
-    const vignetteColor = SPELL_VIGNETTES[spell.type];
+    const vignetteColor = SPELL_VIGNETTE_COLORS[spell.type];
     if (vignetteColor) showVignette(vignetteColor, spell.duration);
 
-    const SPELL_SCALES = { giant: 2, tiny: 0.4 };
-    const scale = SPELL_SCALES[spell.type];
+    const scale = SPELL_SCALE_VALUES[spell.type];
     if (scale && player.mesh) {
       player.mesh.scale.setScalar(scale);
       spawnParticles(player.mesh.position, '#9b59b6', 30, 6);
@@ -337,17 +361,14 @@ export function registerMessageHandlers(room) {
       clearCountdownInterval();
       const timerEl = document.getElementById('game-timer');
       setTimeout(fetchLeaderboard, 1000);
-      const isWinner = gameState.result === 'win' && gameState.winners?.includes(room.sessionId);
-      if (isWinner) {
+
+      const isLocalWinner = gameState.result === 'win' && gameState.winners?.includes(room.sessionId);
+      if (isLocalWinner) {
         timerEl.textContent = 'YOU WIN!';
         timerEl.style.color = '#f1c40f';
         screenFlash('#f1c40f', 600);
         playWinFanfare();
         if (player.mesh) spawnParticles(player.mesh.position, '#f1c40f', 40, 10);
-      } else if (gameState.result === 'win') {
-        timerEl.textContent = 'GAME OVER';
-        timerEl.style.color = '#e74c3c';
-        screenFlash('#e74c3c', 500);
       } else if (gameState.result === 'timeout') {
         timerEl.textContent = 'TIME UP!';
         timerEl.style.color = '#f39c12';
@@ -355,8 +376,10 @@ export function registerMessageHandlers(room) {
         timerEl.textContent = 'DRAW!';
         timerEl.style.color = '#9b59b6';
       } else {
+        // 'win' (someone else won), 'lose', 'cancelled', or any other result
         timerEl.textContent = 'GAME OVER';
         timerEl.style.color = '#e74c3c';
+        if (gameState.result === 'win') screenFlash('#e74c3c', 500);
       }
     }
   });

@@ -209,6 +209,7 @@ setInterval(() => {
 
       for (const player of ws.players.values()) {
         if (player.type === 'ai') continue;
+        if (player._disconnectedAt) continue; // skip players in reconnection grace period
 
         // Kick phase: player was warned and didn't respond in time
         if (player.state === 'afk_warned') {

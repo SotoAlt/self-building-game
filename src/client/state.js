@@ -6,11 +6,12 @@
 
 import * as THREE from 'three';
 import { isMobile } from './config.js';
+import { DEFAULT_SERVER_PHYSICS } from '../shared/constants.js';
 
 export const state = {
   entities: new Map(),
   players: new Map(),
-  physics: { gravity: -9.8, friction: 0.3, bounce: 0.5 },
+  physics: { ...DEFAULT_SERVER_PHYSICS },
   localPlayer: null,
   room: null,
   gameState: { phase: 'lobby' },
@@ -30,6 +31,7 @@ export const remotePlayers = new Map();
 export const network = {
   lastMoveTime: 0,
   reconnectAttempts: 0,
+  reconnectionToken: null,
 };
 
 export const floor = { currentType: 'solid' };

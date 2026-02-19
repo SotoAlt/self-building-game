@@ -1,4 +1,7 @@
-const VALID_FLOOR_TYPES = ['solid', 'none', 'lava'];
+import {
+  VALID_FLOOR_TYPES, DEFAULT_SERVER_PHYSICS, DEFAULT_ENVIRONMENT
+} from '../../shared/constants.js';
+
 const VALID_HAZARD_TYPES = ['lava', 'water'];
 
 const ENV_COLOR_KEYS = ['skyColor', 'fogColor', 'ambientColor', 'sunColor'];
@@ -6,22 +9,8 @@ const ENV_NUMBER_KEYS = ['fogNear', 'fogFar', 'fogDensity', 'ambientIntensity', 
 const ENV_STRING_KEYS = ['skyPreset', 'materialTheme'];
 
 export class EnvironmentManager {
-  static DEFAULT_PHYSICS = { gravity: -9.8, friction: 0.3, bounce: 0.5 };
-
-  static DEFAULT_ENVIRONMENT = {
-    skyColor: '#1a1a2e',
-    fogColor: '#1a1a2e',
-    fogNear: 50,
-    fogFar: 200,
-    fogDensity: 0.012,
-    ambientColor: '#404040',
-    ambientIntensity: 0.5,
-    sunColor: '#ffffff',
-    sunIntensity: 1.0,
-    sunPosition: [50, 100, 50],
-    skyPreset: null,
-    materialTheme: null,
-  };
+  static DEFAULT_PHYSICS = DEFAULT_SERVER_PHYSICS;
+  static DEFAULT_ENVIRONMENT = DEFAULT_ENVIRONMENT;
 
   /**
    * @param {function} getGamePhase - () => string (current game phase)

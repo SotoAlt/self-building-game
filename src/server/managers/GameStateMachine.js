@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { VALID_GAME_TYPES } from '../../shared/constants.js';
 
 function createLobbyState() {
   return {
@@ -15,7 +16,7 @@ function createLobbyState() {
 
 export class GameStateMachine {
   // Valid phases: lobby, building, countdown, playing, ended
-  static VALID_GAME_TYPES = ['reach', 'collect', 'survival', 'king', 'hot_potato', 'race'];
+  static VALID_GAME_TYPES = VALID_GAME_TYPES;
 
   /**
    * @param {function} onDeactivateHazardPlane - () => void

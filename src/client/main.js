@@ -14,7 +14,7 @@ import { initEntityManager, animateEntities, animateGroups } from './entities/En
 import { initPhysics, updatePlayer, checkCollisions, createPlayer } from './physics/PhysicsEngine.js';
 import { initRemotePlayers, updateChatBubbles, interpolateRemotePlayers } from './rendering/RemotePlayers.js';
 import { createSkyDome, initParticles, updateEnvironmentEffects } from './EnvironmentEffects.js';
-import { initNetworkManager, sendToServer } from './network/NetworkManager.js';
+import { initNetworkManager, sendToServer, storeReconnectionToken } from './network/NetworkManager.js';
 import { initFloorManager, animateFloors } from './scene/FloorManager.js';
 import { initMessageHandlers, registerMessageHandlers } from './network/MessageHandlers.js';
 import { fetchInitialState, pollForUpdates } from './network/HttpApi.js';
@@ -32,7 +32,7 @@ import {
   countdown
 } from './state.js';
 import { updateParticles, initScreenEffects } from './vfx/ScreenEffects.js';
-import { showConnectionWarning } from './ui/Announcements.js';
+import { hideReconnectOverlay } from './ui/Announcements.js';
 import { setupChat, displayChatMessage } from './ui/ChatSystem.js';
 import { updateUI, updateGameStateUI } from './ui/GameStatusHUD.js';
 import { fetchLeaderboard } from './ui/Leaderboard.js';
@@ -90,7 +90,7 @@ scene.add(gridHelper);
 
 createSkyDome(scene);
 
-initPostProcessing(renderer, scene, camera);
+initPostProcessing(renderer, scene, camera, directionalLight);
 
 initScreenEffects(scene);
 
@@ -108,11 +108,23 @@ initPhysics({
 
 initRemotePlayers(scene);
 
-initNetworkManager({ connectToServerFn: connectToServer });
+initNetworkManager({ connectToServerFn: connectToServer, reconnectToServerFn: reconnectToServer });
 initFloorManager({ scene, ground, gridHelper, ambientLight, directionalLight });
 initMessageHandlers({ clearSpectating: () => cameraController.clearSpectating() });
 
 function isInSpectatorMode() { return cameraController.isInSpectatorMode(); }
+
+async function reconnectToServer(token) {
+  const client = new Client(SERVER_URL);
+  const room = await client.reconnect(token);
+  state.room = room;
+  state.connected = true;
+  storeReconnectionToken();
+  hideReconnectOverlay();
+  console.log('[Network] Reconnected to room:', room.roomId);
+  registerMessageHandlers(room);
+  return true;
+}
 
 async function connectToServer() {
   try {
@@ -126,7 +138,8 @@ async function connectToServer() {
     const room = await client.joinOrCreate('game', joinOptions);
     state.room = room;
     state.connected = true;
-    showConnectionWarning(false);
+    storeReconnectionToken();
+    hideReconnectOverlay();
     console.log('[Network] Connected to room:', room.roomId);
     registerMessageHandlers(room);
     return true;
@@ -251,7 +264,7 @@ async function init() {
 
   animate();
 
-  setInterval(pollForUpdates, 2000);
+  setInterval(() => { if (!state.connected) pollForUpdates(); }, 10000);
   setInterval(fetchLeaderboard, 10000);
 
   console.log('[Game] Ready!');

@@ -8,6 +8,9 @@ import {
   DEATH_COOLDOWN, MOVE_INTERVAL, isMobile
 } from '../config.js';
 import {
+  ENTITY_TYPES, SPELL, FLOOR_TYPES, DEFAULT_SERVER_PHYSICS
+} from '../../shared/constants.js';
+import {
   state, player, playerVelocity, collision, death, boost,
   activatedTriggers, entityMeshes, floor, hazardPlaneState, network
 } from '../state.js';
@@ -145,17 +148,17 @@ export function checkCollisions() {
 
     if (!playerBox.intersectsBox(entityBox)) continue;
 
-    if (entity.type === 'collectible') {
+    if (entity.type === ENTITY_TYPES.COLLECTIBLE) {
       collectItem(entity);
       continue;
     }
-    if (entity.type === 'obstacle') {
+    if (entity.type === ENTITY_TYPES.OBSTACLE) {
       if (state.gameState.phase === 'playing' && Date.now() >= death.respawnInvulnUntil) {
         playerDie();
       }
       continue;
     }
-    if (entity.type === 'trigger') {
+    if (entity.type === ENTITY_TYPES.TRIGGER) {
       if (entity.properties?.isBounce) {
         const force = entity.properties.bounceForce || 18;
         playerVelocity.y = force;
@@ -183,7 +186,7 @@ export function checkCollisions() {
       continue;
     }
 
-    if (entity.type === 'platform' || entity.type === 'ramp') {
+    if (entity.type === ENTITY_TYPES.PLATFORM || entity.type === ENTITY_TYPES.RAMP) {
       const overlapX = (0.5 + halfSize[0]) - Math.abs(player.mesh.position.x - ep.x);
       const overlapY = (1 + halfSize[1]) - Math.abs(player.mesh.position.y - ep.y);
       const overlapZ = (0.5 + halfSize[2]) - Math.abs(player.mesh.position.z - ep.z);
@@ -257,18 +260,18 @@ export function updatePlayer(delta) {
   let jumpForce = PHYSICS.JUMP_FORCE;
   let spellGravityMult = 1;
 
-  if (hasEffect('speed_boost')) targetSpeed = 30;
-  if (hasEffect('slow_motion')) targetSpeed = 10;
+  if (hasEffect(SPELL.SPEED_BOOST)) targetSpeed = 30;
+  if (hasEffect(SPELL.SLOW_MOTION)) targetSpeed = 10;
   if (Date.now() < boost.speedBoostUntil) targetSpeed *= 2;
-  if (hasEffect('low_gravity')) spellGravityMult = 0.3;
-  if (hasEffect('high_gravity')) spellGravityMult = 2.5;
-  if (hasEffect('bouncy')) jumpForce *= 1.5;
-  if (hasEffect('giant')) { targetSpeed = 14; jumpForce *= 1.2; }
-  if (hasEffect('tiny')) { targetSpeed = 25; jumpForce *= 0.6; }
+  if (hasEffect(SPELL.LOW_GRAVITY)) spellGravityMult = 0.3;
+  if (hasEffect(SPELL.HIGH_GRAVITY)) spellGravityMult = 2.5;
+  if (hasEffect(SPELL.BOUNCY)) jumpForce *= 1.5;
+  if (hasEffect(SPELL.GIANT)) { targetSpeed = 14; jumpForce *= 1.2; }
+  if (hasEffect(SPELL.TINY)) { targetSpeed = 25; jumpForce *= 0.6; }
 
   const { forward, right } = _getCameraDirections();
   _moveDir.set(0, 0, 0);
-  const inputSign = hasEffect('invert_controls') ? -1 : 1;
+  const inputSign = hasEffect(SPELL.INVERT_CONTROLS) ? -1 : 1;
 
   if (isMobile && touchJoystick.active) {
     _moveDir.addScaledVector(forward, -touchJoystick.dy * inputSign);
@@ -299,7 +302,7 @@ export function updatePlayer(delta) {
   playerVelocity.x = moveToward(playerVelocity.x, targetVelX, accel * delta);
   playerVelocity.z = moveToward(playerVelocity.z, targetVelZ, accel * delta);
 
-  const serverGravityScale = state.physics.gravity / -9.8;
+  const serverGravityScale = state.physics.gravity / DEFAULT_SERVER_PHYSICS.gravity;
   const gravity = PHYSICS.GRAVITY * serverGravityScale * spellGravityMult;
 
   if (playerVelocity.y < 0) {
@@ -348,7 +351,7 @@ export function updatePlayer(delta) {
   const phase = state.gameState.phase;
   const inSafePhase = phase === 'lobby' || phase === 'building' || phase === 'countdown' || phase === 'ended';
   const invulnerable = Date.now() < death.respawnInvulnUntil;
-  const hasFloor = floor.currentType === 'solid' || inSafePhase;
+  const hasFloor = floor.currentType === FLOOR_TYPES.SOLID || inSafePhase;
 
   if (hasFloor) {
     if (player.mesh.position.y < GROUND_Y) {
@@ -357,11 +360,11 @@ export function updatePlayer(delta) {
       player.isGrounded = true;
       player.isJumping = false;
     }
-  } else if (floor.currentType === 'none') {
+  } else if (floor.currentType === FLOOR_TYPES.NONE) {
     if (player.mesh.position.y < ABYSS_DEATH_Y && !invulnerable) {
       playerDie();
     }
-  } else if (floor.currentType === 'lava') {
+  } else if (floor.currentType === FLOOR_TYPES.LAVA) {
     if (player.mesh.position.y < LAVA_DEATH_Y && !invulnerable) {
       spawnParticles(player.mesh.position, '#ff4500', 20, 6);
       spawnParticles(player.mesh.position, '#ffaa00', 10, 4);

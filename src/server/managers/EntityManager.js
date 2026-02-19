@@ -1,17 +1,11 @@
 import { randomUUID } from 'crypto';
-
-const DEFAULT_COLORS = {
-  platform: '#3498db',
-  ramp: '#2ecc71',
-  collectible: '#f1c40f',
-  obstacle: '#e74c3c',
-  trigger: '#9b59b6',
-  decoration: '#95a5a6',
-};
+import {
+  VALID_ENTITY_TYPES, DEFAULT_ENTITY_COLORS, MAX_ENTITIES
+} from '../../shared/constants.js';
 
 export class EntityManager {
-  static MAX_ENTITIES = 500;
-  static VALID_ENTITY_TYPES = Object.keys(DEFAULT_COLORS);
+  static MAX_ENTITIES = MAX_ENTITIES;
+  static VALID_ENTITY_TYPES = VALID_ENTITY_TYPES;
 
   constructor() {
     this.entities = new Map();
@@ -270,6 +264,6 @@ export class EntityManager {
   }
 
   getDefaultColor(type) {
-    return DEFAULT_COLORS[type] || '#95a5a6';
+    return DEFAULT_ENTITY_COLORS[type] || '#95a5a6';
   }
 }

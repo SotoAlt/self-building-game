@@ -326,20 +326,70 @@ export class GameRoom extends Room {
     this.worldState.addEvent('player_join', { playerId: client.sessionId, name, type });
   }
 
-  onLeave(client) {
-    console.log(`[GameRoom] Player left: ${client.sessionId}`);
-    this._chatRateLimit.delete(client.sessionId);
-    this._deathTimestamps.delete(client.sessionId);
+  async onLeave(client, consented) {
+    const sessionId = client.sessionId;
+    console.log(`[GameRoom] Player leaving: ${sessionId} (consented: ${consented})`);
+
+    if (!this.worldState) {
+      this._finalizeLeave(sessionId);
+      return;
+    }
+
+    // Clean disconnect (tab closed, intentional leave) — remove immediately
+    if (consented) {
+      this._finalizeLeave(sessionId);
+      return;
+    }
+
+    // Unexpected disconnect — hold slot for 20s
+    const player = this.worldState.players.get(sessionId);
+    const name = player?.name || sessionId.slice(0, 8);
+
+    if (player) {
+      player._disconnectedAt = Date.now();
+    }
+
+    this.broadcast('player_temporarily_left', { id: sessionId, name });
+    this._systemMessage(`${name} disconnected — waiting for reconnect...`);
+
+    try {
+      await this.allowReconnection(client, 20);
+
+      // Reconnected successfully
+      console.log(`[GameRoom] Player reconnected: ${sessionId}`);
+      if (player) delete player._disconnectedAt;
+
+      // Send full state to reconnected client
+      const initState = this.worldState.getState();
+      client.send('init', {
+        playerId: sessionId,
+        worldState: initState,
+        reconnected: true,
+        lobbyCountdown: this.worldState.autoStartTargetTime || null
+      });
+
+      this.broadcast('player_reconnected', { id: sessionId, name });
+      this._systemMessage(`${name} reconnected!`);
+    } catch {
+      // Timeout — permanently remove
+      console.log(`[GameRoom] Reconnection timeout for ${sessionId}`);
+      this._finalizeLeave(sessionId);
+    }
+  }
+
+  _finalizeLeave(sessionId) {
+    this._chatRateLimit.delete(sessionId);
+    this._deathTimestamps.delete(sessionId);
 
     if (!this.worldState) return;
 
-    const player = this.worldState.players.get(client.sessionId);
-    const name = player?.name || client.sessionId;
+    const player = this.worldState.players.get(sessionId);
+    const name = player?.name || sessionId.slice(0, 8);
 
-    this.worldState.removePlayer(client.sessionId);
-    this.broadcast('player_left', { id: client.sessionId, name });
+    this.worldState.removePlayer(sessionId);
+    this.broadcast('player_left', { id: sessionId, name });
     this._systemMessage(`${name} has left`);
-    this.worldState.addEvent('player_leave', { playerId: client.sessionId, name });
+    this.worldState.addEvent('player_leave', { playerId: sessionId, name });
   }
 
   onDispose() {

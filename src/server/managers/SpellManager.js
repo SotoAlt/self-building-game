@@ -1,18 +1,9 @@
 import { randomUUID } from 'crypto';
+import { SPELL_TYPES, SPELL_COOLDOWN } from '../../shared/constants.js';
 
 export class SpellManager {
-  static SPELL_COOLDOWN = 10000;
-
-  static SPELL_TYPES = {
-    invert_controls: { name: 'Inverted Controls', defaultDuration: 15000 },
-    low_gravity: { name: 'Low Gravity', defaultDuration: 20000 },
-    high_gravity: { name: 'Crushing Gravity', defaultDuration: 15000 },
-    speed_boost: { name: 'Speed Boost', defaultDuration: 15000 },
-    slow_motion: { name: 'Slow Motion', defaultDuration: 10000 },
-    bouncy: { name: 'Bouncy World', defaultDuration: 20000 },
-    giant: { name: 'Giant Mode', defaultDuration: 15000 },
-    tiny: { name: 'Tiny Mode', defaultDuration: 15000 }
-  };
+  static SPELL_COOLDOWN = SPELL_COOLDOWN;
+  static SPELL_TYPES = SPELL_TYPES;
 
   constructor() {
     this.activeEffects = [];

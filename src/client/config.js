@@ -61,7 +61,9 @@ export const SPEC_FAST_SPEED = 60;
 
 // Timing & limits
 export const MOVE_INTERVAL = 50; // ms — throttle position sends to 20/s
-export const MAX_RECONNECT_ATTEMPTS = 5;
+export const MAX_RECONNECT_ATTEMPTS = 10;
+export const RECONNECT_BASE_DELAY = 1000;
+export const RECONNECT_MAX_DELAY = 30000;
 export const JOYSTICK_RADIUS = 50;
 
 // Death thresholds

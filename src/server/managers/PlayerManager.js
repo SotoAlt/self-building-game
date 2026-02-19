@@ -105,7 +105,7 @@ export class PlayerManager {
   getActiveHumanCount() {
     let count = 0;
     for (const p of this.players.values()) {
-      if (p.type !== 'ai' && p.type !== 'spectator' && p.state !== 'afk_warned') count++;
+      if (p.type !== 'ai' && p.type !== 'spectator' && p.state !== 'afk_warned' && !p._disconnectedAt) count++;
     }
     return count;
   }
