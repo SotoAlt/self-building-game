@@ -11,10 +11,46 @@ export class EntityManager {
     this.entities = new Map();
     this.breakingPlatforms = new Map();
     this._totalCreated = 0;
+
+    // Secondary indices — avoid full entity scans in tick loop
+    this._kinematicIds = new Set();  // entity IDs with kinematic + path.length >= 2
+    this._chasingIds = new Set();    // entity IDs with chase + groupId
+    this._groupIndex = new Map();    // groupId -> Set<entityId>
   }
 
   get totalCreated() {
     return this._totalCreated;
+  }
+
+  _addToIndices(id, entity) {
+    const props = entity.properties;
+    if (props?.kinematic && props?.path && props.path.length >= 2) {
+      this._kinematicIds.add(id);
+    }
+    if (props?.chase && props?.groupId) {
+      this._chasingIds.add(id);
+    }
+    if (props?.groupId) {
+      let group = this._groupIndex.get(props.groupId);
+      if (!group) {
+        group = new Set();
+        this._groupIndex.set(props.groupId, group);
+      }
+      group.add(id);
+    }
+  }
+
+  _removeFromIndices(id, entity) {
+    this._kinematicIds.delete(id);
+    this._chasingIds.delete(id);
+    const groupId = entity?.properties?.groupId;
+    if (groupId) {
+      const group = this._groupIndex.get(groupId);
+      if (group) {
+        group.delete(id);
+        if (group.size === 0) this._groupIndex.delete(groupId);
+      }
+    }
   }
 
   spawnEntity(type, position, size = [1, 1, 1], properties = {}) {
@@ -42,6 +78,7 @@ export class EntityManager {
     };
 
     this.entities.set(id, entity);
+    this._addToIndices(id, entity);
     this._totalCreated++;
 
     console.log(`[EntityManager] Spawned ${type} at [${position.join(', ')}] → ${id}`);
@@ -54,15 +91,15 @@ export class EntityManager {
       throw new Error(`Entity not found: ${id}`);
     }
 
-    if (changes.position) {
-      entity.position = [...changes.position];
-    }
-    if (changes.size) {
-      entity.size = [...changes.size];
-    }
+    this._removeFromIndices(id, entity);
+
+    if (changes.position) entity.position = [...changes.position];
+    if (changes.size) entity.size = [...changes.size];
     if (changes.properties) {
       entity.properties = { ...entity.properties, ...changes.properties };
     }
+
+    this._addToIndices(id, entity);
 
     entity.modifiedAt = Date.now();
     console.log(`[EntityManager] Modified ${id}`);
@@ -70,36 +107,53 @@ export class EntityManager {
   }
 
   destroyEntity(id) {
-    if (!this.entities.has(id)) {
+    const entity = this.entities.get(id);
+    if (!entity) {
       throw new Error(`Entity not found: ${id}`);
     }
 
+    this._removeFromIndices(id, entity);
     this.entities.delete(id);
     console.log(`[EntityManager] Destroyed ${id}`);
   }
 
-  /** Clears entities + breakingPlatforms only. Facade orchestrates full reset. */
   clearEntities() {
     const ids = [...this.entities.keys()];
     this.entities.clear();
     this.breakingPlatforms.clear();
+    this._kinematicIds.clear();
+    this._chasingIds.clear();
+    this._groupIndex.clear();
     console.log(`[EntityManager] Cleared ${ids.length} entities`);
     return ids;
   }
 
   getEntitiesByGroup(groupId) {
-    return Array.from(this.entities.values()).filter(
-      e => e.properties?.groupId === groupId
-    );
+    const idSet = this._groupIndex.get(groupId);
+    if (!idSet) return [];
+    const result = [];
+    for (const id of idSet) {
+      const entity = this.entities.get(id);
+      if (entity) result.push(entity);
+    }
+    return result;
   }
 
   destroyGroup(groupId) {
+    const idSet = this._groupIndex.get(groupId);
+    if (!idSet) return [];
+
     const ids = [];
-    for (const [id, entity] of this.entities) {
-      if (entity.properties?.groupId !== groupId) continue;
-      ids.push(id);
-      this.entities.delete(id);
+    for (const id of idSet) {
+      const entity = this.entities.get(id);
+      if (entity) {
+        this._kinematicIds.delete(id);
+        this._chasingIds.delete(id);
+        this.entities.delete(id);
+        ids.push(id);
+      }
     }
+    this._groupIndex.delete(groupId);
     console.log(`[EntityManager] Destroyed group ${groupId} (${ids.length} entities)`);
     return ids;
   }
@@ -132,12 +186,13 @@ export class EntityManager {
 
     for (const [entityId, info] of this.breakingPlatforms) {
       if (now >= info.breakAt && this.entities.has(entityId)) {
-        // Destroy the platform
+        const entity = this.entities.get(entityId);
+        if (entity) this._removeFromIndices(entityId, entity);
+
         this.entities.delete(entityId);
         broadcastFn('entity_destroyed', { id: entityId });
         console.log(`[EntityManager] Breakable platform destroyed: ${entityId}`);
 
-        // Schedule regen if configured
         if (info.regenDelay > 0) {
           const orig = info.originalEntity;
           setTimeout(() => {
@@ -156,13 +211,17 @@ export class EntityManager {
 
   updateKinematicEntities(delta) {
     const moved = [];
-    for (const entity of this.entities.values()) {
-      if (!entity.properties?.kinematic || !entity.properties?.path) continue;
+
+    for (const id of this._kinematicIds) {
+      const entity = this.entities.get(id);
+      if (!entity) {
+        this._kinematicIds.delete(id);
+        continue;
+      }
 
       const path = entity.properties.path;
-      if (path.length < 2) continue;
+      if (!path || path.length < 2) continue;
 
-      // Initialize animation state
       if (entity._pathProgress === undefined) {
         entity._pathProgress = 0;
         entity._pathDirection = 1;
@@ -171,7 +230,6 @@ export class EntityManager {
       const speed = (entity.properties.speed || 2) * delta;
       entity._pathProgress += speed * entity._pathDirection;
 
-      // Ping-pong
       if (entity._pathProgress >= 1) {
         entity._pathProgress = 1;
         entity._pathDirection = -1;
@@ -180,7 +238,6 @@ export class EntityManager {
         entity._pathDirection = 1;
       }
 
-      // Lerp between first and last waypoint
       const start = path[0];
       const end = path.at(-1);
       const t = entity._pathProgress;
@@ -190,7 +247,6 @@ export class EntityManager {
         start[2] + (end[2] - start[2]) * t
       ];
 
-      // Compute facing from path travel direction
       const pdx = end[0] - start[0];
       const pdz = end[2] - start[2];
       if (Math.abs(pdx) > 0.01 || Math.abs(pdz) > 0.01) {
@@ -211,22 +267,23 @@ export class EntityManager {
     const playerPositions = getAlivePositions();
     if (playerPositions.length === 0) return moved;
 
-    // Find all entities in a chase group
-    const chaseGroups = new Map(); // groupId -> [entities]
-    for (const entity of this.entities.values()) {
-      if (!entity.properties?.chase || !entity.properties?.groupId) continue;
+    const chaseGroups = new Map();
+    for (const id of this._chasingIds) {
+      const entity = this.entities.get(id);
+      if (!entity) {
+        this._chasingIds.delete(id);
+        continue;
+      }
       const gid = entity.properties.groupId;
       if (!chaseGroups.has(gid)) chaseGroups.set(gid, []);
       chaseGroups.get(gid).push(entity);
     }
 
     for (const [, entities] of chaseGroups) {
-      // Use the first entity (body) as the leader
       const leader = entities[0];
       const speed = (leader.properties.speed || 2) * delta;
       const radius = leader.properties.chaseRadius || 20;
 
-      // Find nearest player to leader
       let nearest = null;
       let nearestDist = Infinity;
       for (const pos of playerPositions) {
@@ -238,7 +295,6 @@ export class EntityManager {
 
       if (!nearest || nearestDist > radius) continue;
 
-      // Move leader toward player (XZ only, keep Y)
       const dx = nearest[0] - leader.position[0];
       const dz = nearest[2] - leader.position[2];
       const dist = Math.sqrt(dx * dx + dz * dz);
@@ -246,11 +302,8 @@ export class EntityManager {
 
       const moveX = (dx / dist) * speed;
       const moveZ = (dz / dist) * speed;
-
-      // Store facing yaw on leader for client
       leader.properties._facing = Math.atan2(dx, dz);
 
-      // Move all entities in the group by the same offset
       for (const entity of entities) {
         entity.position = [
           entity.position[0] + moveX,

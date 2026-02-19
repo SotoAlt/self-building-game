@@ -5,7 +5,9 @@
 import * as THREE from 'three';
 import { entityMeshes, groupParents, pendingGroups, entityToGroup, state } from '../state.js';
 import { shortAngleDist } from '../math.js';
-import { createEntityMesh, getGeometry } from './EntityFactory.js';
+import { createEntityMesh, getGeometry, clearGeometryCache } from './EntityFactory.js';
+import { clearMaterialCache } from '../ToonMaterials.js';
+import { spatialHashInsert, spatialHashUpdate, spatialHashRemove, spatialHashClear } from '../physics/SpatialHash.js';
 
 let _scene = null;
 let _updateUI = null;
@@ -75,6 +77,7 @@ export function addEntity(entity) {
   _scene.add(mesh);
   entityMeshes.set(entity.id, mesh);
   state.entities.set(entity.id, entity);
+  spatialHashInsert(entity.id, entity.position[0], entity.position[2]);
 
   const groupId = entity.properties?.groupId;
   if (groupId) {
@@ -119,10 +122,14 @@ export function updateEntity(entity) {
   }
 
   if (entity.size) {
-    mesh.geometry.dispose();
     mesh.geometry = getGeometry(entity);
   }
   if (entity.properties?.color) {
+    // Clone shared material before mutating color
+    if (!mesh.userData._materialCloned) {
+      mesh.material = mesh.material.clone();
+      mesh.userData._materialCloned = true;
+    }
     mesh.material.color.set(entity.properties.color);
     mesh.material.emissive.set(entity.properties.color);
   }
@@ -138,6 +145,7 @@ export function updateEntity(entity) {
   mesh.userData.speed = entity.properties?.speed || 1;
 
   state.entities.set(entity.id, entity);
+  spatialHashUpdate(entity.id, entity.position[0], entity.position[2]);
   _updateUI();
 }
 
@@ -156,13 +164,16 @@ export function removeEntity(id) {
       _scene.remove(mesh);
     }
     mesh.traverse((child) => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) child.material.dispose();
+      if (!child.material) return;
+      // Skip shared (cached) materials — only dispose clones and glow children
+      const isSharedMaterial = child === mesh && !mesh.userData._materialCloned;
+      if (!isSharedMaterial) child.material.dispose();
     });
     entityMeshes.delete(id);
   }
   entityToGroup.delete(id);
   state.entities.delete(id);
+  spatialHashRemove(id);
   _updateUI();
 }
 
@@ -170,7 +181,6 @@ export function clearAllEntities() {
   for (const mesh of entityMeshes.values()) {
     _scene.remove(mesh);
     mesh.traverse((child) => {
-      if (child.geometry) child.geometry.dispose();
       if (child.material) child.material.dispose();
     });
   }
@@ -181,6 +191,9 @@ export function clearAllEntities() {
   entityToGroup.clear();
   for (const tid of pendingGroups.values()) clearTimeout(tid);
   pendingGroups.clear();
+  clearGeometryCache();
+  clearMaterialCache();
+  spatialHashClear();
 }
 
 export function animateGroups(delta) {
@@ -225,13 +238,16 @@ export function animateEntities(delta, time) {
     }
 
     if (mesh.userData.cracking) {
+      // Clone material on first crack frame so opacity mutation is safe
+      if (!mesh.userData._materialCloned) {
+        mesh.material = mesh.material.clone();
+        mesh.userData._materialCloned = true;
+      }
       const elapsed = (Date.now() - mesh.userData.crackStart) / 1000;
       mesh.position.x += (Math.random() - 0.5) * 0.04;
       mesh.position.z += (Math.random() - 0.5) * 0.04;
-      if (mesh.material) {
-        mesh.material.transparent = true;
-        mesh.material.opacity = Math.max(0.2, 1 - elapsed * 1.5);
-      }
+      mesh.material.transparent = true;
+      mesh.material.opacity = Math.max(0.2, 1 - elapsed * 1.5);
     }
 
     if (eType === 'collectible') {

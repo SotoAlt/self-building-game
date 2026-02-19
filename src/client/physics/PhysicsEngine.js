@@ -21,6 +21,7 @@ import { playJumpSound, playDeathSound, playCollectSound, playBounceSound } from
 import { triggerCameraShake, screenFlash, spawnParticles } from '../vfx/ScreenEffects.js';
 import { removeEntity } from '../entities/EntityManager.js';
 import { shortAngleDist } from '../math.js';
+import { spatialHashQuery } from './SpatialHash.js';
 
 let _scene, _sendToServer, _getCameraDirections, _updateCamera;
 
@@ -35,6 +36,8 @@ const playerBox = new THREE.Box3();
 const entityBox = new THREE.Box3();
 const _moveDir = new THREE.Vector3();
 const _platformVelocity = new THREE.Vector3();
+
+const _tempEp = { x: 0, y: 0, z: 0 };
 
 function moveToward(current, target, maxDelta) {
   if (Math.abs(target - current) <= maxDelta) return target;
@@ -132,19 +135,31 @@ export function checkCollisions() {
   let hasPlatformVelocity = false;
   collision.standingOnEntity = null;
 
-  for (const [, mesh] of entityMeshes) {
+  const nearbyIds = spatialHashQuery(pp.x, pp.z);
+
+  for (let ni = 0; ni < nearbyIds.length; ni++) {
+    const mesh = entityMeshes.get(nearbyIds[ni]);
+    if (!mesh) continue;
+
     const entity = mesh.userData.entity;
     if (!entity) continue;
 
     const isGrouped = mesh.parent && mesh.parent !== _scene;
-    const ep = isGrouped
-      ? { x: mesh.parent.position.x + mesh.position.x,
-          y: mesh.parent.position.y + mesh.position.y,
-          z: mesh.parent.position.z + mesh.position.z }
-      : mesh.position;
-    const halfSize = entity.size.map(s => s / 2);
-    entityBox.min.set(ep.x - halfSize[0], ep.y - halfSize[1], ep.z - halfSize[2]);
-    entityBox.max.set(ep.x + halfSize[0], ep.y + halfSize[1], ep.z + halfSize[2]);
+    let ep;
+    if (isGrouped) {
+      _tempEp.x = mesh.parent.position.x + mesh.position.x;
+      _tempEp.y = mesh.parent.position.y + mesh.position.y;
+      _tempEp.z = mesh.parent.position.z + mesh.position.z;
+      ep = _tempEp;
+    } else {
+      ep = mesh.position;
+    }
+
+    const hs0 = entity.size[0] * 0.5;
+    const hs1 = entity.size[1] * 0.5;
+    const hs2 = entity.size[2] * 0.5;
+    entityBox.min.set(ep.x - hs0, ep.y - hs1, ep.z - hs2);
+    entityBox.max.set(ep.x + hs0, ep.y + hs1, ep.z + hs2);
 
     if (!playerBox.intersectsBox(entityBox)) continue;
 
@@ -187,14 +202,14 @@ export function checkCollisions() {
     }
 
     if (entity.type === ENTITY_TYPES.PLATFORM || entity.type === ENTITY_TYPES.RAMP) {
-      const overlapX = (0.5 + halfSize[0]) - Math.abs(player.mesh.position.x - ep.x);
-      const overlapY = (1 + halfSize[1]) - Math.abs(player.mesh.position.y - ep.y);
-      const overlapZ = (0.5 + halfSize[2]) - Math.abs(player.mesh.position.z - ep.z);
+      const overlapX = (0.5 + hs0) - Math.abs(player.mesh.position.x - ep.x);
+      const overlapY = (1 + hs1) - Math.abs(player.mesh.position.y - ep.y);
+      const overlapZ = (0.5 + hs2) - Math.abs(player.mesh.position.z - ep.z);
 
       if (overlapX <= 0 || overlapY <= 0 || overlapZ <= 0) continue;
 
       const playerBottom = player.mesh.position.y - 1;
-      const platformTop = ep.y + halfSize[1];
+      const platformTop = ep.y + hs1;
 
       if (playerBottom >= platformTop - 0.5 && playerVelocity.y <= 0) {
         standingOnPlatform = true;

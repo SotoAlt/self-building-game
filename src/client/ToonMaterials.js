@@ -5,6 +5,11 @@
  *   stone, lava_rock, ice_crystal, neon, wood, candy
  *
  * Normal maps from ProceduralTextures add surface depth.
+ *
+ * Material caching: non-animated entity types (platform, ramp, collectible,
+ * non-goal triggers) share materials. Animated types (obstacle, decoration,
+ * goal triggers, wind) get fresh materials since their emissiveIntensity is
+ * mutated per-frame.
  */
 
 import * as THREE from 'three';
@@ -85,8 +90,33 @@ export function getMaterialTheme() {
   return currentMaterialTheme;
 }
 
+// ─── Material Cache ─────────────────────────────────────────
+const _materialCache = new Map();
+
+function _shouldCacheMaterial(entity) {
+  const { type, properties: props = {} } = entity;
+  // Animated types mutate emissiveIntensity per-frame — must not share materials
+  if (type === 'obstacle') return false;
+  if (type === 'decoration') return false;
+  if (type === 'trigger' && props.isGoal) return false;
+  if (props.isWind) return false;
+  if (props.isIce) return false;
+  return true;
+}
+
+function _getMaterialCacheKey(entity) {
+  const props = entity.properties || {};
+  const color = props.color || '';
+  const flags = [
+    props.isConveyor ? 'conv' : '',
+    props.emissive ? 'em' : '',
+    props.opacity != null ? `op${props.opacity}` : '',
+  ].filter(Boolean).join(',');
+  return `${entity.type}|${color}|${currentMaterialTheme || ''}|${flags}`;
+}
+
 // ─── Entity Material Factory ────────────────────────────────
-export function createEntityToonMaterial(entity) {
+function _createEntityToonMaterialUncached(entity) {
   const props = entity.properties || {};
   const type = entity.type;
 
@@ -109,8 +139,7 @@ export function createEntityToonMaterial(entity) {
   const isSurface = type === 'platform' || type === 'ramp';
   const theme = currentMaterialTheme ? MATERIAL_THEMES[currentMaterialTheme] : null;
 
-  // Apply theme color shift
-  if (theme && theme.colorShift) {
+  if (theme?.colorShift) {
     const [dh, ds, dl] = theme.colorShift;
     color.offsetHSL(dh, ds, dl);
   }
@@ -140,7 +169,6 @@ export function createEntityToonMaterial(entity) {
     depthWrite: !isTransparent,
   };
 
-  // Conveyor belt: warmer emissive
   if (props.isConveyor) {
     matOpts.emissive = new THREE.Color('#e67e22');
     matOpts.emissiveIntensity = 0.25;
@@ -148,13 +176,11 @@ export function createEntityToonMaterial(entity) {
 
   const material = new THREE.MeshToonMaterial(matOpts);
 
-  // Apply procedural color texture
   const texture = getProceduralTexture(entity);
   if (texture) {
     material.map = texture;
   }
 
-  // Apply normal map for surface depth
   const normalType = getNormalMapType(entity, currentMaterialTheme);
   const normalScale = theme ? theme.normalScale : 0.5;
   if (normalType && normalScale > 0) {
@@ -163,6 +189,24 @@ export function createEntityToonMaterial(entity) {
   }
 
   return material;
+}
+
+export function createEntityToonMaterial(entity) {
+  if (!_shouldCacheMaterial(entity)) {
+    return _createEntityToonMaterialUncached(entity);
+  }
+  const key = _getMaterialCacheKey(entity);
+  let mat = _materialCache.get(key);
+  if (!mat) {
+    mat = _createEntityToonMaterialUncached(entity);
+    _materialCache.set(key, mat);
+  }
+  return mat;
+}
+
+export function clearMaterialCache() {
+  for (const mat of _materialCache.values()) mat.dispose();
+  _materialCache.clear();
 }
 
 export function createPlayerToonMaterial(color) {
@@ -182,7 +226,6 @@ export function createGroundToonMaterial() {
     emissiveIntensity: 0.15,
   });
 
-  // Ground gets a subtle stone normal map
   mat.normalMap = generateNormalMap('stone');
   mat.normalScale = new THREE.Vector2(0.3, 0.3);
 

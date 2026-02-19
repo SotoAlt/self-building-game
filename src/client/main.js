@@ -178,7 +178,7 @@ function animate() {
   updateShaderTime(time);
   updateConveyorScrolls(delta);
   updateEnvironmentEffects(delta, camera.position);
-  updateParticles();
+  updateParticles(delta);
   updateOutlineObjects(entityMeshes, groupParents, player.mesh, remotePlayers);
   updateChatBubbles();
 

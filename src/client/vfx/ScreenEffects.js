@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { cameraShake, particles } from '../state.js';
+import { getParticleBudget } from '../PostProcessing.js';
 
 let _scene = null;
 
@@ -61,34 +62,55 @@ export function showVignette(color, duration = 2000) {
   setTimeout(() => { vignetteEl.style.opacity = '0'; }, duration);
 }
 
+// Base materials pooled by color hex; cloned per-system for independent opacity
+const _materialPool = new Map();
+
+function getParticleMaterial(color) {
+  const hex = new THREE.Color(color).getHexString();
+  let base = _materialPool.get(hex);
+  if (!base) {
+    base = new THREE.PointsMaterial({
+      color: new THREE.Color(color),
+      size: 0.3,
+      transparent: true,
+      opacity: 1,
+    });
+    _materialPool.set(hex, base);
+  }
+  return base.clone();
+}
+
 export function spawnParticles(position, color, count = 20, speed = 5) {
+  // Enforce particle budget — evict oldest if over limit
+  const budget = getParticleBudget();
+  while (particles.length >= budget) {
+    const oldest = particles.shift();
+    _scene.remove(oldest.mesh);
+    oldest.mesh.geometry.dispose();
+    oldest.mesh.material.dispose();
+  }
+
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
-  const velocities = [];
+  const velocities = new Float32Array(count * 3);
 
   const px = position.x ?? position[0] ?? 0;
   const py = position.y ?? position[1] ?? 0;
   const pz = position.z ?? position[2] ?? 0;
 
   for (let i = 0; i < count; i++) {
-    positions[i * 3] = px;
-    positions[i * 3 + 1] = py;
-    positions[i * 3 + 2] = pz;
-    velocities.push(new THREE.Vector3(
-      (Math.random() - 0.5) * speed,
-      Math.random() * speed,
-      (Math.random() - 0.5) * speed
-    ));
+    const i3 = i * 3;
+    positions[i3] = px;
+    positions[i3 + 1] = py;
+    positions[i3 + 2] = pz;
+    velocities[i3] = (Math.random() - 0.5) * speed;
+    velocities[i3 + 1] = Math.random() * speed;
+    velocities[i3 + 2] = (Math.random() - 0.5) * speed;
   }
 
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-  const material = new THREE.PointsMaterial({
-    color: new THREE.Color(color),
-    size: 0.3,
-    transparent: true,
-    opacity: 1
-  });
+  const material = getParticleMaterial(color);
 
   const points = new THREE.Points(geometry, material);
   _scene.add(points);
@@ -101,8 +123,10 @@ export function spawnParticles(position, color, count = 20, speed = 5) {
   });
 }
 
-export function updateParticles() {
+export function updateParticles(dt) {
   const now = Date.now();
+  if (!dt || dt <= 0) dt = 0.016; // fallback for first frame
+
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     const elapsed = now - p.startTime;
@@ -117,13 +141,14 @@ export function updateParticles() {
 
     const positions = p.mesh.geometry.attributes.position.array;
     const count = positions.length / 3;
-    const dt = 0.016; // ~60fps
+    const vel = p.velocities;
 
     for (let j = 0; j < count; j++) {
-      positions[j * 3] += p.velocities[j].x * dt;
-      positions[j * 3 + 1] += p.velocities[j].y * dt;
-      positions[j * 3 + 2] += p.velocities[j].z * dt;
-      p.velocities[j].y -= 9.8 * dt;
+      const j3 = j * 3;
+      positions[j3] += vel[j3] * dt;
+      positions[j3 + 1] += vel[j3 + 1] * dt;
+      positions[j3 + 2] += vel[j3 + 2] * dt;
+      vel[j3 + 1] -= 9.8 * dt; // gravity
     }
 
     p.mesh.geometry.attributes.position.needsUpdate = true;

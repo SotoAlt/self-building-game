@@ -1,6 +1,9 @@
 /**
  * Entity Factory — pure functions that create Three.js geometry/meshes.
  * No scene, no state, no side effects.
+ *
+ * Geometry caching: identical geometries (same type+shape+size) share a single
+ * BufferGeometry instance. Callers must NOT dispose cached geometries directly.
  */
 
 import * as THREE from 'three';
@@ -37,11 +40,19 @@ export function createBeveledBox(sx, sy, sz) {
   return geo;
 }
 
-export function getGeometry(entity) {
+// ─── Geometry Cache ──────────────────────────────────────────
+const _geometryCache = new Map();
+
+function _getGeometryCacheKey(entity) {
+  const shape = entity.properties?.shape || '';
+  const [sx, sy, sz] = entity.size || [1, 1, 1];
+  return `${entity.type}|${shape}|${sx}|${sy}|${sz}`;
+}
+
+function _createGeometry(entity) {
   const shape = entity.properties?.shape;
   const [sx, sy, sz] = entity.size || [1, 1, 1];
 
-  // Type-based defaults when no explicit shape is set
   if (!shape) {
     if (entity.type === 'collectible') {
       return new THREE.IcosahedronGeometry(0.5, 0);
@@ -74,6 +85,51 @@ export function getGeometry(entity) {
   }
 }
 
+export function getGeometry(entity) {
+  const key = _getGeometryCacheKey(entity);
+  let geo = _geometryCache.get(key);
+  if (!geo) {
+    geo = _createGeometry(entity);
+    _geometryCache.set(key, geo);
+  }
+  return geo;
+}
+
+// ─── Glow Geometry Cache ─────────────────────────────────────
+let _collectibleGlowGeo = null;
+const _goalGlowGeoCache = new Map();
+
+function getCollectibleGlowGeometry() {
+  if (!_collectibleGlowGeo) {
+    _collectibleGlowGeo = new THREE.SphereGeometry(1.0, 16, 16);
+  }
+  return _collectibleGlowGeo;
+}
+
+function getGoalGlowGeometry(radius) {
+  const key = radius.toFixed(2);
+  let geo = _goalGlowGeoCache.get(key);
+  if (!geo) {
+    geo = new THREE.SphereGeometry(radius, 16, 16);
+    _goalGlowGeoCache.set(key, geo);
+  }
+  return geo;
+}
+
+export function clearGeometryCache() {
+  for (const geo of _geometryCache.values()) geo.dispose();
+  _geometryCache.clear();
+
+  if (_collectibleGlowGeo) {
+    _collectibleGlowGeo.dispose();
+    _collectibleGlowGeo = null;
+  }
+
+  for (const geo of _goalGlowGeoCache.values()) geo.dispose();
+  _goalGlowGeoCache.clear();
+}
+
+// ─── Mesh Creation ───────────────────────────────────────────
 export function createEntityMesh(entity) {
   const geometry = getGeometry(entity);
   const props = entity.properties || {};
@@ -101,7 +157,7 @@ export function createEntityMesh(entity) {
   mesh.userData = { entity, rotating: props.rotating, speed: props.speed || 1 };
 
   if (entity.type === 'collectible') {
-    const glowGeometry = new THREE.SphereGeometry(1.0, 16, 16);
+    const glowGeometry = getCollectibleGlowGeometry();
     const glowMaterial = new THREE.MeshBasicMaterial({
       color,
       transparent: true,
@@ -115,8 +171,9 @@ export function createEntityMesh(entity) {
 
   if (entity.type === 'trigger' && props.isGoal) {
     const [sx, sy, sz] = entity.size || [3, 3, 3];
+    const radius = Math.max(sx, sy, sz) * 0.6;
     const goalGlow = new THREE.Mesh(
-      new THREE.SphereGeometry(Math.max(sx, sy, sz) * 0.6, 16, 16),
+      getGoalGlowGeometry(radius),
       new THREE.MeshBasicMaterial({
         color,
         transparent: true,

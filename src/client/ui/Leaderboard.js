@@ -1,13 +1,20 @@
 /**
  * Leaderboard fetching and rendering.
+ *
+ * Caches last-fetched JSON to skip redundant DOM rebuilds when scores haven't changed.
  */
 
 import { getApiBase } from '../config.js';
+
+let _lastLeaderboardJSON = '';
 
 export async function fetchLeaderboard() {
   try {
     const response = await fetch(`${getApiBase()}/leaderboard`);
     const data = await response.json();
+    const json = JSON.stringify(data.leaderboard);
+    if (json === _lastLeaderboardJSON) return; // skip DOM rebuild
+    _lastLeaderboardJSON = json;
     updateLeaderboardUI(data.leaderboard);
   } catch (e) {
     // Silent fail
