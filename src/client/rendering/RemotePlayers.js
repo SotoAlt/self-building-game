@@ -123,6 +123,7 @@ function createRemotePlayerMesh(playerData) {
   mesh.userData.playerName = playerData.name || 'Player';
 
   mesh.userData.targetPosition = new THREE.Vector3();
+  mesh.userData.velocity = new THREE.Vector3();
   if (playerData.position) {
     mesh.userData.targetPosition.set(...playerData.position);
     mesh.position.set(...playerData.position);
@@ -144,6 +145,9 @@ export function updateRemotePlayer(playerData) {
 
   if (playerData.position) {
     mesh.userData.targetPosition.set(...playerData.position);
+  }
+  if (playerData.velocity) {
+    mesh.userData.velocity.set(...playerData.velocity);
   }
 }
 
@@ -185,17 +189,26 @@ export function updateChatBubbles() {
   }
 }
 
-export function interpolateRemotePlayers() {
+export function interpolateRemotePlayers(delta) {
   for (const [, mesh] of remotePlayers) {
-    if (mesh.userData.targetPosition) {
-      const dx = mesh.userData.targetPosition.x - mesh.position.x;
-      const dz = mesh.userData.targetPosition.z - mesh.position.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist > 0.05) {
-        const targetYaw = Math.atan2(dx, dz);
-        mesh.rotation.y += shortAngleDist(mesh.rotation.y, targetYaw) * 0.15;
-      }
-      mesh.position.lerp(mesh.userData.targetPosition, 0.15);
+    if (!mesh.userData.targetPosition) continue;
+
+    const vel = mesh.userData.velocity;
+    if (vel && (vel.x !== 0 || vel.y !== 0 || vel.z !== 0)) {
+      mesh.position.x += vel.x * delta;
+      mesh.position.y += vel.y * delta;
+      mesh.position.z += vel.z * delta;
+    }
+
+    // Delta-scaled blend: ~0.15 at 60fps → factor = 1 - 0.85^(delta*60)
+    const blendFactor = 1 - Math.pow(0.85, delta * 60);
+    mesh.position.lerp(mesh.userData.targetPosition, blendFactor);
+
+    const dx = mesh.userData.targetPosition.x - mesh.position.x;
+    const dz = mesh.userData.targetPosition.z - mesh.position.z;
+    if (dx * dx + dz * dz > 0.0025) {
+      const targetYaw = Math.atan2(dx, dz);
+      mesh.rotation.y += shortAngleDist(mesh.rotation.y, targetYaw) * blendFactor;
     }
   }
 }

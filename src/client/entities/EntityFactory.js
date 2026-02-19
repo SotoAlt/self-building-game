@@ -90,6 +90,7 @@ export function getGeometry(entity) {
   let geo = _geometryCache.get(key);
   if (!geo) {
     geo = _createGeometry(entity);
+    geo.computeBoundingSphere();
     _geometryCache.set(key, geo);
   }
   return geo;
@@ -102,6 +103,7 @@ const _goalGlowGeoCache = new Map();
 function getCollectibleGlowGeometry() {
   if (!_collectibleGlowGeo) {
     _collectibleGlowGeo = new THREE.SphereGeometry(1.0, 16, 16);
+    _collectibleGlowGeo.computeBoundingSphere();
   }
   return _collectibleGlowGeo;
 }
@@ -111,6 +113,7 @@ function getGoalGlowGeometry(radius) {
   let geo = _goalGlowGeoCache.get(key);
   if (!geo) {
     geo = new THREE.SphereGeometry(radius, 16, 16);
+    geo.computeBoundingSphere();
     _goalGlowGeoCache.set(key, geo);
   }
   return geo;

@@ -169,7 +169,7 @@ function animate() {
     updateSquashStretch(player.mesh, playerVelocity.y, player.isGrounded);
   }
 
-  interpolateRemotePlayers();
+  interpolateRemotePlayers(delta);
   animateGroups(delta);
   animateEntities(delta, time);
 

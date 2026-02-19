@@ -56,6 +56,7 @@ function addGlowRing(mesh, color) {
 
 export function createPlayerCharacter() {
   const geometry = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
+  geometry.computeBoundingSphere();
   const material = createPlayerToonMaterial(LOCAL_PLAYER_COLOR);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(0, 2, 0);
@@ -70,6 +71,7 @@ export function createPlayerCharacter() {
 
 export function createRemotePlayerCharacter(color) {
   const geometry = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
+  geometry.computeBoundingSphere();
   const material = createPlayerToonMaterial(color);
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;

@@ -11,6 +11,7 @@ const SSE_EVENTS = new Set([
   'announcement', 'player_died', 'spell_cast', 'game_state_changed',
   'player_joined', 'player_left', 'chat_message', 'floor_changed',
   'entity_spawned', 'entity_destroyed',
+  'entities_batch', 'entities_destroyed_batch', 'world_cleared',
 ]);
 
 export class ArenaInstance {

@@ -52,9 +52,7 @@ export function mountWorldRoutes(router, ctx) {
     if (gameService.rejectIfLobbyTimer(arena, res)) return;
 
     const ids = arena.worldState.clearEntities();
-    for (const id of ids) {
-      arena.broadcastToRoom('entity_destroyed', { id });
-    }
+    arena.broadcastToRoom('world_cleared');
     arena.broadcastToRoom('physics_changed', arena.worldState.physics);
     arena.broadcastToRoom('environment_changed', arena.worldState.environment);
     res.json({ success: true, cleared: ids.length });
@@ -93,9 +91,7 @@ export function mountWorldRoutes(router, ctx) {
       return res.status(404).json({ error: `No entities found with groupId: ${groupId}` });
     }
 
-    for (const id of ids) {
-      arena.broadcastToRoom('entity_destroyed', { id });
-    }
+    arena.broadcastToRoom('entities_destroyed_batch', { ids });
     res.json({ success: true, destroyed: ids.length, entityIds: ids });
   });
 

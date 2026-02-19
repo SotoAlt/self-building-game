@@ -82,6 +82,14 @@ export function registerMessageHandlers(room) {
     removeEntity(id);
   });
 
+  room.onMessage('entities_batch', (entities) => {
+    for (const entity of entities) addEntity(entity);
+  });
+
+  room.onMessage('entities_destroyed_batch', ({ ids }) => {
+    for (const id of ids) removeEntity(id);
+  });
+
   room.onMessage('platform_cracking', ({ id }) => {
     const mesh = entityMeshes.get(id);
     if (mesh) {
@@ -134,6 +142,7 @@ export function registerMessageHandlers(room) {
       state.players.set(id, p);
     }
     p.position = position;
+    p.velocity = velocity;
     updateRemotePlayer(p);
   });
 

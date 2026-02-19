@@ -34,15 +34,15 @@ export function applyTemplate(arena, tmpl, doRandomize = true) {
   const ws = arena.worldState;
   const broadcast = arena.broadcastToRoom.bind(arena);
   const finalTmpl = doRandomize ? randomizeTemplate(tmpl) : tmpl;
-  const cleared = ws.clearEntities();
-  for (const id of cleared) broadcast('entity_destroyed', { id });
+  ws.clearEntities();
+  broadcast('world_cleared');
 
   const spawned = [];
   for (const entityDef of finalTmpl.entities) {
     const entity = ws.spawnEntity(entityDef.type, entityDef.position, entityDef.size, entityDef.properties || {});
-    broadcast('entity_spawned', entity);
-    spawned.push(entity.id);
+    spawned.push(entity);
   }
+  broadcast('entities_batch', spawned);
 
   if (finalTmpl.respawnPoint) {
     ws.setRespawnPoint(finalTmpl.respawnPoint);
@@ -61,7 +61,7 @@ export function applyTemplate(arena, tmpl, doRandomize = true) {
     broadcast('hazard_plane_changed', { ...ws.hazardPlane });
   }
 
-  return spawned;
+  return spawned.map(e => e.id);
 }
 
 export function doStartGame(arena, gameType, options) {

@@ -434,6 +434,7 @@ export function spawnGroup(definition, groupPrefix, position, properties, childM
   const merged = { ...definition.defaultProperties, ...properties };
   const entityIds = [];
 
+  const entities = [];
   for (const child of definition.children) {
     const absPos = [
       position[0] + child.offset[0],
@@ -449,10 +450,11 @@ export function spawnGroup(definition, groupPrefix, position, properties, childM
     applyBehavior(definition.behavior, merged, childProps, absPos);
 
     const entity = worldState.spawnEntity(child.type, absPos, child.size, childProps);
-    broadcastFn('entity_spawned', entity);
+    entities.push(entity);
     entityIds.push(entity.id);
   }
 
+  broadcastFn('entities_batch', entities);
   return { groupId, entityIds };
 }
 
