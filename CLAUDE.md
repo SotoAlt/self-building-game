@@ -6,7 +6,7 @@ An AI "Chaos Magician" (Claude via OpenClaw) builds a 3D multiplayer game in rea
 
 ## Current Phase
 
-**Production v0.50.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
+**Production v0.68.0** — deployed at `https://chaos.waweapps.win` on Hetzner VPS.
 
 ## Architecture
 
@@ -37,10 +37,10 @@ src/
     AgentLoop.js                Drama score, phase detection, scheduling (372 lines)
     AgentBridge.js              OpenClaw CLI invocation (181 lines)
     ArenaTemplates.js           16 arena layouts (822 lines)
-    Prefabs.js                  23 entity presets (483 lines)
+    Prefabs.js                  23 entity presets (485 lines)
     Composer.js                 Recipe validation, disk cache (273 lines)
     ArenaManager.js             Arena registry, max 20 (138 lines)
-    ArenaInstance.js            Per-arena state bundle (151 lines)
+    ArenaInstance.js            Per-arena state bundle (152 lines)
     arenaMiddleware.js          URL arena resolution + API key auth (56 lines)
     AIPlayer.js                 AI bot personalities (331 lines)
     auth.js                     Privy JWT verification (99 lines)
@@ -75,52 +75,65 @@ src/
       HotPotato.js              Curse transfer elimination (265 lines)
       Race.js                   Ordered checkpoints (211 lines)
     blockchain/                 Mock chain + bribe system
-  client/                       38 JS/JSX files, ~6,500 lines
-    main.js                     Orchestrator, game loop (273 lines)
-    ToonMaterials.js            Cel-shaded material factory (247 lines)
-    PostProcessing.js           Adaptive quality, outline pass (249 lines)
+  client/                       48 JS/JSX files, ~7,000 lines
+    main.js                     Orchestrator, game loop (197 lines)
+    ToonMaterials.js            TSL NodeMaterial cel-shaded factory (270 lines)
+    PostProcessing.js           3-tier adaptive quality, WebGPU outline pass (168 lines)
     ProceduralTextures.js       Runtime textures (440 lines)
-    SurfaceShaders.js           GLSL for ice/conveyor/wind (236 lines)
-    EnvironmentEffects.js       Sky, fog, lighting, weather (349 lines)
-    PlayerVisuals.js            Player model, squash-stretch (145 lines)
+    SurfaceShaders.js           TSL surface shaders for ice/conveyor/wind (159 lines)
+    EnvironmentEffects.js       Sky, fog, lighting, SpriteNodeMaterial particles (336 lines)
+    PlayerVisuals.js            Player model, squash-stretch (147 lines)
     CameraController.js         Orbit + spectator camera (177 lines)
     GeometryTemplates.js        16 geometry templates (201 lines)
+    SceneSetup.js               Scene init, WebGPURenderer, lighting (61 lines)
+    ConnectionManager.js        Colyseus connect/disconnect (60 lines)
+    PrivyBridge.jsx             React mount for Privy auth (115 lines)
     auth.js                     Privy client-side auth (233 lines)
     config.js                   URL params, server URL (77 lines)
-    state.js                    Shared mutable state (95 lines)
+    state.js                    Shared mutable state (124 lines)
+    math.js                     lerp utility (10 lines)
     entities/
-      EntityFactory.js          Geometry/glow cache, mesh creation (189 lines)
-      EntityManager.js          Lifecycle, group assembly (281 lines)
+      EntityFactory.js          Geometry/glow cache, mesh creation (191 lines)
+      EntityManager.js          Lifecycle, group assembly (317 lines)
+      EntityBehaviors.js        Kinematic, chasing, pendulum behaviors (126 lines)
+      InstancedBatchManager.js  InstancedMesh batching (198 lines)
     physics/
-      PhysicsEngine.js          AABB collision, gravity, triggers (407 lines)
+      PhysicsEngine.js          AABB collision, gravity, triggers (399 lines)
       SpatialHash.js            2D grid for O(1) lookups (86 lines)
     input/
       InputManager.js           Keyboard action map (89 lines)
       MobileControls.js         Virtual joystick + touch (188 lines)
     network/
       NetworkManager.js         Colyseus connection (85 lines)
-      MessageHandlers.js        50+ WS message handlers (408 lines)
+      MessageHandlers.js        Re-exports from handlers/ (16 lines)
       HttpApi.js                REST polling (83 lines)
+      handlers/
+        GameStateHandlers.js    Game state, countdown, collectibles (202 lines)
+        EntityHandlers.js       Entity add/update/remove (57 lines)
+        PlayerHandlers.js       Player join/leave/respawn (71 lines)
+        EffectHandlers.js       Spells, environment, disconnect, AFK (134 lines)
     scene/
-      FloorManager.js           Floor mesh lifecycle (93 lines)
+      FloorManager.js           Floor mesh lifecycle (90 lines)
     rendering/
-      RemotePlayers.js          Remote player interpolation (201 lines)
+      RemotePlayers.js          Remote player interpolation (214 lines)
     audio/
       SoundManager.js           Procedural tones (146 lines)
     vfx/
-      ScreenEffects.js          Shake, flash, particles (157 lines)
-    ui/                         11 UI modules
+      ScreenEffects.js          Shake, flash, particles (148 lines)
+      ParticleUtils.js          TSL soft-circle + SpriteNodeMaterial factory (31 lines)
+    ui/                         12 UI modules
       GameStatusHUD.js          Timer, score overlays (108 lines)
       ChatSystem.js             Chat input/display (118 lines)
       Announcements.js          Global announcements (108 lines)
-      ArenaLobby.js             Arena selection (82 lines)
+      ArenaLobby.js             Arena selection (98 lines)
       BribePanel.js             Bribe options (200 lines)
       ProfilePanel.js           Player profile (258 lines)
-      AfkOverlay.js             AFK warning (91 lines)
+      AfkOverlay.js             AFK warning (94 lines)
       SpectatorOverlay.js       Spectator indicator (45 lines)
       DebugPanel.js             Debug controls (44 lines)
       AuthFlow.js               Auth integration (147 lines)
       Leaderboard.js            Top players (58 lines)
+      GameMenu.js               In-game menu (change arena, logout) (62 lines)
   shared/
     constants.js                ENTITY_TYPES, GAME_TYPES, SPELL_TYPES (98 lines)
 config/openclaw/
@@ -131,7 +144,7 @@ config/openclaw/
 agent-runner.js                 Chaos arena agent loop (545 lines)
 agent-runner-host.js            Reference external arena agent (254 lines)
 chat-bridge.js                  Twitch/Discord/Telegram bridge (304 lines)
-index.html                      Game UI (298 lines)
+index.html                      Game UI (304 lines)
 ```
 
 ## Development Commands

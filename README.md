@@ -18,7 +18,7 @@ An AI agent ("Chaos Magician") builds a 3D multiplayer game in real-time while p
 
 | Component | Technology |
 |-----------|------------|
-| 3D Rendering | Three.js (cel-shaded toon style) |
+| 3D Rendering | Three.js + WebGPU (TSL cel-shaded toon style) |
 | Multiplayer | Colyseus (WebSocket) |
 | Server | Express + Node.js |
 | AI Agent | OpenClaw + Claude (Anthropic) |
@@ -86,15 +86,15 @@ src/
     routes/         7 route files (world, game, bribe, agent, public, arena, auth)
     services/       gameService, arenaService
     games/          6 game types (reach, collect, survival, king, hot_potato, race)
-  client/           38 JS/JSX files (~6,500 lines)
-    main.js         Orchestrator (273 lines) — wires 34 modules
-    entities/       EntityFactory (geometry cache), EntityManager (lifecycle)
+  client/           48 JS/JSX files (~7,000 lines)
+    main.js         Orchestrator (197 lines) — wires 48 modules
+    entities/       EntityFactory, EntityManager, EntityBehaviors, InstancedBatchManager
     physics/        PhysicsEngine (AABB), SpatialHash (O(1) lookups)
-    network/        NetworkManager, MessageHandlers, HttpApi
+    network/        NetworkManager, MessageHandlers (split into 4 handler files), HttpApi
     rendering/      RemotePlayers (interpolation)
-    ui/             11 UI modules (HUD, chat, lobby, bribe, profile, etc.)
+    ui/             12 UI modules (HUD, chat, lobby, bribe, profile, game menu, etc.)
     audio/          SoundManager (procedural tones)
-    vfx/            ScreenEffects (shake, flash, particles)
+    vfx/            ScreenEffects (shake, flash), ParticleUtils (WebGPU SpriteNodeMaterial)
   shared/           constants.js (entity types, game types, spells, physics)
 config/openclaw/    Agent skill definitions + SOUL.md personality
 agent-runner.js     Chaos arena agent loop (runs on host)

@@ -146,9 +146,9 @@ Services (`src/server/services/`):
 
 ## Client Architecture
 
-### Entry Point: `src/client/main.js` (273 lines)
+### Entry Point: `src/client/main.js` (197 lines)
 
-Orchestrator that initializes the Three.js scene, connects to Colyseus, and runs the game loop. Imports and wires together 34 modules across 11 subdirectories. The game loop runs at 60fps via `requestAnimationFrame`:
+Orchestrator that initializes the Three.js scene, connects to Colyseus, and runs the game loop. Imports and wires together 48 modules across 12 subdirectories. The game loop runs at 60fps via `requestAnimationFrame`:
 
 ```
 updatePhysics -> updateCamera -> updateParticles -> animateEntities ->
@@ -159,27 +159,30 @@ updateShaderTime -> interpolateRemotePlayers -> renderFrame
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `ToonMaterials.js` | 247 | Cel-shaded material factory with gradient maps and emissive tuning. `_materialCache` Map prevents duplicate allocations |
-| `PostProcessing.js` | 249 | 4-tier adaptive quality (ultra/high/medium/low) with FPS-driven tier switching. Outline pass for toon edges |
+| `ToonMaterials.js` | 270 | TSL NodeMaterial cel-shaded material factory with gradient maps and emissive tuning. `_materialCache` Map prevents duplicate allocations |
+| `PostProcessing.js` | 168 | 3-tier adaptive quality (high/medium/low) with FPS-driven tier switching. WebGPU RenderPipeline with toon outline pass |
 | `ProceduralTextures.js` | 440 | Runtime texture generation for various surface types |
-| `SurfaceShaders.js` | 236 | Custom GLSL shaders for ice, conveyor, and wind surfaces. Time-based UV scrolling |
-| `EnvironmentEffects.js` | 349 | Skybox dome, fog, dynamic lighting, weather particles |
-| `PlayerVisuals.js` | 145 | Player character model construction, squash-stretch animation |
+| `SurfaceShaders.js` | 159 | TSL surface shaders for ice, conveyor, and wind surfaces. Time-based UV scrolling |
+| `EnvironmentEffects.js` | 336 | Skybox dome, fog, dynamic lighting, SpriteNodeMaterial ambient particles |
+| `PlayerVisuals.js` | 147 | Player character model construction, squash-stretch animation |
 | `CameraController.js` | 177 | Orbit camera for gameplay + spectator free-fly mode. Pre-allocated Vector3s to avoid GC |
+| `SceneSetup.js` | 61 | Scene initialization, WebGPURenderer setup, lighting |
 
 ### Entity System
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `entities/EntityFactory.js` | 189 | `_geometryCache` Map keyed by `"type|shape|sx|sy|sz"` — 111 hex platforms share 1 geometry. Glow caching for emissive entities |
-| `entities/EntityManager.js` | 281 | Entity lifecycle (add/update/remove), composed group assembly with debounce, clone-on-write materials for per-entity mutations |
+| `entities/EntityFactory.js` | 191 | `_geometryCache` Map keyed by `"type|shape|sx|sy|sz"` — 111 hex platforms share 1 geometry. Glow caching for emissive entities |
+| `entities/EntityManager.js` | 317 | Entity lifecycle (add/update/remove), composed group assembly with debounce, clone-on-write materials for per-entity mutations |
+| `entities/EntityBehaviors.js` | 126 | Kinematic, chasing, pendulum, orbiting entity behaviors |
+| `entities/InstancedBatchManager.js` | 198 | InstancedMesh batching — groups identical geometries into single draw calls |
 | `GeometryTemplates.js` | 201 | 16 named geometry templates (horn, tentacle, wing, dome, column, etc.) |
 
 ### Physics and Collision
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `physics/PhysicsEngine.js` | 407 | AABB collision detection, gravity, velocity integration, death/respawn logic, trigger activation, surface effects (ice, conveyor, wind) |
+| `physics/PhysicsEngine.js` | 399 | AABB collision detection, gravity, velocity integration, death/respawn logic, trigger activation, surface effects (ice, conveyor, wind) |
 | `physics/SpatialHash.js` | 86 | 2D grid (XZ plane), cell size 8, 3x3 neighborhood queries. ~90% collision check reduction vs brute force |
 
 ### Input
@@ -194,46 +197,54 @@ updateShaderTime -> interpolateRemotePlayers -> renderFrame
 | File | Lines | Purpose |
 |------|-------|---------|
 | `network/NetworkManager.js` | 85 | Colyseus connection management, exponential backoff reconnection (1s -> 30s max) |
-| `network/MessageHandlers.js` | 408 | 50+ WebSocket message handlers. Delegates to entity manager, sound, UI, VFX subsystems |
+| `network/MessageHandlers.js` | 16 | Re-exports from handlers/ subdirectory |
+| `network/handlers/GameStateHandlers.js` | 202 | Game state, countdown, collectibles, challenges |
+| `network/handlers/EntityHandlers.js` | 57 | Entity add/update/remove |
+| `network/handlers/PlayerHandlers.js` | 71 | Player join/leave/respawn |
+| `network/handlers/EffectHandlers.js` | 134 | Spells, environment, disconnect, AFK |
 | `network/HttpApi.js` | 83 | REST polling: `fetchInitialState()`, `fetchLeaderboard()`, `pollForUpdates()` |
+| `ConnectionManager.js` | 60 | Colyseus connect/disconnect, intentional disconnect flag |
 
 ### Scene
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `scene/FloorManager.js` | 93 | Floor mesh lifecycle — creates/destroys floor based on type (solid/none/lava), applies surface materials |
+| `scene/FloorManager.js` | 90 | Floor mesh lifecycle — creates/destroys floor based on type (solid/none/lava), applies surface materials |
 
-### UI Modules (11 files in `src/client/ui/`)
+### UI Modules (12 files in `src/client/ui/`)
 
 | File | Lines | Purpose |
 |------|-------|---------|
 | `GameStatusHUD.js` | 108 | rAF-debounced `updateUI()`, game timer, score overlays (king points, hot potato timer, race checkpoints) |
 | `ChatSystem.js` | 118 | Chat input/display, @agent mentions, message history |
 | `Announcements.js` | 108 | Global announcements with max 3 visible, duration cap 4s, reconnect overlay |
-| `ArenaLobby.js` | 82 | Arena selection screen, chaos arena pinned with FEATURED badge |
+| `ArenaLobby.js` | 98 | Arena selection screen, chaos arena pinned with FEATURED badge |
 | `BribePanel.js` | 200 | 6 predefined bribe options (30-200 tokens), submit flow |
 | `ProfilePanel.js` | 258 | Player profile, stats display |
-| `AfkOverlay.js` | 91 | AFK warning with 15s kick countdown, rejoin option |
+| `AfkOverlay.js` | 94 | AFK warning with 15s kick countdown, rejoin option |
 | `SpectatorOverlay.js` | 45 | Spectator mode indicator and controls |
 | `DebugPanel.js` | 44 | Runtime debug controls (`?debug=true`) |
 | `AuthFlow.js` | 147 | Privy authentication integration |
 | `Leaderboard.js` | 58 | Top players display with cached JSON |
+| `GameMenu.js` | 62 | In-game menu (change arena, logout) |
 
 ### Audio and VFX
 
 | File | Lines | Purpose |
 |------|-------|---------|
 | `audio/SoundManager.js` | 146 | Procedural tone generation (`createTone`), `playSound` wrapper, countdown beeps, win fanfare |
-| `vfx/ScreenEffects.js` | 157 | Camera shake, screen flash, vignette overlays, particle pool with Float32Array, quality-tier enforcement |
+| `vfx/ScreenEffects.js` | 148 | Camera shake, screen flash, vignette overlays, particle pool with Float32Array, quality-tier enforcement |
+| `vfx/ParticleUtils.js` | 31 | Shared TSL soft-circle node + SpriteNodeMaterial factory for WebGPU particles |
 
 ### Configuration and State
 
 | File | Lines | Purpose |
 |------|-------|---------|
 | `config.js` | 77 | `SERVER_URL`, URL params (`?debug`, `?spectator`, `?arena`), `isMobile` detection, `getApiBase()` |
-| `state.js` | 95 | Shared mutable state: `player`, `playerVelocity`, `camera`, `remotePlayers`, `entityMeshes`, `auth`, `countdown` |
+| `state.js` | 124 | Shared mutable state: `player`, `playerVelocity`, `camera`, `remotePlayers`, `entityMeshes`, `auth`, `countdown` |
 | `auth.js` | 233 | Privy client-side auth, JWT token management |
 | `math.js` | 10 | `lerp()` utility |
+| `PrivyBridge.jsx` | 115 | React mount for Privy auth widget |
 
 ### Performance Optimizations
 
@@ -242,7 +253,10 @@ updateShaderTime -> interpolateRemotePlayers -> renderFrame
 - **Spatial hash**: O(1) collision lookups via `SpatialHash` replacing O(n) brute force. Cell size 8, 3x3 neighborhood
 - **Particle budget**: quality-tier enforcement (ultra: 20, low: 5 max concurrent particle systems)
 - **UI debouncing**: rAF dirty flag on `GameStatusHUD.updateUI()`, leaderboard JSON caching
-- **Adaptive quality**: `PostProcessing` monitors FPS and auto-switches between ultra/high/medium/low tiers
+- **Adaptive quality**: `PostProcessing` monitors FPS and auto-switches between high/medium/low tiers
+- **InstancedMesh batching**: `InstancedBatchManager` merges identical geometries into single draw calls — 100 identical platforms become 1 draw call
+- **SpriteNodeMaterial particles**: WebGPU-native billboarded sprites via TSL (replaced PointsMaterial which renders 1px dots in WebGPU)
+- **Console stripping**: Production builds strip all `console.*` calls via esbuild at build time
 
 ---
 
@@ -335,10 +349,10 @@ src/server/
   AgentLoop.js          372   Drama score, phase detection, invoke scheduling
   AgentBridge.js        181   OpenClaw CLI invocation, prompt construction
   ArenaTemplates.js     822   16 arena layouts with randomization
-  Prefabs.js            483   23 entity presets with behaviors
+  Prefabs.js            485   23 entity presets with behaviors
   Composer.js           273   Recipe validation, disk cache, prefab resolution
   ArenaManager.js       138   Arena registry (max 20)
-  ArenaInstance.js      151   Per-arena state bundle
+  ArenaInstance.js      152   Per-arena state bundle
   arenaMiddleware.js     56   URL-based arena resolution + API key auth
   AIPlayer.js           331   AI bot personalities
   auth.js                99   Privy JWT verification
@@ -381,57 +395,68 @@ src/server/
     MonadChainInterface.js 136 Monad chain integration
 ```
 
-### Client (38 JS/JSX files, ~6,500 lines)
+### Client (48 JS/JSX files, ~7,000 lines)
 
 ```
 src/client/
-  main.js               273   Orchestrator, game loop, module wiring
-  ToonMaterials.js      247   Cel-shaded material factory
-  PostProcessing.js     249   Adaptive quality, outline pass
+  main.js               197   Orchestrator, game loop, module wiring
+  ToonMaterials.js      270   TSL NodeMaterial cel-shaded material factory
+  PostProcessing.js     168   3-tier adaptive quality, WebGPU outline pass
   ProceduralTextures.js 440   Runtime texture generation
-  SurfaceShaders.js     236   GLSL for ice/conveyor/wind
-  EnvironmentEffects.js 349   Sky, fog, lighting, weather
-  PlayerVisuals.js      145   Player model, squash-stretch
+  SurfaceShaders.js     159   TSL surface shaders for ice/conveyor/wind
+  EnvironmentEffects.js 336   Sky, fog, lighting, SpriteNodeMaterial particles
+  PlayerVisuals.js      147   Player model, squash-stretch
   CameraController.js   177   Orbit + spectator camera
   GeometryTemplates.js  201   16 geometry templates
+  SceneSetup.js          61   Scene init, WebGPURenderer, lighting
+  ConnectionManager.js   60   Colyseus connect/disconnect, intentional disconnect flag
   PrivyBridge.jsx       115   Privy React bridge
   auth.js               233   Client-side auth, JWT
   config.js              77   URL params, server URL, mobile detection
-  state.js               95   Shared mutable state
+  state.js              124   Shared mutable state
   math.js                10   lerp utility
   entities/
-    EntityFactory.js    189   Geometry/glow cache, mesh creation
-    EntityManager.js    281   Lifecycle, group assembly, clone-on-write
+    EntityFactory.js    191   Geometry/glow cache, mesh creation
+    EntityManager.js    317   Lifecycle, group assembly, clone-on-write
+    EntityBehaviors.js  126   Kinematic, chasing, pendulum, orbiting behaviors
+    InstancedBatchManager.js 198  InstancedMesh batching for identical geometries
   physics/
-    PhysicsEngine.js    407   AABB collision, gravity, triggers, surfaces
+    PhysicsEngine.js    399   AABB collision, gravity, triggers, surfaces
     SpatialHash.js       86   2D grid for O(1) lookups
   input/
     InputManager.js      89   Keyboard action map
     MobileControls.js   188   Virtual joystick + touch camera
   network/
     NetworkManager.js    85   Colyseus connection, reconnection
-    MessageHandlers.js  408   50+ WS message handlers
+    MessageHandlers.js   16   Re-exports from handlers/
     HttpApi.js           83   REST polling
+    handlers/
+      GameStateHandlers.js 202  Game state, countdown, collectibles, challenges
+      EntityHandlers.js    57  Entity add/update/remove
+      PlayerHandlers.js    71  Player join/leave/respawn
+      EffectHandlers.js   134  Spells, environment, disconnect, AFK
   scene/
-    FloorManager.js      93   Floor mesh lifecycle
+    FloorManager.js      90   Floor mesh lifecycle
   rendering/
-    RemotePlayers.js    201   Remote player interpolation, chat bubbles
+    RemotePlayers.js    214   Remote player interpolation, chat bubbles
   audio/
     SoundManager.js     146   Procedural tones, sound playback
   vfx/
-    ScreenEffects.js    157   Shake, flash, particles, vignette
+    ScreenEffects.js    148   Shake, flash, particles, vignette
+    ParticleUtils.js     31   TSL soft-circle node + SpriteNodeMaterial factory
   ui/
     GameStatusHUD.js    108   Timer, score overlays
     ChatSystem.js       118   Chat input/display
     Announcements.js    108   Global announcements
-    ArenaLobby.js        82   Arena selection
+    ArenaLobby.js        98   Arena selection
     BribePanel.js       200   Bribe options
     ProfilePanel.js     258   Player profile
-    AfkOverlay.js        91   AFK warning
+    AfkOverlay.js        94   AFK warning
     SpectatorOverlay.js  45   Spectator indicator
     DebugPanel.js        44   Debug controls
     AuthFlow.js         147   Auth integration
     Leaderboard.js       58   Top players
+    GameMenu.js          62   In-game menu (change arena, logout)
 ```
 
 ### Shared (1 JS file, 98 lines)
