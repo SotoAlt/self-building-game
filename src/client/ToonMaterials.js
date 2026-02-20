@@ -209,6 +209,29 @@ export function clearMaterialCache() {
   _materialCache.clear();
 }
 
+export function createInstancedPlatformMaterial() {
+  const theme = currentMaterialTheme ? MATERIAL_THEMES[currentMaterialTheme] : null;
+  const emissiveIntensity = theme ? theme.surfaceEmissive : 0.35;
+
+  const material = new THREE.MeshToonMaterial({
+    color: 0xffffff,
+    gradientMap: GRADIENT_3,
+    emissive: 0x888888,
+    emissiveIntensity,
+  });
+
+  const normalScale = theme ? theme.normalScale : 0.5;
+  if (normalScale > 0) {
+    const normalType = getNormalMapType({ type: 'platform', properties: {} }, currentMaterialTheme);
+    if (normalType) {
+      material.normalMap = generateNormalMap(normalType);
+      material.normalScale = new THREE.Vector2(normalScale, normalScale);
+    }
+  }
+
+  return material;
+}
+
 export function createPlayerToonMaterial(color) {
   return new THREE.MeshToonMaterial({
     color,

@@ -138,21 +138,31 @@ export function checkCollisions() {
   const nearbyIds = spatialHashQuery(pp.x, pp.z);
 
   for (let ni = 0; ni < nearbyIds.length; ni++) {
-    const mesh = entityMeshes.get(nearbyIds[ni]);
-    if (!mesh) continue;
-
-    const entity = mesh.userData.entity;
-    if (!entity) continue;
-
-    const isGrouped = mesh.parent && mesh.parent !== _scene;
+    let mesh = entityMeshes.get(nearbyIds[ni]);
+    let entity;
     let ep;
-    if (isGrouped) {
-      _tempEp.x = mesh.parent.position.x + mesh.position.x;
-      _tempEp.y = mesh.parent.position.y + mesh.position.y;
-      _tempEp.z = mesh.parent.position.z + mesh.position.z;
-      ep = _tempEp;
+    let isGrouped = false;
+
+    if (mesh) {
+      entity = mesh.userData.entity;
+      if (!entity) continue;
+      isGrouped = mesh.parent && mesh.parent !== _scene;
+      if (isGrouped) {
+        _tempEp.x = mesh.parent.position.x + mesh.position.x;
+        _tempEp.y = mesh.parent.position.y + mesh.position.y;
+        _tempEp.z = mesh.parent.position.z + mesh.position.z;
+        ep = _tempEp;
+      } else {
+        ep = mesh.position;
+      }
     } else {
-      ep = mesh.position;
+      // Instanced entity — no mesh, use entity data directly
+      entity = state.entities.get(nearbyIds[ni]);
+      if (!entity) continue;
+      _tempEp.x = entity.position[0];
+      _tempEp.y = entity.position[1];
+      _tempEp.z = entity.position[2];
+      ep = _tempEp;
     }
 
     const hs0 = entity.size[0] * 0.5;
@@ -216,12 +226,12 @@ export function checkCollisions() {
         platformY = platformTop + 1;
         collision.standingOnEntity = entity;
 
-        if (entity.properties?.breakable && !mesh.userData._breakNotified) {
+        if (mesh && entity.properties?.breakable && !mesh.userData._breakNotified) {
           mesh.userData._breakNotified = true;
           _sendToServer('platform_step', { entityId: entity.id });
         }
 
-        if (entity.properties?.kinematic) {
+        if (mesh && entity.properties?.kinematic) {
           const moveSrc = isGrouped ? mesh.parent : mesh;
           if (moveSrc.userData.lastPosition) {
             _platformVelocity.set(

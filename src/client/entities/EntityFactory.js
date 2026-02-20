@@ -43,7 +43,7 @@ export function createBeveledBox(sx, sy, sz) {
 // ─── Geometry Cache ──────────────────────────────────────────
 const _geometryCache = new Map();
 
-function _getGeometryCacheKey(entity) {
+export function getGeometryCacheKey(entity) {
   const shape = entity.properties?.shape || '';
   const [sx, sy, sz] = entity.size || [1, 1, 1];
   return `${entity.type}|${shape}|${sx}|${sy}|${sz}`;
@@ -86,7 +86,7 @@ function _createGeometry(entity) {
 }
 
 export function getGeometry(entity) {
-  const key = _getGeometryCacheKey(entity);
+  const key = getGeometryCacheKey(entity);
   let geo = _geometryCache.get(key);
   if (!geo) {
     geo = _createGeometry(entity);

@@ -8,6 +8,11 @@ import { shortAngleDist } from '../math.js';
 import { createEntityMesh, getGeometry, clearGeometryCache } from './EntityFactory.js';
 import { clearMaterialCache } from '../ToonMaterials.js';
 import { spatialHashInsert, spatialHashUpdate, spatialHashRemove, spatialHashClear } from '../physics/SpatialHash.js';
+import {
+  initInstancedBatchManager, isInstanceable,
+  addInstancedEntity, removeInstancedEntity,
+  updateInstancedEntity, clearAllBatches, instancedEntityIds
+} from './InstancedBatchManager.js';
 
 let _scene = null;
 let _updateUI = null;
@@ -15,6 +20,7 @@ let _updateUI = null;
 export function initEntityManager(sceneRef, updateUICallback) {
   _scene = sceneRef;
   _updateUI = updateUICallback;
+  initInstancedBatchManager(sceneRef);
 }
 
 function assembleGroup(groupId) {
@@ -71,7 +77,16 @@ function scheduleGroupAssembly(groupId) {
 }
 
 export function addEntity(entity) {
-  if (entityMeshes.has(entity.id)) return;
+  if (entityMeshes.has(entity.id) || instancedEntityIds.has(entity.id)) return;
+
+  // Route static platforms/ramps to InstancedMesh batches
+  if (isInstanceable(entity)) {
+    addInstancedEntity(entity);
+    state.entities.set(entity.id, entity);
+    spatialHashInsert(entity.id, entity.position[0], entity.position[2]);
+    _updateUI();
+    return;
+  }
 
   const mesh = createEntityMesh(entity);
   _scene.add(mesh);
@@ -105,6 +120,15 @@ export function trackLastPosition(obj) {
 }
 
 export function updateEntity(entity) {
+  // Handle instanced entities
+  if (instancedEntityIds.has(entity.id)) {
+    updateInstancedEntity(entity);
+    state.entities.set(entity.id, entity);
+    spatialHashUpdate(entity.id, entity.position[0], entity.position[2]);
+    _updateUI();
+    return;
+  }
+
   const mesh = entityMeshes.get(entity.id);
   if (!mesh) return addEntity(entity);
 
@@ -150,6 +174,15 @@ export function updateEntity(entity) {
 }
 
 export function removeEntity(id) {
+  // Handle instanced entities
+  if (instancedEntityIds.has(id)) {
+    removeInstancedEntity(id);
+    state.entities.delete(id);
+    spatialHashRemove(id);
+    _updateUI();
+    return;
+  }
+
   const mesh = entityMeshes.get(id);
   if (mesh) {
     const groupId = entityToGroup.get(id);
@@ -194,6 +227,7 @@ export function clearAllEntities() {
   clearGeometryCache();
   clearMaterialCache();
   spatialHashClear();
+  clearAllBatches();
 }
 
 export function animateGroups(delta) {
