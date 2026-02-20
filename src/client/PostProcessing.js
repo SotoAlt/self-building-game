@@ -63,19 +63,25 @@ function detectInitialTier() {
 
 function buildPipeline(tier) {
   const cfg = TIER_CONFIG[tier];
+  const hasEffects = cfg.outline || cfg.bloom || cfg.fxaa;
 
-  // Low tier: no pipeline, direct render
-  if (!cfg.outline && !cfg.bloom && !cfg.fxaa) {
+  if (!hasEffects) {
     if (renderPipeline) {
       renderPipeline.dispose();
       renderPipeline = null;
     }
+    outlineNode = null;
     return;
   }
 
-  const scenePass = pass(_scene, _camera);
+  if (!renderPipeline) {
+    renderPipeline = new THREE.RenderPipeline(_renderer);
+  }
 
-  let outputNode = scenePass;
+  // Build compositing chain: scene -> +outline -> +bloom -> fxaa
+  const scenePass = pass(_scene, _camera);
+  const scenePassColor = scenePass.getTextureNode('output');
+  let outputNode = scenePassColor;
 
   if (cfg.outline) {
     outlineNode = outline(_scene, _camera, {
@@ -83,26 +89,22 @@ function buildPipeline(tier) {
       edgeThickness: 1.0,
       edgeGlow: 0.4,
     });
-
-    const { visibleEdge, hiddenEdge } = outlineNode;
     const visibleColor = new THREE.Color('#5a5a8a');
     const hiddenColor = new THREE.Color('#2a2a4a');
-    const outlineColor = visibleEdge.mul(visibleColor).add(hiddenEdge.mul(hiddenColor)).mul(4.0);
-    outputNode = outputNode.add(outlineColor);
+    const { visibleEdge, hiddenEdge } = outlineNode;
+    outputNode = outputNode.add(
+      visibleEdge.mul(visibleColor).add(hiddenEdge.mul(hiddenColor)).mul(4.0)
+    );
   } else {
     outlineNode = null;
   }
 
   if (cfg.bloom) {
-    outputNode = bloom(outputNode, 0.6, 0.5, 0.3);
+    outputNode = outputNode.add(bloom(scenePassColor, 0.6, 0.5, 0.3));
   }
 
   if (cfg.fxaa) {
     outputNode = fxaa(outputNode);
-  }
-
-  if (!renderPipeline) {
-    renderPipeline = new THREE.RenderPipeline(_renderer);
   }
 
   renderPipeline.outputNode = outputNode;
