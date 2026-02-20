@@ -86,22 +86,20 @@ function buildPipeline(tier) {
   if (cfg.outline) {
     outlineNode = outline(_scene, _camera, {
       selectedObjects,
-      edgeThickness: 1.0,
-      edgeGlow: 0.4,
+      edgeThickness: 1.5,
+      edgeGlow: 0.0,
     });
-    const visibleColor = new THREE.Color('#5a5a8a');
-    const hiddenColor = new THREE.Color('#2a2a4a');
     const { visibleEdge, hiddenEdge } = outlineNode;
-    outputNode = outputNode.add(
-      visibleEdge.mul(visibleColor).add(hiddenEdge.mul(hiddenColor)).mul(4.0)
-    );
+    // Black outlines: subtract edge luminance from scene to darken edges
+    const edgeMask = visibleEdge.add(hiddenEdge).mul(3.0);
+    outputNode = outputNode.mul(edgeMask.oneMinus().max(0.0).add(0.15));
   } else {
     outlineNode = null;
   }
 
   if (cfg.bloom) {
     // bloom(input, strength, radius, threshold)
-    outputNode = outputNode.add(bloom(scenePassColor, 0.25, 0.5, 0.3));
+    outputNode = outputNode.add(bloom(scenePassColor, 0.12, 0.4, 0.7));
   }
 
   if (cfg.fxaa) {
