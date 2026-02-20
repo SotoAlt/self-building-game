@@ -1635,3 +1635,67 @@ body {
   border: var(--border-w) solid var(--border);
   box-shadow: 0 var(--depth) 0 var(--border);
 }
+
+/* ============================================
+   AFK Overlays
+   ============================================ */
+.afk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: var(--bg-dark);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-head);
+}
+.afk-brand {
+  font-size: 12px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--agent);
+  margin-bottom: 12px;
+  font-weight: 700;
+}
+.afk-title {
+  color: var(--danger);
+  font-size: 36px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  text-shadow: 0 0 24px rgba(255, 61, 61, 0.4), 3px 3px 0 var(--border);
+}
+.afk-countdown {
+  color: var(--text-dim);
+  font-size: 18px;
+  font-family: var(--font-body);
+  margin-bottom: 28px;
+}
+.afk-reason {
+  color: var(--text-dim);
+  font-size: 16px;
+  font-family: var(--font-body);
+  margin-bottom: 32px;
+}
+.afk-btn-confirm,
+.afk-btn-rejoin {
+  padding: 16px 48px;
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--font-head);
+  color: white;
+  border: var(--border-w) solid var(--border);
+  border-bottom: var(--depth) solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: transform 0.08s, border-bottom-width 0.08s;
+}
+.afk-btn-confirm { background: var(--success); color: var(--border); }
+.afk-btn-rejoin { background: var(--agent); }
+.afk-btn-confirm:hover,
+.afk-btn-rejoin:hover { transform: translateY(-1px); }
+.afk-btn-confirm:active,
+.afk-btn-rejoin:active {
+  transform: translateY(2px);
+  border-bottom-width: 2px;
+}

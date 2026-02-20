@@ -17,6 +17,7 @@ export function initConnectionManager(messageDeps) {
 
 export function disconnectFromServer() {
   if (state.room) {
+    state.intentionalDisconnect = true;
     state.room.leave();
     state.room = null;
     state.connected = false;

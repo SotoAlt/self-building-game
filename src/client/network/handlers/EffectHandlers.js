@@ -24,6 +24,9 @@ const SPELL_SCALE_VALUES = {
   [SPELL.TINY]: 0.4,
 };
 
+const CLOSE_NORMAL = 1000;
+const CLOSE_AFK_KICKED = 4000;
+
 export function registerEffectHandlers(room) {
   room.onMessage('spell_cast', (spell) => {
     console.log(`[Spell] ${spell.name} cast for ${spell.duration}ms`);
@@ -48,18 +51,15 @@ export function registerEffectHandlers(room) {
     }, spell.duration);
   });
 
-  room.onMessage('respawn_point_changed', (data) => {
-    state.respawnPoint = data.position;
-  });
+  room.onMessage('respawn_point_changed', ({ position }) => { state.respawnPoint = position; });
 
-  room.onMessage('floor_changed', (data) => {
-    setFloorType(data.type);
-  });
+  room.onMessage('floor_changed', ({ type }) => setFloorType(type));
 
   room.onMessage('hazard_plane_changed', (data) => {
     Object.assign(hazardPlaneState, data);
-    getHazardPlaneMesh().visible = data.active;
-    getHazardPlaneMesh().position.y = hazardPlaneState.height;
+    const mesh = getHazardPlaneMesh();
+    mesh.visible = data.active;
+    mesh.position.y = hazardPlaneState.height;
     updateHazardPlaneMaterial(data.type);
   });
 
@@ -68,18 +68,16 @@ export function registerEffectHandlers(room) {
     getHazardPlaneMesh().position.y = data.height;
   });
 
-  room.onMessage('environment_changed', (env) => {
-    applyEnvironment(env);
-  });
+  room.onMessage('environment_changed', applyEnvironment);
 
   room.onMessage('effects_cleared', () => {
     state.activeEffects = [];
     if (player.mesh) player.mesh.scale.setScalar(1);
   });
 
-  room.onMessage('players_teleported', (data) => {
-    if (player.mesh && data.position) {
-      player.mesh.position.set(data.position[0], data.position[1], data.position[2]);
+  room.onMessage('players_teleported', ({ position }) => {
+    if (player.mesh && position) {
+      player.mesh.position.set(...position);
       playerVelocity.set(0, 0, 0);
       player.isJumping = false;
       player.coyoteTimer = 0;
@@ -92,13 +90,8 @@ export function registerEffectHandlers(room) {
     updateUI();
   });
 
-  room.onMessage('afk_warning', ({ token, timeout }) => {
-    showAfkWarning(token, timeout);
-  });
-
-  room.onMessage('afk_cleared', () => {
-    hideAfkWarning();
-  });
+  room.onMessage('afk_warning', ({ token, timeout }) => showAfkWarning(token, timeout));
+  room.onMessage('afk_cleared', hideAfkWarning);
 
   room.onMessage('chat_message', displayChatMessage);
 
@@ -117,15 +110,18 @@ export function registerEffectHandlers(room) {
 
   // Lifecycle handlers
   room.onLeave((code) => {
-    console.warn('[Network] Disconnected from room, code:', code);
+    state.connected = false;
+    if (state.intentionalDisconnect) {
+      state.intentionalDisconnect = false;
+      return;
+    }
     storeReconnectionToken();
     state.room = null;
-    state.connected = false;
-    if (code === 4000) {
+    if (code === CLOSE_AFK_KICKED) {
       showAfkKickedScreen();
       return;
     }
-    if (code === 1000) return;
+    if (code === CLOSE_NORMAL) return;
     attemptReconnect();
   });
 

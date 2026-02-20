@@ -8,12 +8,16 @@ const PRIVY_ONLY = [
   '@privy-io', 'viem', '@walletconnect', 'wagmi', '@base-org/account', '/ox/',
 ];
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
   server: {
     port: 5173,
     open: true,
   },
+  esbuild: mode === 'production' ? {
+    drop: ['debugger'],
+    pure: ['console.log', 'console.warn', 'console.error', 'console.info', 'console.debug', 'console.table', 'console.group', 'console.groupEnd'],
+  } : {},
   build: {
     outDir: 'dist',
     sourcemap: false,
@@ -29,4 +33,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

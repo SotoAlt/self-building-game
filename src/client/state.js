@@ -30,6 +30,7 @@ export const state = {
   lobbyReadyAt: null,
   cursedPlayerId: null,    // hot_potato: current curse holder
   curseRound: 0,           // hot_potato: current round number
+  intentionalDisconnect: false,
 };
 Object.seal(state);
 
