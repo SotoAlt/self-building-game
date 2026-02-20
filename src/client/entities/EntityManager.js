@@ -1,11 +1,14 @@
 /**
- * Entity Manager — entity lifecycle, group assembly, per-frame animations.
+ * Entity Manager
+ *
+ * Entity lifecycle, group assembly, and per-frame animations.
  */
 
 import * as THREE from 'three';
 import { entityMeshes, groupParents, pendingGroups, entityToGroup, state } from '../state.js';
 import { shortAngleDist } from '../math.js';
 import { createEntityMesh, getGeometry, clearGeometryCache } from './EntityFactory.js';
+import { ANIMATION_BEHAVIORS } from './EntityBehaviors.js';
 import { clearMaterialCache } from '../ToonMaterials.js';
 import { spatialHashInsert, spatialHashUpdate, spatialHashRemove, spatialHashClear } from '../physics/SpatialHash.js';
 import {
@@ -77,9 +80,10 @@ function scheduleGroupAssembly(groupId) {
 }
 
 export function addEntity(entity) {
-  if (entityMeshes.has(entity.id) || instancedEntityIds.has(entity.id)) return;
+  if (entityMeshes.has(entity.id) || instancedEntityIds.has(entity.id)) {
+    return;
+  }
 
-  // Route static platforms/ramps to InstancedMesh batches
   if (isInstanceable(entity)) {
     addInstancedEntity(entity);
     state.entities.set(entity.id, entity);
@@ -120,7 +124,6 @@ export function trackLastPosition(obj) {
 }
 
 export function updateEntity(entity) {
-  // Handle instanced entities
   if (instancedEntityIds.has(entity.id)) {
     updateInstancedEntity(entity);
     state.entities.set(entity.id, entity);
@@ -130,26 +133,28 @@ export function updateEntity(entity) {
   }
 
   const mesh = entityMeshes.get(entity.id);
-  if (!mesh) return addEntity(entity);
+  if (!mesh) {
+    return addEntity(entity);
+  }
 
   const groupId = entityToGroup.get(entity.id);
   const group = groupId ? groupParents.get(groupId) : null;
 
   setTargetPosition(mesh, entity.position);
 
-  const eProps = entity.properties;
-  if (group && (eProps?.kinematic || eProps?.chase)) {
+  const entityProps = entity.properties;
+  if (group && (entityProps?.kinematic || entityProps?.chase)) {
     setTargetPosition(group, entity.position);
     group.userData.entity = entity;
-  } else if (!eProps?.kinematic && !group) {
+  } else if (!entityProps?.kinematic && !group) {
     mesh.position.set(...entity.position);
   }
 
   if (entity.size) {
     mesh.geometry = getGeometry(entity);
   }
+
   if (entity.properties?.color) {
-    // Clone shared material before mutating color
     if (!mesh.userData._materialCloned) {
       mesh.material = mesh.material.clone();
       mesh.userData._materialCloned = true;
@@ -157,6 +162,7 @@ export function updateEntity(entity) {
     mesh.material.color.set(entity.properties.color);
     mesh.material.emissive.set(entity.properties.color);
   }
+
   if (entity.properties?.rotation && !entity.properties?.rotating) {
     mesh.rotation.set(
       entity.properties.rotation[0] || 0,
@@ -164,6 +170,7 @@ export function updateEntity(entity) {
       entity.properties.rotation[2] || 0
     );
   }
+
   mesh.userData.entity = entity;
   mesh.userData.rotating = entity.properties?.rotating;
   mesh.userData.speed = entity.properties?.speed || 1;
@@ -174,7 +181,6 @@ export function updateEntity(entity) {
 }
 
 export function removeEntity(id) {
-  // Handle instanced entities
   if (instancedEntityIds.has(id)) {
     removeInstancedEntity(id);
     state.entities.delete(id);
@@ -184,26 +190,36 @@ export function removeEntity(id) {
   }
 
   const mesh = entityMeshes.get(id);
-  if (mesh) {
-    const groupId = entityToGroup.get(id);
-    if (groupId && groupParents.has(groupId)) {
-      const group = groupParents.get(groupId);
-      group.remove(mesh);
-      if (group.children.length === 0) {
-        _scene.remove(group);
-        groupParents.delete(groupId);
-      }
-    } else {
-      _scene.remove(mesh);
-    }
-    mesh.traverse((child) => {
-      if (!child.material) return;
-      // Skip shared (cached) materials — only dispose clones and glow children
-      const isSharedMaterial = child === mesh && !mesh.userData._materialCloned;
-      if (!isSharedMaterial) child.material.dispose();
-    });
-    entityMeshes.delete(id);
+  if (!mesh) {
+    entityToGroup.delete(id);
+    state.entities.delete(id);
+    spatialHashRemove(id);
+    _updateUI();
+    return;
   }
+
+  const groupId = entityToGroup.get(id);
+  if (groupId && groupParents.has(groupId)) {
+    const group = groupParents.get(groupId);
+    group.remove(mesh);
+    if (group.children.length === 0) {
+      _scene.remove(group);
+      groupParents.delete(groupId);
+    }
+  } else {
+    _scene.remove(mesh);
+  }
+
+  mesh.traverse((child) => {
+    if (!child.material) return;
+
+    const isSharedMaterial = child === mesh && !mesh.userData._materialCloned;
+    if (!isSharedMaterial) {
+      child.material.dispose();
+    }
+  });
+
+  entityMeshes.delete(id);
   entityToGroup.delete(id);
   state.entities.delete(id);
   spatialHashRemove(id);
@@ -254,13 +270,15 @@ export function animateGroups(delta) {
 }
 
 export function animateEntities(delta, time) {
+  const animationContext = { delta, time, isGrouped: false };
+
   for (const [, mesh] of entityMeshes) {
     const isGrouped = mesh.parent && mesh.parent !== _scene;
     const entity = mesh.userData.entity;
-    const eType = entity?.type;
-    const eProps = entity?.properties;
+    const entityType = entity?.type;
+    const entityProps = entity?.properties;
 
-    if (eProps?.kinematic && !isGrouped) {
+    if (entityProps?.kinematic && !isGrouped) {
       trackLastPosition(mesh);
       if (mesh.userData.targetPosition) {
         mesh.position.lerp(mesh.userData.targetPosition, 0.2);
@@ -272,7 +290,6 @@ export function animateEntities(delta, time) {
     }
 
     if (mesh.userData.cracking) {
-      // Clone material on first crack frame so opacity mutation is safe
       if (!mesh.userData._materialCloned) {
         mesh.material = mesh.material.clone();
         mesh.userData._materialCloned = true;
@@ -284,32 +301,17 @@ export function animateEntities(delta, time) {
       mesh.material.opacity = Math.max(0.2, 1 - elapsed * 1.5);
     }
 
-    if (eType === 'collectible') {
-      const baseY = entity.position[1];
-      mesh.rotation.y += delta;
-      mesh.position.y = baseY + Math.sin(time * 1.5 + mesh.id * 0.7) * 0.15;
-      const glow = mesh.children[0];
-      if (glow?.material) {
-        glow.material.opacity = 0.15 + Math.sin(time * 2.5) * 0.12;
-      }
-    } else if (eType === 'obstacle' && !isGrouped) {
-      if (mesh.material?.emissiveIntensity !== undefined) {
-        mesh.material.emissiveIntensity = 0.3 + Math.sin(time * 0.8 + mesh.id * 1.1) * 0.2;
-      }
-      const pulse = 1 + Math.sin(time * 1.6 + mesh.id * 0.5) * 0.02;
-      mesh.scale.set(pulse, pulse, pulse);
-    } else if (eType === 'decoration' && !isGrouped && !mesh.userData.rotating) {
-      mesh.rotation.y += 0.3 * delta;
-      if (eProps?.emissive && mesh.material?.emissiveIntensity !== undefined) {
-        mesh.material.emissiveIntensity = 0.5 + Math.sin(time * 4 + mesh.id * 2.3) * 0.2 + Math.sin(time * 7) * 0.1;
-      }
-    } else if (eType === 'trigger' && eProps?.isGoal && !isGrouped) {
-      mesh.rotation.y += 1.5 * delta;
-      const pulse = 1 + Math.sin(time * 2) * 0.05;
-      mesh.scale.set(pulse, pulse, pulse);
-      if (mesh.material?.emissiveIntensity !== undefined) {
-        mesh.material.emissiveIntensity = 0.5 + Math.sin(time * 3) * 0.25;
-      }
+    animationContext.isGrouped = isGrouped;
+
+    let behaviorKey = null;
+    if (entityType === 'trigger' && entityProps?.isGoal) {
+      behaviorKey = 'trigger:isGoal';
+    } else if (entityType !== 'trigger') {
+      behaviorKey = entityType;
+    }
+
+    if (behaviorKey && ANIMATION_BEHAVIORS[behaviorKey]) {
+      ANIMATION_BEHAVIORS[behaviorKey](mesh, entity, animationContext);
     }
   }
 }

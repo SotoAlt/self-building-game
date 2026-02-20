@@ -288,9 +288,9 @@ These don't need modularity changes — they're already well-scoped:
   - Files: `src/client/network/MessageHandlers.js` → `src/client/network/handlers/` (4 files)
   - Done: EntityHandlers (7 handlers), PlayerHandlers (7), GameStateHandlers (9), EffectHandlers (15 + lifecycle). Thin dispatcher in MessageHandlers.js.
 
-- [ ] **D.2: Entity behavior registry** — replace type switches in PhysicsEngine + EntityManager
-  - Files: New `src/client/entities/EntityBehaviors.js`, refactor `PhysicsEngine.js` + `EntityManager.js`
-  - Why: Every new entity behavior (bounce, conveyor, wind, speed, breakable) requires editing two core files. A registry pattern makes new behaviors a single registration.
+- [x] **D.2: Entity behavior registry** — replace type switches in PhysicsEngine + EntityManager ✅
+  - Files: New `src/client/entities/EntityBehaviors.js`, refactored `PhysicsEngine.js` + `EntityManager.js`
+  - Done: `COLLISION_BEHAVIORS`, `SURFACE_EFFECTS`, `ANIMATION_BEHAVIORS` registries. Collision dispatch (-36 lines), conveyor check (-6 lines), animation dispatch (-27 lines) replaced with registry lookups. Ice constants exported. New behaviors now require editing only EntityBehaviors.js.
 
 - [ ] **D.3: Extract SceneSetup.js + ConnectionManager.js** from main.js
   - Files: `src/client/main.js` → extract `SceneSetup.js`, `ConnectionManager.js`

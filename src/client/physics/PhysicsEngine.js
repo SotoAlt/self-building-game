@@ -1,5 +1,7 @@
 /**
- * Physics Engine — player physics, collision detection, death/respawn, triggers.
+ * Physics Engine
+ *
+ * Player physics, collision detection, death/respawn, and trigger events.
  */
 
 import * as THREE from 'three';
@@ -22,6 +24,9 @@ import { triggerCameraShake, screenFlash, spawnParticles } from '../vfx/ScreenEf
 import { removeEntity } from '../entities/EntityManager.js';
 import { shortAngleDist } from '../math.js';
 import { spatialHashQuery } from './SpatialHash.js';
+import {
+  COLLISION_BEHAVIORS, SURFACE_EFFECTS, ICE_ACCEL_MULTIPLIER, ICE_DECEL_MULTIPLIER
+} from '../entities/EntityBehaviors.js';
 
 let _scene, _sendToServer, _getCameraDirections, _updateCamera;
 
@@ -36,8 +41,7 @@ const playerBox = new THREE.Box3();
 const entityBox = new THREE.Box3();
 const _moveDir = new THREE.Vector3();
 const _platformVelocity = new THREE.Vector3();
-
-const _tempEp = { x: 0, y: 0, z: 0 };
+const _tempEntityPosition = { x: 0, y: 0, z: 0 };
 
 function moveToward(current, target, maxDelta) {
   if (Math.abs(target - current) <= maxDelta) return target;
@@ -48,15 +52,6 @@ function hasEffect(effectType) {
   if (!state.activeEffects) return false;
   const now = Date.now();
   return state.activeEffects.some(e => e.type === effectType && now - e.startTime < e.duration);
-}
-
-function collectItem(entity) {
-  _sendToServer('collect', { entityId: entity.id });
-  spawnParticles(entity.position, '#f1c40f', 20, 4);
-  spawnParticles(entity.position, '#ffffff', 8, 2);
-  playCollectSound();
-  removeEntity(entity.id);
-  console.log(`[Collect] Picked up ${entity.id}`);
 }
 
 function playerDie() {
@@ -137,89 +132,69 @@ export function checkCollisions() {
 
   const nearbyIds = spatialHashQuery(pp.x, pp.z);
 
-  for (let ni = 0; ni < nearbyIds.length; ni++) {
-    let mesh = entityMeshes.get(nearbyIds[ni]);
+  const collisionCtx = {
+    playerMesh: player.mesh, playerVelocity, player, boost,
+    gamePhase: state.gameState.phase,
+    respawnInvulnUntil: death.respawnInvulnUntil,
+    frameDelta: collision.frameDelta,
+    sendToServer: _sendToServer, removeEntity,
+    spawnParticles, playCollectSound, playBounceSound,
+    playerDie, triggerEvent,
+  };
+
+  for (let i = 0; i < nearbyIds.length; i++) {
+    const entityId = nearbyIds[i];
+    const mesh = entityMeshes.get(entityId);
+
     let entity;
-    let ep;
+    let entityPosition;
     let isGrouped = false;
 
     if (mesh) {
       entity = mesh.userData.entity;
       if (!entity) continue;
+
       isGrouped = mesh.parent && mesh.parent !== _scene;
       if (isGrouped) {
-        _tempEp.x = mesh.parent.position.x + mesh.position.x;
-        _tempEp.y = mesh.parent.position.y + mesh.position.y;
-        _tempEp.z = mesh.parent.position.z + mesh.position.z;
-        ep = _tempEp;
+        _tempEntityPosition.x = mesh.parent.position.x + mesh.position.x;
+        _tempEntityPosition.y = mesh.parent.position.y + mesh.position.y;
+        _tempEntityPosition.z = mesh.parent.position.z + mesh.position.z;
+        entityPosition = _tempEntityPosition;
       } else {
-        ep = mesh.position;
+        entityPosition = mesh.position;
       }
     } else {
-      // Instanced entity — no mesh, use entity data directly
-      entity = state.entities.get(nearbyIds[ni]);
+      entity = state.entities.get(entityId);
       if (!entity) continue;
-      _tempEp.x = entity.position[0];
-      _tempEp.y = entity.position[1];
-      _tempEp.z = entity.position[2];
-      ep = _tempEp;
+
+      _tempEntityPosition.x = entity.position[0];
+      _tempEntityPosition.y = entity.position[1];
+      _tempEntityPosition.z = entity.position[2];
+      entityPosition = _tempEntityPosition;
     }
 
-    const hs0 = entity.size[0] * 0.5;
-    const hs1 = entity.size[1] * 0.5;
-    const hs2 = entity.size[2] * 0.5;
-    entityBox.min.set(ep.x - hs0, ep.y - hs1, ep.z - hs2);
-    entityBox.max.set(ep.x + hs0, ep.y + hs1, ep.z + hs2);
+    const halfSizeX = entity.size[0] * 0.5;
+    const halfSizeY = entity.size[1] * 0.5;
+    const halfSizeZ = entity.size[2] * 0.5;
+    entityBox.min.set(entityPosition.x - halfSizeX, entityPosition.y - halfSizeY, entityPosition.z - halfSizeZ);
+    entityBox.max.set(entityPosition.x + halfSizeX, entityPosition.y + halfSizeY, entityPosition.z + halfSizeZ);
 
     if (!playerBox.intersectsBox(entityBox)) continue;
 
-    if (entity.type === ENTITY_TYPES.COLLECTIBLE) {
-      collectItem(entity);
-      continue;
-    }
-    if (entity.type === ENTITY_TYPES.OBSTACLE) {
-      if (state.gameState.phase === 'playing' && Date.now() >= death.respawnInvulnUntil) {
-        playerDie();
-      }
-      continue;
-    }
-    if (entity.type === ENTITY_TYPES.TRIGGER) {
-      if (entity.properties?.isBounce) {
-        const force = entity.properties.bounceForce || 18;
-        playerVelocity.y = force;
-        player.isGrounded = false;
-        player.isJumping = true;
-        spawnParticles(player.mesh.position, '#2ecc71', 15, 4);
-        playBounceSound();
-        continue;
-      }
-      if (entity.properties?.isSpeedBoost) {
-        const duration = entity.properties.boostDuration || 3000;
-        boost.speedBoostUntil = Date.now() + duration;
-        spawnParticles(player.mesh.position, '#e67e22', 8, 2);
-        continue;
-      }
-      if (entity.properties?.isWind) {
-        const force = entity.properties.windForce || [0, 0, 0];
-        const dt = collision.frameDelta;
-        playerVelocity.x += force[0] * dt;
-        playerVelocity.y += force[1] * dt;
-        playerVelocity.z += force[2] * dt;
-        continue;
-      }
-      triggerEvent(entity);
-      continue;
+    const behavior = COLLISION_BEHAVIORS[entity.type];
+    if (behavior) {
+      if (behavior(entity, collisionCtx) === 'skip') continue;
     }
 
     if (entity.type === ENTITY_TYPES.PLATFORM || entity.type === ENTITY_TYPES.RAMP) {
-      const overlapX = (0.5 + hs0) - Math.abs(player.mesh.position.x - ep.x);
-      const overlapY = (1 + hs1) - Math.abs(player.mesh.position.y - ep.y);
-      const overlapZ = (0.5 + hs2) - Math.abs(player.mesh.position.z - ep.z);
+      const overlapX = (0.5 + halfSizeX) - Math.abs(player.mesh.position.x - entityPosition.x);
+      const overlapY = (1 + halfSizeY) - Math.abs(player.mesh.position.y - entityPosition.y);
+      const overlapZ = (0.5 + halfSizeZ) - Math.abs(player.mesh.position.z - entityPosition.z);
 
       if (overlapX <= 0 || overlapY <= 0 || overlapZ <= 0) continue;
 
       const playerBottom = player.mesh.position.y - 1;
-      const platformTop = ep.y + hs1;
+      const platformTop = entityPosition.y + halfSizeY;
 
       if (playerBottom >= platformTop - 0.5 && playerVelocity.y <= 0) {
         standingOnPlatform = true;
@@ -244,12 +219,12 @@ export function checkCollisions() {
         }
       } else {
         if (overlapX < overlapZ) {
-          const pushDir = player.mesh.position.x > ep.x ? 1 : -1;
-          player.mesh.position.x += overlapX * pushDir;
+          const pushDirection = player.mesh.position.x > entityPosition.x ? 1 : -1;
+          player.mesh.position.x += overlapX * pushDirection;
           playerVelocity.x = 0;
         } else {
-          const pushDir = player.mesh.position.z > ep.z ? 1 : -1;
-          player.mesh.position.z += overlapZ * pushDir;
+          const pushDirection = player.mesh.position.z > entityPosition.z ? 1 : -1;
+          player.mesh.position.z += overlapZ * pushDirection;
           playerVelocity.z = 0;
         }
       }
@@ -266,11 +241,15 @@ export function checkCollisions() {
       player.mesh.position.x += _platformVelocity.x;
       player.mesh.position.z += _platformVelocity.z;
     }
-    if (collision.standingOnEntity?.properties?.isConveyor) {
-      const dir = collision.standingOnEntity.properties.conveyorDir || [1, 0, 0];
-      const speed = collision.standingOnEntity.properties.conveyorSpeed || 6;
-      playerVelocity.x += dir[0] * speed * collision.frameDelta;
-      playerVelocity.z += dir[2] * speed * collision.frameDelta;
+
+    const standingEntity = collision.standingOnEntity;
+    if (standingEntity?.properties) {
+      const surfaceCtx = { playerVelocity, frameDelta: collision.frameDelta };
+      for (const propertyName in SURFACE_EFFECTS) {
+        if (standingEntity.properties[propertyName]) {
+          SURFACE_EFFECTS[propertyName](standingEntity, surfaceCtx);
+        }
+      }
     }
   }
 }
@@ -319,7 +298,7 @@ export function updatePlayer(delta) {
   if (!player.isGrounded) {
     accel = hasInput ? PHYSICS.AIR_ACCEL : PHYSICS.AIR_DECEL;
   } else if (onIce) {
-    accel = hasInput ? PHYSICS.GROUND_ACCEL * 0.15 : PHYSICS.GROUND_DECEL * 0.08;
+    accel = hasInput ? PHYSICS.GROUND_ACCEL * ICE_ACCEL_MULTIPLIER : PHYSICS.GROUND_DECEL * ICE_DECEL_MULTIPLIER;
   } else {
     accel = hasInput ? PHYSICS.GROUND_ACCEL : PHYSICS.GROUND_DECEL;
   }
@@ -378,30 +357,33 @@ export function updatePlayer(delta) {
   const invulnerable = Date.now() < death.respawnInvulnUntil;
   const hasFloor = floor.currentType === FLOOR_TYPES.SOLID || inSafePhase;
 
-  if (hasFloor) {
-    if (player.mesh.position.y < GROUND_Y) {
-      player.mesh.position.y = GROUND_Y;
-      playerVelocity.y = 0;
-      player.isGrounded = true;
-      player.isJumping = false;
-    }
-  } else if (floor.currentType === FLOOR_TYPES.NONE) {
-    if (player.mesh.position.y < ABYSS_DEATH_Y && !invulnerable) {
+  if (hasFloor && player.mesh.position.y < GROUND_Y) {
+    player.mesh.position.y = GROUND_Y;
+    playerVelocity.y = 0;
+    player.isGrounded = true;
+    player.isJumping = false;
+  }
+
+  if (!invulnerable) {
+    if (floor.currentType === FLOOR_TYPES.NONE && player.mesh.position.y < ABYSS_DEATH_Y) {
       playerDie();
     }
-  } else if (floor.currentType === FLOOR_TYPES.LAVA) {
-    if (player.mesh.position.y < LAVA_DEATH_Y && !invulnerable) {
+
+    if (floor.currentType === FLOOR_TYPES.LAVA && player.mesh.position.y < LAVA_DEATH_Y) {
       spawnParticles(player.mesh.position, '#ff4500', 20, 6);
       spawnParticles(player.mesh.position, '#ffaa00', 10, 4);
       playerDie();
     }
-  }
-  if (hazardPlaneState.active && phase === 'playing' && player.mesh.position.y < hazardPlaneState.height && !invulnerable) {
-    spawnParticles(player.mesh.position, hazardPlaneState.type === 'lava' ? '#ff4500' : '#3498db', 20, 6);
-    playerDie();
-  }
-  if (player.mesh.position.y < VOID_DEATH_Y && !invulnerable) {
-    playerDie();
+
+    if (hazardPlaneState.active && phase === 'playing' && player.mesh.position.y < hazardPlaneState.height) {
+      const particleColor = hazardPlaneState.type === 'lava' ? '#ff4500' : '#3498db';
+      spawnParticles(player.mesh.position, particleColor, 20, 6);
+      playerDie();
+    }
+
+    if (player.mesh.position.y < VOID_DEATH_Y) {
+      playerDie();
+    }
   }
 
   _updateCamera();

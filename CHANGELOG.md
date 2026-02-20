@@ -2,6 +2,14 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.56.0] - 2026-02-20
+
+### Refactor — Architecture Phase D.2
+- **Entity Behavior Registry** — extracted entity type switches from PhysicsEngine.js and EntityManager.js into a single `EntityBehaviors.js` registry. Adding a new entity behavior now requires editing ONE file instead of TWO.
+  - `src/client/entities/EntityBehaviors.js` (NEW) — `COLLISION_BEHAVIORS`, `SURFACE_EFFECTS`, `ICE_ACCEL_MULTIPLIER`/`ICE_DECEL_MULTIPLIER`, `ANIMATION_BEHAVIORS`
+  - `src/client/physics/PhysicsEngine.js` — deleted `collectItem()`, replaced 36-line collision dispatch + conveyor check with registry lookups
+  - `src/client/entities/EntityManager.js` — replaced 27-line animation dispatch with registry lookup
+
 ## [0.54.0] - 2026-02-20
 
 ### Performance — Architecture Phase B
