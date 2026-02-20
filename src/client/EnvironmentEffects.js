@@ -3,9 +3,16 @@
  *
  * Sky presets: starfield, sunset, storm, void, aurora
  * Particle types: dust, embers, snow, fireflies, ash, magic
+ *
+ * Sky dome uses TSL NodeMaterial — no manual time uniform needed.
  */
 
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
+import {
+  Fn, vec2, vec3,
+  uniform, normalize, positionWorld,
+  max, pow, mix, smoothstep, floor, fract, sin, dot
+} from 'three/tsl';
 
 let particleSystem = null;
 let particleVelocities = null;
@@ -16,66 +23,27 @@ let starField = null;
 const PARTICLE_COUNT = 250;
 const PARTICLE_SPREAD = 60;
 
+// ─── Shared Noise (TSL) ────────────────────────────────────
+
+const hash2d = Fn(([p_immutable]) => {
+  const p = vec2(p_immutable).toVar();
+  return fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453));
+});
+
+const noise2d = Fn(([p_immutable]) => {
+  const p = vec2(p_immutable).toVar();
+  const i = floor(p);
+  const f = fract(p);
+  const ff = f.mul(f).mul(f.mul(-2.0).add(3.0));
+  const a = hash2d(i);
+  const b = hash2d(i.add(vec2(1.0, 0.0)));
+  const c = hash2d(i.add(vec2(0.0, 1.0)));
+  const d = hash2d(i.add(vec2(1.0, 1.0)));
+  return mix(mix(a, b, ff.x), mix(c, d, ff.x), ff.y);
+});
+
 // ─── Sky Dome ───────────────────────────────────────────────
 
-const skyVertexShader = /* glsl */ `
-  varying vec3 vWorldPosition;
-  void main() {
-    vec4 worldPos = modelMatrix * vec4(position, 1.0);
-    vWorldPosition = worldPos.xyz;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-const skyFragmentShader = /* glsl */ `
-  uniform vec3 topColor;
-  uniform vec3 bottomColor;
-  uniform vec3 midColor;
-  uniform float offset;
-  uniform float exponent;
-  uniform float cloudBand;
-  varying vec3 vWorldPosition;
-
-  // Simple hash for cloud band noise
-  float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-  }
-
-  float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash(i);
-    float b = hash(i + vec2(1, 0));
-    float c = hash(i + vec2(0, 1));
-    float d = hash(i + vec2(1, 1));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-  }
-
-  void main() {
-    float h = normalize(vWorldPosition + offset).y;
-    float t = max(pow(max(h, 0.0), exponent), 0.0);
-
-    // Three-color gradient: bottom → mid → top
-    vec3 color;
-    if (t < 0.4) {
-      color = mix(bottomColor, midColor, t / 0.4);
-    } else {
-      color = mix(midColor, topColor, (t - 0.4) / 0.6);
-    }
-
-    // Cloud band at horizon
-    if (cloudBand > 0.0) {
-      float band = smoothstep(0.0, 0.15, h) * smoothstep(0.3, 0.15, h);
-      float n = noise(vWorldPosition.xz * 0.015) * 0.7 + noise(vWorldPosition.xz * 0.03) * 0.3;
-      color = mix(color, vec3(1.0), band * n * cloudBand * 0.25);
-    }
-
-    gl_FragColor = vec4(color, 1.0);
-  }
-`;
-
-// Sky presets define gradient colors and atmosphere
 const SKY_PRESETS = {
   starfield: {
     topColor: [0.02, 0.02, 0.08],
@@ -119,22 +87,40 @@ const SKY_PRESETS = {
   },
 };
 
+// Sky uniforms (TSL uniform nodes)
+const _topColor = uniform(new THREE.Color(0x1a3050));
+const _bottomColor = uniform(new THREE.Color(0x2a3a5e));
+const _midColor = uniform(new THREE.Color(0x1e2d48));
+const _offset = uniform(20);
+const _exponent = uniform(0.6);
+const _cloudBand = uniform(0.0);
+
 export function createSkyDome(scene) {
   const skyGeo = new THREE.SphereGeometry(400, 24, 24);
-  const skyMat = new THREE.ShaderMaterial({
-    uniforms: {
-      topColor: { value: new THREE.Color(0x1a3050) },
-      bottomColor: { value: new THREE.Color(0x2a3a5e) },
-      midColor: { value: new THREE.Color(0x1e2d48) },
-      offset: { value: 20 },
-      exponent: { value: 0.6 },
-      cloudBand: { value: 0.0 },
-    },
-    vertexShader: skyVertexShader,
-    fragmentShader: skyFragmentShader,
-    side: THREE.BackSide,
-    depthWrite: false,
-  });
+  const skyMat = new THREE.NodeMaterial();
+  skyMat.side = THREE.BackSide;
+  skyMat.depthWrite = false;
+
+  // TSL fragment: sky gradient with cloud band
+  const skyColor = Fn(() => {
+    const worldPos = positionWorld;
+    const h = normalize(worldPos.add(vec3(0, _offset, 0))).y;
+    const t = max(pow(max(h, 0.0), _exponent), 0.0);
+
+    // Three-color gradient: bottom → mid → top
+    const lowBlend = mix(_bottomColor.toVec3(), _midColor.toVec3(), t.div(0.4));
+    const highBlend = mix(_midColor.toVec3(), _topColor.toVec3(), t.sub(0.4).div(0.6));
+    const color = mix(lowBlend, highBlend, smoothstep(0.39, 0.41, t)).toVar();
+
+    // Cloud band at horizon
+    const band = smoothstep(0.0, 0.15, h).mul(smoothstep(0.3, 0.15, h));
+    const n = noise2d(worldPos.xz.mul(0.015)).mul(0.7).add(noise2d(worldPos.xz.mul(0.03)).mul(0.3));
+    color.assign(mix(color, vec3(1.0), band.mul(n).mul(_cloudBand).mul(0.25)));
+
+    return color;
+  })();
+
+  skyMat.colorNode = skyColor;
 
   skyDome = new THREE.Mesh(skyGeo, skyMat);
   scene.add(skyDome);
@@ -185,10 +171,10 @@ export function updateSkyColors(skyColor, fogColor, skyPreset) {
 
   const preset = skyPreset && SKY_PRESETS[skyPreset];
   if (preset) {
-    skyDome.material.uniforms.topColor.value.setRGB(...preset.topColor);
-    skyDome.material.uniforms.midColor.value.setRGB(...preset.midColor);
-    skyDome.material.uniforms.bottomColor.value.setRGB(...preset.bottomColor);
-    skyDome.material.uniforms.cloudBand.value = preset.cloudBand;
+    _topColor.value.setRGB(...preset.topColor);
+    _midColor.value.setRGB(...preset.midColor);
+    _bottomColor.value.setRGB(...preset.bottomColor);
+    _cloudBand.value = preset.cloudBand;
 
     if (starField) {
       starField.material.opacity = preset.starsVisible ? preset.starBrightness : 0;
@@ -198,10 +184,10 @@ export function updateSkyColors(skyColor, fogColor, skyPreset) {
     const top = new THREE.Color(skyColor);
     const bottom = fogColor ? new THREE.Color(fogColor) : top.clone().multiplyScalar(0.6);
     const mid = top.clone().lerp(bottom, 0.5);
-    skyDome.material.uniforms.topColor.value.copy(top);
-    skyDome.material.uniforms.midColor.value.copy(mid);
-    skyDome.material.uniforms.bottomColor.value.copy(bottom);
-    skyDome.material.uniforms.cloudBand.value = 0;
+    _topColor.value.copy(top);
+    _midColor.value.copy(mid);
+    _bottomColor.value.copy(bottom);
+    _cloudBand.value = 0;
 
     // Auto-enable stars for dark skies
     if (starField) {

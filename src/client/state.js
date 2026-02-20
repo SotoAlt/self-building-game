@@ -7,7 +7,7 @@
  * mutate these properties; other modules may read freely.
  */
 
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { isMobile } from './config.js';
 import { DEFAULT_SERVER_PHYSICS } from '../shared/constants.js';
 

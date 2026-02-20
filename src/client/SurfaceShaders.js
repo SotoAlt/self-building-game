@@ -1,223 +1,146 @@
 /**
- * SurfaceShaders — Animated ShaderMaterials for lava, water, and wind
+ * SurfaceShaders — TSL NodeMaterial shaders for lava, water, and wind
  *
- * Each shader takes a `time` uniform updated in the animate loop.
- * All GPU-computed — no CPU overhead beyond uniform updates.
+ * Uses Three.js TSL (Three Shading Language) with auto-updating `time` node.
+ * No manual time uniform updates needed — TSL handles it.
  */
 
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
+import {
+  Fn, float, vec2, vec3, vec4,
+  uv, positionLocal, time,
+  sin, cos, floor, fract, dot, mix, smoothstep,
+  uniform, normalView, positionViewDirection,
+  max, pow, abs, oneMinus
+} from 'three/tsl';
 
-const lavaVertexShader = /* glsl */ `
-  uniform float time;
-  varying vec2 vUv;
-  varying float vDisplacement;
+// ─── Shared Noise (TSL) ────────────────────────────────────
 
-  float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-  }
+const hash2d = Fn(([p_immutable]) => {
+  const p = vec2(p_immutable).toVar();
+  return fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453123));
+});
 
-  float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-  }
+const noise2d = Fn(([p_immutable]) => {
+  const p = vec2(p_immutable).toVar();
+  const i = floor(p);
+  const f = fract(p);
+  const ff = f.mul(f).mul(f.mul(-2.0).add(3.0));
+  const a = hash2d(i);
+  const b = hash2d(i.add(vec2(1.0, 0.0)));
+  const c = hash2d(i.add(vec2(0.0, 1.0)));
+  const d = hash2d(i.add(vec2(1.0, 1.0)));
+  return mix(mix(a, b, ff.x), mix(c, d, ff.x), ff.y);
+});
 
-  void main() {
-    vUv = uv;
-    vec3 pos = position;
-    float n = noise(pos.xz * 0.3 + time * 0.4) * 0.4;
-    n += noise(pos.xz * 0.7 - time * 0.3) * 0.2;
-    pos.y += n;
-    vDisplacement = n;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-  }
-`;
-
-const lavaFragmentShader = /* glsl */ `
-  uniform float time;
-  varying vec2 vUv;
-  varying float vDisplacement;
-
-  float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-  }
-
-  float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-  }
-
-  void main() {
-    vec2 uv = vUv * 6.0;
-
-    // Two-layer scrolling noise
-    float n1 = noise(uv + time * 0.3);
-    float n2 = noise(uv * 2.0 - time * 0.5);
-    float combined = n1 * 0.6 + n2 * 0.4;
-
-    // Color ramp: dark red -> orange -> bright yellow
-    vec3 darkRed = vec3(0.5, 0.05, 0.0);
-    vec3 orange = vec3(0.9, 0.3, 0.0);
-    vec3 yellow = vec3(1.0, 0.8, 0.2);
-
-    vec3 color = mix(darkRed, orange, smoothstep(0.2, 0.5, combined));
-    color = mix(color, yellow, smoothstep(0.6, 0.85, combined));
-
-    // Bright crack lines
-    float crack = smoothstep(0.78, 0.82, combined);
-    color += vec3(1.0, 0.9, 0.4) * crack * 0.8;
-
-    // Pulsing glow
-    color *= 0.9 + sin(time * 2.0) * 0.1;
-
-    gl_FragColor = vec4(color, 0.9);
-  }
-`;
+// ─── Lava ───────────────────────────────────────────────────
 
 export function createLavaShaderMaterial() {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      time: { value: 0 },
-    },
-    vertexShader: lavaVertexShader,
-    fragmentShader: lavaFragmentShader,
-    transparent: true,
-    side: THREE.DoubleSide,
-  });
+  const material = new THREE.NodeMaterial();
+  material.transparent = true;
+  material.side = THREE.DoubleSide;
+
+  // Vertex: displacement via noise
+  const pos = positionLocal.toVar();
+  const n = noise2d(pos.xz.mul(0.3).add(time.mul(0.4))).mul(0.4)
+    .add(noise2d(pos.xz.mul(0.7).sub(time.mul(0.3))).mul(0.2));
+  material.positionNode = pos.add(vec3(0, n, 0));
+
+  // Fragment: color ramp
+  const uvScaled = uv().mul(6.0);
+  const n1 = noise2d(uvScaled.add(time.mul(0.3)));
+  const n2 = noise2d(uvScaled.mul(2.0).sub(time.mul(0.5)));
+  const combined = n1.mul(0.6).add(n2.mul(0.4));
+
+  const darkRed = vec3(0.5, 0.05, 0.0);
+  const orange = vec3(0.9, 0.3, 0.0);
+  const yellow = vec3(1.0, 0.8, 0.2);
+  let color = mix(darkRed, orange, smoothstep(0.2, 0.5, combined));
+  color = mix(color, yellow, smoothstep(0.6, 0.85, combined));
+
+  // Bright crack lines
+  const crack = smoothstep(0.78, 0.82, combined);
+  color = color.add(vec3(1.0, 0.9, 0.4).mul(crack).mul(0.8));
+
+  // Pulsing glow
+  color = color.mul(float(0.9).add(sin(time.mul(2.0)).mul(0.1)));
+
+  material.colorNode = color;
+  material.opacityNode = float(0.9);
+
+  return material;
 }
 
-const waterVertexShader = /* glsl */ `
-  uniform float time;
-  varying vec2 vUv;
-  varying vec3 vWorldNormal;
-  varying vec3 vViewDir;
-
-  void main() {
-    vUv = uv;
-    vec3 pos = position;
-
-    // Multi-frequency sine waves
-    float wave = sin(pos.x * 1.5 + time * 2.0) * 0.15;
-    wave += sin(pos.z * 2.0 - time * 1.5) * 0.1;
-    wave += sin((pos.x + pos.z) * 0.8 + time * 1.0) * 0.08;
-    pos.y += wave;
-
-    vec4 worldPos = modelMatrix * vec4(pos, 1.0);
-    vViewDir = normalize(cameraPosition - worldPos.xyz);
-    vWorldNormal = normalize(normalMatrix * normal);
-
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-  }
-`;
-
-const waterFragmentShader = /* glsl */ `
-  uniform float time;
-  varying vec2 vUv;
-  varying vec3 vWorldNormal;
-  varying vec3 vViewDir;
-
-  void main() {
-    // Fresnel: more opaque at edges
-    float fresnel = pow(1.0 - max(dot(vWorldNormal, vViewDir), 0.0), 2.0);
-
-    vec3 deepBlue = vec3(0.05, 0.15, 0.4);
-    vec3 surfaceTeal = vec3(0.1, 0.5, 0.6);
-    vec3 highlight = vec3(0.4, 0.8, 0.9);
-
-    vec3 color = mix(deepBlue, surfaceTeal, vUv.y * 0.5 + 0.5);
-
-    // Shimmer
-    float shimmer = sin(vUv.x * 20.0 + time * 3.0) * sin(vUv.y * 15.0 - time * 2.0);
-    color += highlight * smoothstep(0.7, 1.0, shimmer) * 0.3;
-
-    float alpha = mix(0.6, 0.85, fresnel);
-
-    gl_FragColor = vec4(color, alpha);
-  }
-`;
+// ─── Water ──────────────────────────────────────────────────
 
 export function createWaterShaderMaterial() {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      time: { value: 0 },
-    },
-    vertexShader: waterVertexShader,
-    fragmentShader: waterFragmentShader,
-    transparent: true,
-    side: THREE.DoubleSide,
-  });
+  const material = new THREE.NodeMaterial();
+  material.transparent = true;
+  material.side = THREE.DoubleSide;
+
+  // Vertex: multi-frequency sine waves
+  const pos = positionLocal.toVar();
+  const wave = sin(pos.x.mul(1.5).add(time.mul(2.0))).mul(0.15)
+    .add(sin(pos.z.mul(2.0).sub(time.mul(1.5))).mul(0.1))
+    .add(sin(pos.x.add(pos.z).mul(0.8).add(time)).mul(0.08));
+  material.positionNode = pos.add(vec3(0, wave, 0));
+
+  // Fragment: Fresnel + shimmer
+  const fresnel = pow(oneMinus(max(dot(normalView, positionViewDirection), 0.0)), 2.0);
+
+  const deepBlue = vec3(0.05, 0.15, 0.4);
+  const surfaceTeal = vec3(0.1, 0.5, 0.6);
+  const highlight = vec3(0.4, 0.8, 0.9);
+
+  const uvCoord = uv();
+  let color = mix(deepBlue, surfaceTeal, uvCoord.y.mul(0.5).add(0.5));
+
+  // Shimmer
+  const shimmer = sin(uvCoord.x.mul(20.0).add(time.mul(3.0))).mul(sin(uvCoord.y.mul(15.0).sub(time.mul(2.0))));
+  color = color.add(highlight.mul(smoothstep(0.7, 1.0, shimmer)).mul(0.3));
+
+  const alpha = mix(float(0.6), float(0.85), fresnel);
+
+  material.colorNode = color;
+  material.opacityNode = alpha;
+
+  return material;
 }
 
-const windVertexShader = /* glsl */ `
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-const windFragmentShader = /* glsl */ `
-  uniform float time;
-  uniform vec3 windDirection;
-  varying vec2 vUv;
-
-  void main() {
-    // Scrolling dashes in wind direction
-    vec2 dir = normalize(windDirection.xz);
-    float projected = dot(vUv - 0.5, dir);
-    float dash = sin((projected * 15.0 - time * 4.0) * 3.14159) * 0.5 + 0.5;
-    dash = smoothstep(0.6, 0.8, dash);
-
-    // Fade at edges
-    float edge = smoothstep(0.0, 0.15, vUv.x) * smoothstep(1.0, 0.85, vUv.x)
-               * smoothstep(0.0, 0.15, vUv.y) * smoothstep(1.0, 0.85, vUv.y);
-
-    vec3 color = vec3(0.6, 0.85, 1.0);
-    float alpha = dash * edge * 0.15;
-
-    gl_FragColor = vec4(color, alpha);
-  }
-`;
+// ─── Wind ───────────────────────────────────────────────────
 
 export function createWindShaderMaterial(windForce = [1, 0, 0]) {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      time: { value: 0 },
-      windDirection: { value: new THREE.Vector3(...windForce).normalize() },
-    },
-    vertexShader: windVertexShader,
-    fragmentShader: windFragmentShader,
-    transparent: true,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
+  const material = new THREE.NodeMaterial();
+  material.transparent = true;
+  material.side = THREE.DoubleSide;
+  material.depthWrite = false;
+  material.blending = THREE.AdditiveBlending;
+
+  const windDir = uniform(new THREE.Vector3(...windForce).normalize());
+
+  // Fragment: scrolling dashes in wind direction
+  const uvCoord = uv();
+  const dir = windDir.xz.normalize();
+  const projected = dot(uvCoord.sub(0.5), dir);
+  const dashRaw = sin(projected.mul(15.0).sub(time.mul(4.0)).mul(3.14159)).mul(0.5).add(0.5);
+  const dash = smoothstep(0.6, 0.8, dashRaw);
+
+  // Fade at edges
+  const edge = smoothstep(0.0, 0.15, uvCoord.x)
+    .mul(smoothstep(1.0, 0.85, uvCoord.x))
+    .mul(smoothstep(0.0, 0.15, uvCoord.y))
+    .mul(smoothstep(1.0, 0.85, uvCoord.y));
+
+  const windColor = vec3(0.6, 0.85, 1.0);
+  const windAlpha = dash.mul(edge).mul(0.15);
+
+  material.colorNode = windColor;
+  material.opacityNode = windAlpha;
+
+  return material;
 }
 
-const shaderMaterials = [];
-
-export function registerShaderMaterial(material) {
-  shaderMaterials.push(material);
-}
-
-export function updateShaderTime(time) {
-  for (const mat of shaderMaterials) {
-    if (mat.uniforms?.time) {
-      mat.uniforms.time.value = time;
-    }
-  }
-}
+// ─── Conveyor (CPU-based, unchanged) ────────────────────────
 
 const conveyorMaterials = [];
 

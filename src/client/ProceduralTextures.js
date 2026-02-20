@@ -6,7 +6,7 @@
  * Auto-assigned per entity type / material theme in ToonMaterials.
  */
 
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 
 const SIZE = 256;
 const textureCache = new Map();

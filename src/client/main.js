@@ -5,10 +5,10 @@
 
 import './styles/game.css';
 import './styles/mobile.css';
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 
-import { renderFrame, resizePostProcessing, updateOutlineObjects } from './PostProcessing.js';
-import { updateShaderTime, updateConveyorScrolls } from './SurfaceShaders.js';
+import { renderFrame, updateOutlineObjects } from './PostProcessing.js';
+import { updateConveyorScrolls } from './SurfaceShaders.js';
 import { updateSquashStretch } from './PlayerVisuals.js';
 import { initEntityManager, animateEntities, animateGroups } from './entities/EntityManager.js';
 import { initPhysics, updatePlayer, checkCollisions, createPlayer } from './physics/PhysicsEngine.js';
@@ -48,41 +48,23 @@ import { initConnectionManager, connectToServer, reconnectToServer } from './Con
 window.__gameState = state;
 window.debugAuth = debugAuth;
 
-const { scene, camera, renderer, ground, gridHelper, ambientLight, directionalLight } = createScene();
-
-const cameraController = new CameraController(camera, renderer);
-cameraController.initDesktopEvents();
-
-initEntityManager(scene, updateUI);
-initPhysics({
-  scene,
-  sendToServer,
-  getCameraDirections: () => cameraController.getCameraDirections(),
-  updateCamera: () => cameraController.updateCamera(),
-});
-initRemotePlayers(scene);
-initConnectionManager({ clearSpectating: () => cameraController.clearSpectating() });
-initNetworkManager({ connectToServerFn: connectToServer, reconnectToServerFn: reconnectToServer });
-initFloorManager({ scene, ground, gridHelper, ambientLight, directionalLight });
-
-const isInSpectatorMode = () => cameraController.isInSpectatorMode();
+let scene, camera, renderer;
+let cameraController;
 const timer = new THREE.Timer();
 
 function animate() {
-  requestAnimationFrame(animate);
-
   timer.update();
   const delta = timer.getDelta();
   const time = performance.now() / 1000;
 
-  if (isInSpectatorMode()) {
+  if (cameraController.isInSpectatorMode()) {
     cameraController.updateSpectatorMovement(delta, keys);
   } else {
     updatePlayer(delta);
     checkCollisions();
   }
 
-  if (player.mesh && !isInSpectatorMode()) {
+  if (player.mesh && !cameraController.isInSpectatorMode()) {
     updateSquashStretch(player.mesh, playerVelocity.y, player.isGrounded);
   }
 
@@ -92,14 +74,13 @@ function animate() {
 
   animateFloors(time);
 
-  updateShaderTime(time);
   updateConveyorScrolls(delta);
   updateEnvironmentEffects(delta, camera.position);
   updateParticles(delta);
   updateOutlineObjects(entityMeshes, groupParents, player.mesh, remotePlayers);
   updateChatBubbles();
 
-  if (isInSpectatorMode()) cameraController.updateCamera();
+  if (cameraController.isInSpectatorMode()) cameraController.updateCamera();
 
   if (state.gameState.phase === 'lobby' && state.lobbyCountdownTarget) {
     if (time - countdown.lastLobbyTick > 1) {
@@ -112,10 +93,10 @@ function animate() {
 }
 
 window.addEventListener('resize', () => {
+  if (!camera || !renderer) return;
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  resizePostProcessing(window.innerWidth, window.innerHeight);
   if (isMobile) {
     cameraState.distance = (window.innerWidth > window.innerHeight) ? 22 : 25;
   }
@@ -123,6 +104,30 @@ window.addEventListener('resize', () => {
 
 async function init() {
   console.log('[Game] Initializing...');
+
+  // Async renderer init (WebGPU with WebGL 2 fallback)
+  const sceneResult = await createScene();
+  scene = sceneResult.scene;
+  camera = sceneResult.camera;
+  renderer = sceneResult.renderer;
+  const { ground, gridHelper, ambientLight, directionalLight } = sceneResult;
+
+  cameraController = new CameraController(camera, renderer);
+  cameraController.initDesktopEvents();
+
+  const isInSpectatorMode = () => cameraController.isInSpectatorMode();
+
+  initEntityManager(scene, updateUI);
+  initPhysics({
+    scene,
+    sendToServer,
+    getCameraDirections: () => cameraController.getCameraDirections(),
+    updateCamera: () => cameraController.updateCamera(),
+  });
+  initRemotePlayers(scene);
+  initConnectionManager({ clearSpectating: () => cameraController.clearSpectating() });
+  initNetworkManager({ connectToServerFn: connectToServer, reconnectToServerFn: reconnectToServer });
+  initFloorManager({ scene, ground, gridHelper, ambientLight, directionalLight });
 
   if (isSpectator) {
     auth.user = { token: null, user: { name: 'Spectator', type: 'spectator' } };
@@ -154,10 +159,11 @@ async function init() {
   if (isDebug) setupDebugPanel();
   if (isMobile && !isSpectator) setupMobileControls({ keys, rendererDomElement: renderer.domElement, fetchLeaderboard });
 
-  await fetch(`${getApiBase()}/chat/messages`)
-    .then(r => r.json())
-    .then(data => data.messages.forEach(displayChatMessage))
-    .catch(() => {});
+  try {
+    const chatRes = await fetch(`${getApiBase()}/chat/messages`);
+    const chatData = await chatRes.json();
+    chatData.messages.forEach(displayChatMessage);
+  } catch { /* server may be unavailable */ }
 
   const loginEl = document.getElementById('login-screen');
   loginEl.classList.add('screen-fade-out');
@@ -177,7 +183,7 @@ async function init() {
   setupProfileButton();
   initParticles(scene, 'dust');
 
-  animate();
+  renderer.setAnimationLoop(animate);
 
   setInterval(() => { if (!state.connected) pollForUpdates(); }, 10000);
   setInterval(fetchLeaderboard, 10000);

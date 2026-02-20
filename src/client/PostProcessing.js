@@ -1,5 +1,5 @@
 /**
- * PostProcessing — EffectComposer with cartoon outlines, bloom, and FXAA
+ * PostProcessing — RenderPipeline with TSL outline, bloom, and FXAA
  *
  * 4 quality tiers with bidirectional FPS scaling:
  *   ultra:  all effects, pixelRatio 2.0, shadows 2048
@@ -11,14 +11,11 @@
  * Recover: >55fps for 15s → raise one tier (capped by maxTier)
  */
 
-import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import * as THREE from 'three/webgpu';
+import { pass } from 'three/tsl';
+import { bloom } from 'three/addons/tsl/display/BloomNode.js';
+import { outline } from 'three/addons/tsl/display/OutlineNode.js';
+import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 
 const TIER_ORDER = ['low', 'medium', 'high', 'ultra'];
 
@@ -29,10 +26,8 @@ const TIER_CONFIG = {
   low:    { pixelRatio: 1.0,  shadowSize: 0,    outline: false, bloom: false, fxaa: false, particleBudget: 5 },
 };
 
-let composer = null;
-let outlinePass = null;
-let bloomPass = null;
-let fxaaPass = null;
+let renderPipeline = null;
+let outlineNode = null;
 let currentTier = 'high';
 let maxTier = 'ultra';
 let _renderer = null;
@@ -40,12 +35,15 @@ let _scene = null;
 let _camera = null;
 let _directionalLight = null;
 
+// Shared reference array for outline selectedObjects (mutated in place)
+const selectedObjects = [];
+
 // FPS tracking for bidirectional scaling
 let frameCount = 0;
 let fpsCheckTime = 0;
-let degradeSince = 0;   // timestamp when fps first dropped below 30
-let stableAbove55Since = 0; // timestamp when fps first exceeded 55
-const FPS_CHECK_INTERVAL = 1000; // measure every 1s
+let degradeSince = 0;
+let stableAbove55Since = 0;
+const FPS_CHECK_INTERVAL = 1000;
 
 function detectInitialTier() {
   const cores = navigator.hardwareConcurrency || 2;
@@ -63,6 +61,54 @@ function detectInitialTier() {
   return 'low';
 }
 
+function buildPipeline(tier) {
+  const cfg = TIER_CONFIG[tier];
+
+  // Low tier: no pipeline, direct render
+  if (!cfg.outline && !cfg.bloom && !cfg.fxaa) {
+    if (renderPipeline) {
+      renderPipeline.dispose();
+      renderPipeline = null;
+    }
+    return;
+  }
+
+  const scenePass = pass(_scene, _camera);
+
+  let outputNode = scenePass;
+
+  if (cfg.outline) {
+    outlineNode = outline(_scene, _camera, {
+      selectedObjects,
+      edgeThickness: 1.0,
+      edgeGlow: 0.4,
+    });
+
+    const { visibleEdge, hiddenEdge } = outlineNode;
+    const visibleColor = new THREE.Color('#5a5a8a');
+    const hiddenColor = new THREE.Color('#2a2a4a');
+    const outlineColor = visibleEdge.mul(visibleColor).add(hiddenEdge.mul(hiddenColor)).mul(4.0);
+    outputNode = outputNode.add(outlineColor);
+  } else {
+    outlineNode = null;
+  }
+
+  if (cfg.bloom) {
+    outputNode = bloom(outputNode, 0.6, 0.5, 0.3);
+  }
+
+  if (cfg.fxaa) {
+    outputNode = fxaa(outputNode);
+  }
+
+  if (!renderPipeline) {
+    renderPipeline = new THREE.RenderPipeline(_renderer);
+  }
+
+  renderPipeline.outputNode = outputNode;
+  renderPipeline.needsUpdate = true;
+}
+
 export function initPostProcessing(rendererRef, sceneRef, cameraRef, directionalLight) {
   _renderer = rendererRef;
   _scene = sceneRef;
@@ -71,84 +117,47 @@ export function initPostProcessing(rendererRef, sceneRef, cameraRef, directional
 
   currentTier = detectInitialTier();
 
-  const size = new THREE.Vector2();
-  _renderer.getSize(size);
-
-  composer = new EffectComposer(_renderer);
-
-  // 1. Render pass
-  composer.addPass(new RenderPass(_scene, _camera));
-
-  // 2. Outline pass — cartoon edges
-  outlinePass = new OutlinePass(size, _scene, _camera);
-  outlinePass.edgeStrength = 4.0;
-  outlinePass.edgeGlow = 0.4;
-  outlinePass.edgeThickness = 1.0;
-  outlinePass.visibleEdgeColor.set('#5a5a8a');
-  outlinePass.hiddenEdgeColor.set('#2a2a4a');
-  composer.addPass(outlinePass);
-
-  // 3. Bloom — glow for emissive objects
-  bloomPass = new UnrealBloomPass(size, 0.6, 0.5, 0.3);
-  composer.addPass(bloomPass);
-
-  // 4. Output pass — tone mapping
-  composer.addPass(new OutputPass());
-
-  // 5. FXAA — anti-aliasing
-  fxaaPass = new ShaderPass(FXAAShader);
-  const pixelRatio = _renderer.getPixelRatio();
-  fxaaPass.material.uniforms['resolution'].value.set(
-    1 / (size.x * pixelRatio),
-    1 / (size.y * pixelRatio)
-  );
-  composer.addPass(fxaaPass);
-
   fpsCheckTime = performance.now();
 
-  // Apply initial tier
-  applyTier(currentTier);
+  buildPipeline(currentTier);
+  applyShadowSettings(currentTier);
 
   console.log(`[PostProcess] Initial quality: ${currentTier} (max: ${maxTier})`);
-  return composer;
 }
 
 let outlineUpdateTimer = 0;
-const OUTLINE_UPDATE_INTERVAL = 200; // ms
+const OUTLINE_UPDATE_INTERVAL = 200;
 
 export function updateOutlineObjects(entityMeshes, groupParents, playerMesh, remotePlayers) {
-  if (!outlinePass || !outlinePass.enabled) return;
+  if (!outlineNode) return;
 
   const now = performance.now();
   if (now - outlineUpdateTimer < OUTLINE_UPDATE_INTERVAL) return;
   outlineUpdateTimer = now;
 
-  const objects = [];
+  selectedObjects.length = 0;
 
   for (const mesh of entityMeshes.values()) {
     if (mesh.visible && mesh.material && !mesh.material.transparent) {
-      objects.push(mesh);
+      selectedObjects.push(mesh);
     }
   }
 
   for (const group of groupParents.values()) {
-    if (group.visible) objects.push(group);
+    if (group.visible) selectedObjects.push(group);
   }
 
-  if (playerMesh) objects.push(playerMesh);
+  if (playerMesh) selectedObjects.push(playerMesh);
   for (const mesh of remotePlayers.values()) {
-    if (mesh.visible) objects.push(mesh);
+    if (mesh.visible) selectedObjects.push(mesh);
   }
-
-  outlinePass.selectedObjects = objects;
 }
 
 export function renderFrame() {
-  const cfg = TIER_CONFIG[currentTier];
-  if (!composer || (!cfg.outline && !cfg.bloom && !cfg.fxaa)) {
+  if (!renderPipeline) {
     _renderer.render(_scene, _camera);
   } else {
-    composer.render();
+    renderPipeline.render();
   }
 
   frameCount++;
@@ -165,7 +174,6 @@ function autoAdjustQuality(fps, now) {
   const tierIdx = TIER_ORDER.indexOf(currentTier);
 
   if (fps < 30) {
-    // Start or continue degrade tracking
     if (degradeSince === 0) degradeSince = now;
     stableAbove55Since = 0;
 
@@ -174,7 +182,6 @@ function autoAdjustQuality(fps, now) {
       applyTier(TIER_ORDER[tierIdx - 1]);
     }
   } else if (fps > 55) {
-    // Start or continue recovery tracking
     if (stableAbove55Since === 0) stableAbove55Since = now;
     degradeSince = 0;
 
@@ -184,29 +191,25 @@ function autoAdjustQuality(fps, now) {
       applyTier(TIER_ORDER[tierIdx + 1]);
     }
   } else {
-    // 30-55 fps — stable range, reset both trackers
     degradeSince = 0;
     stableAbove55Since = 0;
   }
 }
 
 function applyTier(tier) {
-  if (tier === currentTier && composer) return;
+  if (tier === currentTier) return;
   currentTier = tier;
-  if (!composer) return;
 
   const cfg = TIER_CONFIG[tier];
   console.log(`[PostProcess] Quality: ${tier}`);
 
-  // Pass enable/disable
-  outlinePass.enabled = cfg.outline;
-  bloomPass.enabled = cfg.bloom;
-  fxaaPass.enabled = cfg.fxaa;
-
-  // Pixel ratio
+  buildPipeline(tier);
   _renderer.setPixelRatio(cfg.pixelRatio);
+  applyShadowSettings(tier);
+}
 
-  // Shadow control
+function applyShadowSettings(tier) {
+  const cfg = TIER_CONFIG[tier];
   if (_directionalLight) {
     if (cfg.shadowSize > 0) {
       _directionalLight.castShadow = true;
@@ -221,18 +224,6 @@ function applyTier(tier) {
     } else {
       _directionalLight.castShadow = false;
     }
-  }
-}
-
-export function resizePostProcessing(width, height) {
-  if (!composer) return;
-  composer.setSize(width, height);
-  if (fxaaPass) {
-    const pixelRatio = _renderer.getPixelRatio();
-    fxaaPass.material.uniforms['resolution'].value.set(
-      1 / (width * pixelRatio),
-      1 / (height * pixelRatio)
-    );
   }
 }
 

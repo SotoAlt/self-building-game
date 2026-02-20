@@ -2,9 +2,9 @@
  * Floor and environment management — lava floor, hazard plane, environment settings.
  */
 
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { floor, hazardPlaneState } from '../state.js';
-import { createLavaShaderMaterial, createWaterShaderMaterial, registerShaderMaterial } from '../SurfaceShaders.js';
+import { createLavaShaderMaterial, createWaterShaderMaterial } from '../SurfaceShaders.js';
 import { updateSkyColors, initParticles, selectParticleType } from '../EnvironmentEffects.js';
 import { setMaterialTheme } from '../ToonMaterials.js';
 
@@ -20,7 +20,6 @@ export function initFloorManager({ scene, ground, gridHelper, ambientLight, dire
 
   const lavaGeometry = new THREE.PlaneGeometry(200, 200, 40, 40);
   const lavaMaterial = createLavaShaderMaterial();
-  registerShaderMaterial(lavaMaterial);
   lavaFloor = new THREE.Mesh(lavaGeometry, lavaMaterial);
   lavaFloor.rotation.x = -Math.PI / 2;
   lavaFloor.position.y = -0.5;
@@ -29,7 +28,6 @@ export function initFloorManager({ scene, ground, gridHelper, ambientLight, dire
 
   const hazardPlaneGeom = new THREE.PlaneGeometry(400, 400, 40, 40);
   hazardPlaneMat = createLavaShaderMaterial();
-  registerShaderMaterial(hazardPlaneMat);
   hazardPlaneMesh = new THREE.Mesh(hazardPlaneGeom, hazardPlaneMat);
   hazardPlaneMesh.rotation.x = -Math.PI / 2;
   hazardPlaneMesh.visible = false;
@@ -38,7 +36,6 @@ export function initFloorManager({ scene, ground, gridHelper, ambientLight, dire
 
 export function updateHazardPlaneMaterial(type) {
   const newMat = type === 'water' ? createWaterShaderMaterial() : createLavaShaderMaterial();
-  registerShaderMaterial(newMat);
   hazardPlaneMesh.material = newMat;
   hazardPlaneMat = newMat;
 }

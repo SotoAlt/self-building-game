@@ -2,6 +2,21 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.64.0] - 2026-02-20
+
+### Upgrade — Architecture Phase E.2: WebGPU + TSL Migration
+- **WebGPURenderer** replaces WebGLRenderer — auto-detects WebGPU, falls back to WebGL 2 transparently. Zero broken users.
+  - `src/client/SceneSetup.js` — `async createScene()`, `WebGPURenderer` + `await renderer.init()`, `?forceWebGL=true` URL param
+  - `src/client/main.js` — async scene init, `renderer.setAnimationLoop()` replaces `requestAnimationFrame`
+- **TSL shaders** replace all GLSL ShaderMaterial — lava, water, wind, sky dome rewritten as NodeMaterial with TSL nodes
+  - `src/client/SurfaceShaders.js` — full TSL rewrite (NodeMaterial + `time` auto-node, `positionNode`, `colorNode`, `opacityNode`)
+  - `src/client/EnvironmentEffects.js` — sky dome TSL rewrite (uniform nodes for live color updates)
+- **RenderPipeline** replaces EffectComposer — TSL-native post-processing chain
+  - `src/client/PostProcessing.js` — `pass()` → `bloom()` → `outline()` → `fxaa()` node chain. Same 4 quality tiers.
+- **Time uniform system removed** — TSL `time` node auto-updates, eliminating `updateShaderTime()`, `registerShaderMaterial()`, `shaderMaterials[]`
+  - `src/client/scene/FloorManager.js`, `src/client/entities/EntityFactory.js` — removed `registerShaderMaterial` calls
+- **Import path swap** — 18 client files: `'three'` → `'three/webgpu'` (re-exports all of `three` plus WebGPU classes)
+
 ## [0.62.0] - 2026-02-20
 
 ### Upgrade — Architecture Phase E.1

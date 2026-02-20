@@ -3,7 +3,7 @@
  * Pre-allocates Vector3s to eliminate per-frame GC allocations.
  */
 
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { MIN_PITCH, MAX_PITCH, MIN_DISTANCE, MAX_DISTANCE, SPEC_FLY_SPEED, SPEC_FAST_SPEED, isMobile, isSpectator } from './config.js';
 import { state, camera as cameraState, spectator, spectatorPos, cameraShake, remotePlayers, player } from './state.js';
 import { updateCameraShake } from './vfx/ScreenEffects.js';

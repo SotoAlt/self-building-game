@@ -6,10 +6,10 @@
  * BufferGeometry instance. Callers must NOT dispose cached geometries directly.
  */
 
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { GEOMETRY_TEMPLATES } from '../GeometryTemplates.js';
 import { createEntityToonMaterial, getEntityColor } from '../ToonMaterials.js';
-import { createWindShaderMaterial, registerShaderMaterial, registerConveyorMaterial } from '../SurfaceShaders.js';
+import { createWindShaderMaterial, registerConveyorMaterial } from '../SurfaceShaders.js';
 
 export function createBeveledBox(sx, sy, sz) {
   const bevel = Math.max(0.12, Math.min((sx + sz) / 2 * 0.06, sy * 0.4));
@@ -141,7 +141,6 @@ export function createEntityMesh(entity) {
   let material;
   if (props.isWind) {
     material = createWindShaderMaterial(props.windForce || [1, 0, 0]);
-    registerShaderMaterial(material);
   } else {
     material = createEntityToonMaterial(entity);
   }

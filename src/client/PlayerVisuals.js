@@ -8,7 +8,7 @@
  *   - Leader crown for #1 on leaderboard
  */
 
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { createPlayerToonMaterial } from './ToonMaterials.js';
 
 const LOCAL_PLAYER_COLOR = 0x00ff88;

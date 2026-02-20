@@ -308,11 +308,13 @@ These don't need modularity changes — they're already well-scoped:
 - [x] `stencilBuffer: true` (r162 default change) — `src/client/SceneSetup.js`
 - [x] Import paths `three/examples/jsm/` → `three/addons/` — `src/client/PostProcessing.js`
 
-#### E.2 — WebGPU Renderer + TSL Shaders (Next)
-- [ ] `WebGLRenderer` → `WebGPURenderer` (auto WebGL 2 fallback)
-- [ ] `EffectComposer` → `RenderPipeline` + TSL post-processing nodes
-- [ ] GLSL shaders → TSL (lava, water, wind, sky dome)
-- [ ] `import 'three'` → `import 'three/webgpu'` across all client files
+#### E.2 — WebGPU Renderer + TSL Shaders [DONE]
+- [x] `WebGLRenderer` → `WebGPURenderer` (auto WebGL 2 fallback, `?forceWebGL=true` param)
+- [x] `EffectComposer` → `RenderPipeline` + TSL post-processing nodes (bloom, outline, fxaa)
+- [x] GLSL shaders → TSL NodeMaterial (lava, water, wind, sky dome)
+- [x] `import 'three'` → `import 'three/webgpu'` across all 18 client files
+- [x] `requestAnimationFrame` → `renderer.setAnimationLoop()`, async scene init
+- [x] Time uniform system removed — TSL `time` node auto-updates
 
 ### Phase F — Deferred (Not Needed at Current Scale)
 

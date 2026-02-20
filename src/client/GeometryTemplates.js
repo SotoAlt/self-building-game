@@ -10,7 +10,7 @@
  *   Tube-based   — 3D curve with tube radius
  */
 
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 
 const SEGMENTS = 16;
 

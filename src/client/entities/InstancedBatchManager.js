@@ -8,7 +8,7 @@
  * grouped, or using special materials stays as an individual mesh.
  */
 
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { getGeometryCacheKey, getGeometry } from './EntityFactory.js';
 import { createInstancedPlatformMaterial, getEntityColor } from '../ToonMaterials.js';
 

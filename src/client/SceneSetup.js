@@ -2,16 +2,17 @@
  * Scene setup — Three.js scene, camera, renderer, lighting, and ground plane.
  */
 
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import { createGroundToonMaterial } from './ToonMaterials.js';
 import { createSkyDome } from './EnvironmentEffects.js';
 import { initPostProcessing } from './PostProcessing.js';
 import { initScreenEffects } from './vfx/ScreenEffects.js';
+import { urlParams } from './config.js';
 
 const BG_COLOR = 0x2a2a4e;
 const WORLD_SIZE = 200;
 
-export function createScene() {
+export async function createScene() {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(BG_COLOR);
   scene.fog = new THREE.FogExp2(BG_COLOR, 0.012);
@@ -19,7 +20,10 @@ export function createScene() {
   const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.set(0, 10, 30);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, stencilBuffer: true });
+  const forceWebGL = urlParams.get('forceWebGL') === 'true';
+  const renderer = new THREE.WebGPURenderer({ antialias: true, forceWebGL });
+  await renderer.init();
+
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;

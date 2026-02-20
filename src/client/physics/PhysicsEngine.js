@@ -4,7 +4,7 @@
  * Player physics, collision detection, death/respawn, and trigger events.
  */
 
-import * as THREE from 'three';
+import * as THREE from 'three/webgpu';
 import {
   PHYSICS, GROUND_Y, ABYSS_DEATH_Y, LAVA_DEATH_Y, VOID_DEATH_Y,
   DEATH_COOLDOWN, MOVE_INTERVAL, isMobile
