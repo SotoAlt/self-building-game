@@ -4,13 +4,13 @@ Audit of the Chaos Arena architecture against the official Three.js r183 docs an
 
 **Audited against**: [Three.js LLM Docs](https://threejs.org/docs/llms.txt), [Three.js Full Docs](https://threejs.org/docs/llms-full.txt), [Colyseus State Sync](https://docs.colyseus.io/state)
 
-**Scope**: ~50 concurrent players, mobile-important, WebGL-only, more built-in game types coming.
+**Scope**: ~50 concurrent players, mobile-important, WebGPU with WebGL fallback, more built-in game types coming.
 
 ---
 
 ## Current State Summary
 
-**Client**: 38 files, ~6,500 lines. WebGLRenderer, EffectComposer post-processing, custom GLSL shaders, AABB physics with spatial hash, 4-tier adaptive quality system.
+**Client**: 39 files, ~6,600 lines. WebGPURenderer (WebGL 2 fallback), RenderPipeline TSL post-processing, TSL NodeMaterial shaders, SpriteNodeMaterial particles, AABB physics with spatial hash, 4-tier adaptive quality system.
 
 **Server**: 46 files, ~9,000 lines. Express + Colyseus with manual broadcasts (not using Colyseus schema state sync). Client-authoritative movement with basic server validation. Event-driven (no fixed server tick).
 
@@ -30,6 +30,7 @@ Audit of the Chaos Arena architecture against the official Three.js r183 docs an
 | Secondary indices (server) | EntityManager.js (server) | `_kinematicIds`, `_chasingIds`, `_groupIndex` avoid O(n) scans |
 | Pre-allocated vectors | CameraController.js | `_tempLookTarget`, `_tempForward` etc. eliminate per-frame GC |
 | Particle budget enforcement | ScreenEffects.js | Quality-tier caps (ultra:20, low:5 max systems) |
+| SpriteNodeMaterial particles | ParticleUtils.js, EnvironmentEffects.js, ScreenEffects.js | WebGPU-compatible billboarded sprites with TSL soft-circle shader |
 | Event-driven entity lifecycle | GameRoom.js | Spawn/destroy broadcasts are clear and debuggable |
 | Exponential backoff reconnect | NetworkManager.js | 1s→30s with token-based fast-path |
 
@@ -90,20 +91,18 @@ Audit of the Chaos Arena architecture against the official Three.js r183 docs an
 **Three.js docs**: `THREE.LOD` auto-switches geometry detail by distance.
 **Recommendation**: **Defer** — cel-shaded toon style uses low-poly geometry already. LOD benefit is small for our art style.
 
-#### 8. CPU-Driven Particles → GPU Particles
-**Current**: ScreenEffects.js uses Float32Array with per-particle CPU updates, `needsUpdate = true` per frame.
-**Three.js docs**: Even with WebGL, `InstancedMesh` particles with vertex shader animation are faster.
-**Impact**: Removes CPU particle budget as bottleneck. Could allow richer effects.
-**Approach**: Replace per-particle CPU loop with InstancedMesh + time-based vertex shader animation.
-**Files**: `src/client/vfx/ScreenEffects.js`
+#### 8. CPU-Driven Particles → GPU Particles [DONE]
+**Was**: `Points` + `PointsMaterial` — completely broken in WebGPU (1px dots, no `gl_PointSize` support).
+**Fix**: All three particle systems (ambient, stars, bursts) rewritten to `SpriteNodeMaterial` + `InstancedBufferAttribute`. TSL `softCircle()` node provides radial gradient without textures. CPU update loops retained for camera-relative wrapping (ambient) and velocity/gravity (bursts), but rendering is now proper billboarded instanced sprites.
+**Files**: `src/client/vfx/ParticleUtils.js` (NEW), `src/client/EnvironmentEffects.js`, `src/client/vfx/ScreenEffects.js`
 
 ### Tier 3: Low Impact / Future Considerations
 
-#### 9. WebGPURenderer
-**Decision**: Stay on WebGL. Maximum compatibility for arcade game.
+#### 9. WebGPURenderer [DONE]
+**Decision**: Migrated to WebGPURenderer with automatic WebGL 2 fallback. See Phase E.2.
 
-#### 10. TSL over GLSL
-**Decision**: Keep GLSL. Only migrate when adding new shader effects.
+#### 10. TSL over GLSL [DONE]
+**Decision**: All shaders migrated to TSL NodeMaterial. See Phase E.2.
 
 #### 11. Texture Atlasing
 **Decision**: Skip. Procedural canvas textures are already small for toon style.
@@ -229,7 +228,7 @@ These don't need modularity changes — they're already well-scoped:
 | `NetworkManager.js` | Colyseus connection with callback-based delegation. |
 | `InputManager.js` | Clean keyboard action map. |
 | `CameraController.js` | Self-contained orbit + spectator camera. |
-| `PostProcessing.js` | Adaptive quality with clean API. |
+| `PostProcessing.js` | Build-once pipeline with adaptive tier switching. No runtime rebuilds. |
 | `ToonMaterials.js` | Material factory, parameterized. |
 | `EntityFactory.js` | Pure mesh creation, geometry caching. |
 | `SoundManager.js` | Named sound functions, no coupling. |
@@ -276,8 +275,9 @@ These don't need modularity changes — they're already well-scoped:
 - [ ] **C.1: Static geometry merging** for immovable arena elements
   - When: If InstancedMesh isn't enough (unlikely for toon style)
 
-- [ ] **C.2: GPU-driven particle system** via InstancedMesh + vertex shader
-  - When: If particle budget becomes a visible quality limitation
+- [x] **C.2: WebGPU particle system** via SpriteNodeMaterial + InstancedBufferAttribute ✅
+  - Files: `src/client/vfx/ParticleUtils.js` (NEW), `src/client/EnvironmentEffects.js`, `src/client/vfx/ScreenEffects.js`
+  - Done: All `Points`+`PointsMaterial` replaced with `SpriteNodeMaterial` instanced billboards. TSL `softCircle()` node for particle shape. Ambient (250), stars (300), and burst particles all working on WebGPU + WebGL fallback.
 
 - [ ] **C.3: Server tick loop** (20 Hz) for kinematic entity movement
   - When: If adding more complex entity behaviors (patrol/chase) that need server authority
@@ -315,6 +315,11 @@ These don't need modularity changes — they're already well-scoped:
 - [x] `import 'three'` → `import 'three/webgpu'` across all 18 client files
 - [x] `requestAnimationFrame` → `renderer.setAnimationLoop()`, async scene init
 - [x] Time uniform system removed — TSL `time` node auto-updates
+
+#### E.3 — Outline + Pipeline Stability Fix [DONE]
+- [x] `OutlineNode` addon → `toonOutlinePass()` core — 1 pass vs 7, no `selectedObjects`, auto-outlines all toon meshes
+- [x] Build-once pipeline — `RenderPipeline` built at init, never rebuilt on tier change. Tier degradation switches between pipeline (high/ultra) and raw `renderer.render()` (medium/low). Eliminates `Destroyed texture [ShadowDepthTexture]` crash from `needsUpdate` disposing in-flight GPU textures.
+- [x] Shadow map safety — `applyShadowSettings()` only toggles `castShadow`, never disposes shadow maps at runtime
 
 ### Phase F — Deferred (Not Needed at Current Scale)
 

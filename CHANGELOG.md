@@ -2,6 +2,38 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.68.0] - 2026-02-20
+
+### Fix — WebGPU Particle Rewrite + Colyseus Warning Cleanup + Production Console Stripping
+- **Particle systems rewritten for WebGPU** — `Points` + `PointsMaterial` rendered as 1px dots in WebGPU (no `gl_PointSize` support). All three particle systems migrated to `SpriteNodeMaterial` + `InstancedBufferAttribute` with TSL soft-circle shader. Particles now render as properly-sized billboarded sprites on both WebGPU and WebGL fallback.
+  - `src/client/vfx/ParticleUtils.js` (NEW) — shared `softCircle()` TSL node (radial gradient via `uv()` + `smoothstep()`), `createParticleMaterial()` factory
+  - `src/client/EnvironmentEffects.js` — ambient particles (250 dust/embers/snow/fireflies/ash/magic) + star field (300 stars) rewritten from `Points` to instanced `Mesh` + `SpriteNodeMaterial`. Star brightness now driven by TSL `uniform()` node instead of `material.opacity`.
+  - `src/client/vfx/ScreenEffects.js` — burst/impact particles (death, triggers, win celebrations) rewritten from `Points` to instanced `Mesh` + `SpriteNodeMaterial`. Material pool removed (short-lived bursts create per-instance materials).
+- **5 missing Colyseus message handlers registered** — suppresses `onMessage() not registered` console warnings from vendor code:
+  - `src/client/network/handlers/GameStateHandlers.js` — `collectible_picked` (sparkle VFX + collect sound), `minigame_ended` (winner toast), `challenge_completed` (toast)
+  - `src/client/network/handlers/PlayerHandlers.js` — `player_respawned` (cyan respawn particles)
+  - `src/client/network/handlers/EffectHandlers.js` — `afk_kicked` (empty handler, actual disconnect handled by `onLeave`)
+- **Suppress AFK overlay on intentional disconnect** — logout and arena switch no longer flash "You were kicked for being AFK" screen. `intentionalDisconnect` flag in client state guards the `onLeave` handler.
+  - `src/client/state.js`, `src/client/ConnectionManager.js`, `src/client/network/handlers/EffectHandlers.js`
+- **AFK overlays rebranded** — replaced inline styles with CSS classes using the game's design system (`--danger`, `--agent`, `--success`, `--bg-dark`, `--font-head`). Added "CHAOS ARENA" branding text.
+  - `src/client/ui/AfkOverlay.js`, `src/client/styles/game.css`
+- **Console logs stripped in production** — `esbuild.pure` config removes all `console.log/warn/error/info/debug/table/group/groupEnd` calls at build time. Dev mode logging unaffected.
+  - `vite.config.js` — conditional esbuild config via `defineConfig(({ mode }) => ...)`
+
+## [0.66.0] - 2026-02-20
+
+### Fix — Stable Toon Outlines (Post-Processing Crash Fix)
+- **`toonOutlinePass`** replaces `OutlineNode` — core Three.js inverted-hull technique (1 render pass) replaces the addon outline (7 passes, 8 render targets). Fixes three issues:
+  - **Black screen crash**: `OutlineNode` created stale render targets that caused `texture(value) expects valid THREE.Texture()` on pipeline rebuilds
+  - **See-through outlines**: `hiddenEdge` component showed x-ray edges behind objects
+  - **No lobby outlines**: `OutlineNode` required manually-managed `selectedObjects` array; `toonOutlinePass` automatically outlines all `MeshToonMaterial` meshes
+  - `src/client/PostProcessing.js` — `outline()` addon → `toonOutlinePass()` from `three/tsl`
+  - `src/client/main.js` — removed `updateOutlineObjects()` call and dead state imports
+- **Build-once pipeline** — `RenderPipeline` now built once at init, never rebuilt on tier changes. Tier degradation switches between pipeline (high/ultra) and raw renderer (medium/low) without touching GPU resources. Fixes `Destroyed texture [ShadowDepthTexture]` WebGPU crash caused by `needsUpdate` disposing in-flight textures.
+  - `src/client/PostProcessing.js` — `buildPipeline(tier)` → `buildPipelineOnce()`, `applyTier()` no longer rebuilds
+- **Shadow map safety** — `applyShadowSettings()` now only toggles `castShadow` on/off. Shadow map disposal removed entirely — prevents GPU texture use-after-free during pipeline renders.
+- **Bloom tuning** — strength 0.12 → 0.15, threshold 0.7 → 0.55 for more visible glow on bright surfaces
+
 ## [0.64.0] - 2026-02-20
 
 ### Upgrade — Architecture Phase E.2: WebGPU + TSL Migration
