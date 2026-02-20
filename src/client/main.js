@@ -1,27 +1,25 @@
 /**
- * Self-Building Game - Browser Client
- * Three.js + Colyseus for real-time multiplayer
+ * Self-Building Game — browser client entry point.
+ * Three.js + Colyseus for real-time multiplayer.
  */
 
 import './styles/game.css';
 import './styles/mobile.css';
 import * as THREE from 'three';
-import { createGroundToonMaterial } from './ToonMaterials.js';
-import { initPostProcessing, renderFrame, resizePostProcessing, updateOutlineObjects } from './PostProcessing.js';
+
+import { renderFrame, resizePostProcessing, updateOutlineObjects } from './PostProcessing.js';
 import { updateShaderTime, updateConveyorScrolls } from './SurfaceShaders.js';
 import { updateSquashStretch } from './PlayerVisuals.js';
 import { initEntityManager, animateEntities, animateGroups } from './entities/EntityManager.js';
 import { initPhysics, updatePlayer, checkCollisions, createPlayer } from './physics/PhysicsEngine.js';
 import { initRemotePlayers, updateChatBubbles, interpolateRemotePlayers } from './rendering/RemotePlayers.js';
-import { createSkyDome, initParticles, updateEnvironmentEffects } from './EnvironmentEffects.js';
-import { initNetworkManager, sendToServer, storeReconnectionToken } from './network/NetworkManager.js';
+import { initParticles, updateEnvironmentEffects } from './EnvironmentEffects.js';
+import { initNetworkManager, sendToServer } from './network/NetworkManager.js';
 import { initFloorManager, animateFloors } from './scene/FloorManager.js';
-import { registerMessageHandlers } from './network/MessageHandlers.js';
 import { fetchInitialState, pollForUpdates } from './network/HttpApi.js';
-import { Client } from 'colyseus.js';
 import { debugAuth } from './auth.js';
 import {
-  SERVER_URL, urlParams, isSpectator, isDebug,
+  urlParams, isSpectator, isDebug,
   selectedArenaId, setSelectedArenaId, getApiBase, isMobile
 } from './config.js';
 import {
@@ -31,8 +29,7 @@ import {
   camera as cameraState,
   countdown
 } from './state.js';
-import { updateParticles, initScreenEffects } from './vfx/ScreenEffects.js';
-import { hideReconnectOverlay } from './ui/Announcements.js';
+import { updateParticles } from './vfx/ScreenEffects.js';
 import { setupChat, displayChatMessage } from './ui/ChatSystem.js';
 import { updateUI, updateGameStateUI } from './ui/GameStatusHUD.js';
 import { fetchLeaderboard } from './ui/Leaderboard.js';
@@ -45,111 +42,30 @@ import { setupDebugPanel } from './ui/DebugPanel.js';
 import { CameraController } from './CameraController.js';
 import { keys, setupKeyboardInput, toggleHelpOverlay } from './input/InputManager.js';
 import { setupMobileControls } from './input/MobileControls.js';
+import { createScene } from './SceneSetup.js';
+import { initConnectionManager, connectToServer, reconnectToServer } from './ConnectionManager.js';
 
 window.__gameState = state;
 window.debugAuth = debugAuth;
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x2a2a4e);
-scene.fog = new THREE.FogExp2(0x2a2a4e, 0.012);
-
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 10, 30);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.3;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-document.getElementById('game').appendChild(renderer.domElement);
-
-const ambientLight = new THREE.AmbientLight(0x8090a0, 0.8);
-scene.add(ambientLight);
-
-const hemiLight = new THREE.HemisphereLight(0xb0d0ff, 0x404030, 0.6);
-scene.add(hemiLight);
-
-const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
-directionalLight.position.set(50, 100, 50);
-directionalLight.castShadow = true;
-directionalLight.shadow.mapSize.width = 2048;
-directionalLight.shadow.mapSize.height = 2048;
-scene.add(directionalLight);
-
-const groundGeometry = new THREE.PlaneGeometry(200, 200, 50, 50);
-const groundMaterial = createGroundToonMaterial();
-const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-scene.add(ground);
-
-const gridHelper = new THREE.GridHelper(200, 50, 0x555555, 0x444444);
-scene.add(gridHelper);
-
-createSkyDome(scene);
-
-initPostProcessing(renderer, scene, camera, directionalLight);
-
-initScreenEffects(scene);
-
-initEntityManager(scene, updateUI);
+const { scene, camera, renderer, ground, gridHelper, ambientLight, directionalLight } = createScene();
 
 const cameraController = new CameraController(camera, renderer);
 cameraController.initDesktopEvents();
 
+initEntityManager(scene, updateUI);
 initPhysics({
   scene,
   sendToServer,
   getCameraDirections: () => cameraController.getCameraDirections(),
   updateCamera: () => cameraController.updateCamera(),
 });
-
 initRemotePlayers(scene);
-
+initConnectionManager({ clearSpectating: () => cameraController.clearSpectating() });
 initNetworkManager({ connectToServerFn: connectToServer, reconnectToServerFn: reconnectToServer });
 initFloorManager({ scene, ground, gridHelper, ambientLight, directionalLight });
-const messageDeps = { clearSpectating: () => cameraController.clearSpectating() };
 
-function isInSpectatorMode() { return cameraController.isInSpectatorMode(); }
-
-async function reconnectToServer(token) {
-  const client = new Client(SERVER_URL);
-  const room = await client.reconnect(token);
-  state.room = room;
-  state.connected = true;
-  storeReconnectionToken();
-  hideReconnectOverlay();
-  console.log('[Network] Reconnected to room:', room.roomId);
-  registerMessageHandlers(room, messageDeps);
-  return true;
-}
-
-async function connectToServer() {
-  try {
-    const client = new Client(SERVER_URL);
-    const user = auth.user?.user;
-    const playerName = user?.twitterUsername || user?.name || `Player-${Date.now().toString(36)}`;
-    const joinOptions = { name: playerName, arenaId: selectedArenaId };
-    if (auth.user?.token) joinOptions.token = auth.user.token;
-    if (user?.type) joinOptions.type = user.type;
-
-    const room = await client.joinOrCreate('game', joinOptions);
-    state.room = room;
-    state.connected = true;
-    storeReconnectionToken();
-    hideReconnectOverlay();
-    console.log('[Network] Connected to room:', room.roomId);
-    registerMessageHandlers(room, messageDeps);
-    return true;
-  } catch (error) {
-    console.error('[Network] Connection failed:', error);
-    state.connected = false;
-    return false;
-  }
-}
-
+const isInSpectatorMode = () => cameraController.isInSpectatorMode();
 const clock = new THREE.Clock();
 
 function animate() {
@@ -237,21 +153,19 @@ async function init() {
   if (isDebug) setupDebugPanel();
   if (isMobile && !isSpectator) setupMobileControls({ keys, rendererDomElement: renderer.domElement, fetchLeaderboard });
 
-  try {
-    const chatResp = await fetch(`${getApiBase()}/chat/messages`);
-    const chatData = await chatResp.json();
-    for (const msg of chatData.messages) {
-      displayChatMessage(msg);
-    }
-  } catch { /* non-critical */ }
+  await fetch(`${getApiBase()}/chat/messages`)
+    .then(r => r.json())
+    .then(data => data.messages.forEach(displayChatMessage))
+    .catch(() => {});
 
   const loginEl = document.getElementById('login-screen');
   loginEl.classList.add('screen-fade-out');
   setTimeout(() => { loginEl.style.display = 'none'; loginEl.classList.remove('screen-fade-out'); }, 300);
+
   if (isDebug) document.getElementById('ui').style.display = 'block';
-  const controlsEl = document.getElementById('controls');
-  controlsEl.style.display = 'block';
+  document.getElementById('controls').style.display = 'block';
   document.getElementById('chat-panel').style.display = 'flex';
+
   const helpBtn = document.getElementById('help-btn');
   helpBtn.style.display = 'flex';
   helpBtn.addEventListener('click', () => toggleHelpOverlay());

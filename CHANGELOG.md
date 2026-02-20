@@ -2,6 +2,14 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.58.0] - 2026-02-20
+
+### Refactor — Architecture Phase D.3
+- **Extract SceneSetup.js + ConnectionManager.js from main.js** — scene creation (Three.js scene, camera, renderer, lights, ground, grid, sky dome, post-processing, screen effects) and Colyseus connection logic (connect, reconnect, auth token) extracted into dedicated modules. main.js reduced from 273 lines / 48 imports to ~170 lines / 36 imports.
+  - `src/client/SceneSetup.js` (NEW) — `createScene()` returns `{ scene, camera, renderer, ground, gridHelper, ambientLight, directionalLight }`
+  - `src/client/ConnectionManager.js` (NEW) — `initConnectionManager()`, `connectToServer()`, `reconnectToServer()`
+  - `src/client/main.js` — thin orchestrator: import scene → init systems → game loop
+
 ## [0.56.0] - 2026-02-20
 
 ### Refactor — Architecture Phase D.2
