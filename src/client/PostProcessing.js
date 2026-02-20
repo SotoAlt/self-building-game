@@ -1,5 +1,5 @@
 /**
- * PostProcessing — RenderPipeline with TSL outline, bloom, and FXAA
+ * PostProcessing — RenderPipeline with toon outline, bloom, and FXAA
  *
  * 4 quality tiers with bidirectional FPS scaling:
  *   ultra:  all effects, pixelRatio 2.0, shadows 2048
@@ -12,12 +12,12 @@
  */
 
 import * as THREE from 'three/webgpu';
-import { pass } from 'three/tsl';
+import { pass, toonOutlinePass } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
-import { outline } from 'three/addons/tsl/display/OutlineNode.js';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 
 const TIER_ORDER = ['low', 'medium', 'high', 'ultra'];
+const OUTLINE_COLOR = new THREE.Color(0x000000);
 
 const TIER_CONFIG = {
   ultra:  { pixelRatio: 2.0,  shadowSize: 2048, outline: true,  bloom: true,  fxaa: true,  particleBudget: 20 },
@@ -27,16 +27,12 @@ const TIER_CONFIG = {
 };
 
 let renderPipeline = null;
-let outlineNode = null;
 let currentTier = 'high';
 let maxTier = 'ultra';
 let _renderer = null;
 let _scene = null;
 let _camera = null;
 let _directionalLight = null;
-
-// Shared reference array for outline selectedObjects (mutated in place)
-const selectedObjects = [];
 
 // FPS tracking for bidirectional scaling
 let frameCount = 0;
@@ -70,7 +66,6 @@ function buildPipeline(tier) {
       renderPipeline.dispose();
       renderPipeline = null;
     }
-    outlineNode = null;
     return;
   }
 
@@ -78,24 +73,12 @@ function buildPipeline(tier) {
     renderPipeline = new THREE.RenderPipeline(_renderer);
   }
 
-  // Build compositing chain: scene -> +outline -> +bloom -> fxaa
-  const scenePass = pass(_scene, _camera);
+  // Build compositing chain: scene (with toon outline) -> +bloom -> fxaa
+  const scenePass = cfg.outline
+    ? toonOutlinePass(_scene, _camera, OUTLINE_COLOR, 0.003, 1.0)
+    : pass(_scene, _camera);
   const scenePassColor = scenePass.getTextureNode('output');
   let outputNode = scenePassColor;
-
-  if (cfg.outline) {
-    outlineNode = outline(_scene, _camera, {
-      selectedObjects,
-      edgeThickness: 1.5,
-      edgeGlow: 0.0,
-    });
-    const { visibleEdge, hiddenEdge } = outlineNode;
-    // Black outlines: subtract edge luminance from scene to darken edges
-    const edgeMask = visibleEdge.add(hiddenEdge).mul(3.0);
-    outputNode = outputNode.mul(edgeMask.oneMinus().max(0.0).add(0.15));
-  } else {
-    outlineNode = null;
-  }
 
   if (cfg.bloom) {
     // bloom(input, strength, radius, threshold)
@@ -124,34 +107,6 @@ export function initPostProcessing(rendererRef, sceneRef, cameraRef, directional
   applyShadowSettings(currentTier);
 
   console.log(`[PostProcess] Initial quality: ${currentTier} (max: ${maxTier})`);
-}
-
-let outlineUpdateTimer = 0;
-const OUTLINE_UPDATE_INTERVAL = 200;
-
-export function updateOutlineObjects(entityMeshes, groupParents, playerMesh, remotePlayers) {
-  if (!outlineNode) return;
-
-  const now = performance.now();
-  if (now - outlineUpdateTimer < OUTLINE_UPDATE_INTERVAL) return;
-  outlineUpdateTimer = now;
-
-  selectedObjects.length = 0;
-
-  for (const mesh of entityMeshes.values()) {
-    if (mesh.visible && mesh.material && !mesh.material.transparent) {
-      selectedObjects.push(mesh);
-    }
-  }
-
-  for (const group of groupParents.values()) {
-    if (group.visible) selectedObjects.push(group);
-  }
-
-  if (playerMesh) selectedObjects.push(playerMesh);
-  for (const mesh of remotePlayers.values()) {
-    if (mesh.visible) selectedObjects.push(mesh);
-  }
 }
 
 export function renderFrame() {

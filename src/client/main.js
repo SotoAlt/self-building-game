@@ -7,7 +7,7 @@ import './styles/game.css';
 import './styles/mobile.css';
 import * as THREE from 'three/webgpu';
 
-import { renderFrame, updateOutlineObjects } from './PostProcessing.js';
+import { renderFrame } from './PostProcessing.js';
 import { updateConveyorScrolls } from './SurfaceShaders.js';
 import { updateSquashStretch } from './PlayerVisuals.js';
 import { initEntityManager, animateEntities, animateGroups } from './entities/EntityManager.js';
@@ -23,8 +23,7 @@ import {
   selectedArenaId, setSelectedArenaId, getApiBase, isMobile
 } from './config.js';
 import {
-  state, auth, remotePlayers,
-  entityMeshes, groupParents,
+  state, auth,
   player, playerVelocity,
   camera as cameraState,
   countdown
@@ -77,7 +76,6 @@ function animate() {
   updateConveyorScrolls(delta);
   updateEnvironmentEffects(delta, camera.position);
   updateParticles(delta);
-  updateOutlineObjects(entityMeshes, groupParents, player.mesh, remotePlayers);
   updateChatBubbles();
 
   if (cameraController.isInSpectatorMode()) cameraController.updateCamera();
