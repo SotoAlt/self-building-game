@@ -12,7 +12,7 @@
  */
 
 import * as THREE from 'three/webgpu';
-import { pass, toonOutlinePass } from 'three/tsl';
+import { toonOutlinePass } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 
@@ -57,37 +57,17 @@ function detectInitialTier() {
   return 'low';
 }
 
-function buildPipeline(tier) {
-  const cfg = TIER_CONFIG[tier];
-  const hasEffects = cfg.outline || cfg.bloom || cfg.fxaa;
+// Build the full effects pipeline once — never rebuild at runtime.
+// Rebuilding disposes GPU textures (shadow maps, render targets) while
+// the GPU may still reference them, causing "Destroyed texture" crashes.
+function buildPipelineOnce() {
+  renderPipeline = new THREE.RenderPipeline(_renderer);
 
-  if (!hasEffects) {
-    if (renderPipeline) {
-      renderPipeline.dispose();
-      renderPipeline = null;
-    }
-    return;
-  }
-
-  if (!renderPipeline) {
-    renderPipeline = new THREE.RenderPipeline(_renderer);
-  }
-
-  // Build compositing chain: scene (with toon outline) -> +bloom -> fxaa
-  const scenePass = cfg.outline
-    ? toonOutlinePass(_scene, _camera, OUTLINE_COLOR, 0.003, 1.0)
-    : pass(_scene, _camera);
+  const scenePass = toonOutlinePass(_scene, _camera, OUTLINE_COLOR, 0.003, 1.0);
   const scenePassColor = scenePass.getTextureNode('output');
   let outputNode = scenePassColor;
-
-  if (cfg.bloom) {
-    // bloom(input, strength, radius, threshold)
-    outputNode = outputNode.add(bloom(scenePassColor, 0.12, 0.4, 0.7));
-  }
-
-  if (cfg.fxaa) {
-    outputNode = fxaa(outputNode);
-  }
+  outputNode = outputNode.add(bloom(scenePassColor, 0.15, 0.4, 0.55));
+  outputNode = fxaa(outputNode);
 
   renderPipeline.outputNode = outputNode;
   renderPipeline.needsUpdate = true;
@@ -103,17 +83,22 @@ export function initPostProcessing(rendererRef, sceneRef, cameraRef, directional
 
   fpsCheckTime = performance.now();
 
-  buildPipeline(currentTier);
+  // Only build the pipeline if the device can handle effects
+  const maxIdx = TIER_ORDER.indexOf(maxTier);
+  if (maxIdx >= TIER_ORDER.indexOf('high')) {
+    buildPipelineOnce();
+  }
   applyShadowSettings(currentTier);
 
   console.log(`[PostProcess] Initial quality: ${currentTier} (max: ${maxTier})`);
 }
 
 export function renderFrame() {
-  if (!renderPipeline) {
-    _renderer.render(_scene, _camera);
-  } else {
+  const cfg = TIER_CONFIG[currentTier];
+  if (renderPipeline && (cfg.outline || cfg.bloom)) {
     renderPipeline.render();
+  } else {
+    _renderer.render(_scene, _camera);
   }
 
   frameCount++;
@@ -155,31 +140,18 @@ function autoAdjustQuality(fps, now) {
 function applyTier(tier) {
   if (tier === currentTier) return;
   currentTier = tier;
-
-  const cfg = TIER_CONFIG[tier];
   console.log(`[PostProcess] Quality: ${tier}`);
 
-  buildPipeline(tier);
-  _renderer.setPixelRatio(cfg.pixelRatio);
+  _renderer.setPixelRatio(TIER_CONFIG[tier].pixelRatio);
   applyShadowSettings(tier);
 }
 
+// Only toggle castShadow — never dispose shadow maps at runtime.
+// Disposing GPU textures while the pipeline still references them
+// causes "Destroyed texture [ShadowDepthTexture]" WebGPU crashes.
 function applyShadowSettings(tier) {
-  const cfg = TIER_CONFIG[tier];
   if (_directionalLight) {
-    if (cfg.shadowSize > 0) {
-      _directionalLight.castShadow = true;
-      if (_directionalLight.shadow.mapSize.width !== cfg.shadowSize) {
-        _directionalLight.shadow.mapSize.width = cfg.shadowSize;
-        _directionalLight.shadow.mapSize.height = cfg.shadowSize;
-        if (_directionalLight.shadow.map) {
-          _directionalLight.shadow.map.dispose();
-          _directionalLight.shadow.map = null;
-        }
-      }
-    } else {
-      _directionalLight.castShadow = false;
-    }
+    _directionalLight.castShadow = TIER_CONFIG[tier].shadowSize > 0;
   }
 }
 
