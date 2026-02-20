@@ -16,7 +16,7 @@ import { initRemotePlayers, updateChatBubbles, interpolateRemotePlayers } from '
 import { createSkyDome, initParticles, updateEnvironmentEffects } from './EnvironmentEffects.js';
 import { initNetworkManager, sendToServer, storeReconnectionToken } from './network/NetworkManager.js';
 import { initFloorManager, animateFloors } from './scene/FloorManager.js';
-import { initMessageHandlers, registerMessageHandlers } from './network/MessageHandlers.js';
+import { registerMessageHandlers } from './network/MessageHandlers.js';
 import { fetchInitialState, pollForUpdates } from './network/HttpApi.js';
 import { Client } from 'colyseus.js';
 import { debugAuth } from './auth.js';
@@ -110,7 +110,7 @@ initRemotePlayers(scene);
 
 initNetworkManager({ connectToServerFn: connectToServer, reconnectToServerFn: reconnectToServer });
 initFloorManager({ scene, ground, gridHelper, ambientLight, directionalLight });
-initMessageHandlers({ clearSpectating: () => cameraController.clearSpectating() });
+const messageDeps = { clearSpectating: () => cameraController.clearSpectating() };
 
 function isInSpectatorMode() { return cameraController.isInSpectatorMode(); }
 
@@ -122,7 +122,7 @@ async function reconnectToServer(token) {
   storeReconnectionToken();
   hideReconnectOverlay();
   console.log('[Network] Reconnected to room:', room.roomId);
-  registerMessageHandlers(room);
+  registerMessageHandlers(room, messageDeps);
   return true;
 }
 
@@ -141,7 +141,7 @@ async function connectToServer() {
     storeReconnectionToken();
     hideReconnectOverlay();
     console.log('[Network] Connected to room:', room.roomId);
-    registerMessageHandlers(room);
+    registerMessageHandlers(room, messageDeps);
     return true;
   } catch (error) {
     console.error('[Network] Connection failed:', error);

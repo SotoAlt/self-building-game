@@ -2,6 +2,30 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.54.0] - 2026-02-20
+
+### Performance — Architecture Phase B
+- **InstancedMesh batching for static entities** — static platforms/ramps grouped by geometry key into InstancedMesh objects. Per-instance color via `instanceColor` attribute. Reduces ~200 draw calls to ~20-30 for typical arenas.
+  - `src/client/entities/InstancedBatchManager.js` (NEW), `src/client/entities/EntityManager.js`, `src/client/entities/EntityFactory.js`, `src/client/ToonMaterials.js`, `src/client/physics/PhysicsEngine.js`
+
+### Refactor — Architecture Phase D.1
+- **Split MessageHandlers.js** into 4 focused handler groups — replaces 408-line god file with domain-grouped handlers for better discoverability and maintainability.
+  - `src/client/network/handlers/EntityHandlers.js` (NEW)
+  - `src/client/network/handlers/PlayerHandlers.js` (NEW)
+  - `src/client/network/handlers/GameStateHandlers.js` (NEW)
+  - `src/client/network/handlers/EffectHandlers.js` (NEW)
+  - `src/client/network/MessageHandlers.js` — rewritten as thin dispatcher
+
+## [0.52.0] - 2026-02-19
+
+### Performance — Architecture Phase A Quick Wins
+- **WS message batching** — template loads now send `world_cleared` + single `entities_batch` instead of 100+ individual `entity_spawned`/`entity_destroyed` messages. Group spawns (compose/prefab) also batched. `entities_destroyed_batch` for group destruction. SSE events updated.
+  - `src/server/services/gameService.js`, `src/server/routes/worldRoutes.js`, `src/server/Prefabs.js`, `src/server/ArenaInstance.js`, `src/client/network/MessageHandlers.js`
+- **Remote player velocity extrapolation** — server-broadcast velocity now stored and used for dead-reckoning between updates. Frame-rate-independent blend factor (`1 - 0.85^(delta*60)`) replaces fixed 0.15 lerp.
+  - `src/client/rendering/RemotePlayers.js`, `src/client/network/MessageHandlers.js`, `src/client/main.js`
+- **Bounding sphere precomputation** — `computeBoundingSphere()` called at all geometry cache insertion points and player capsule creation, eliminating first-frame CPU stalls and enabling efficient frustum culling.
+  - `src/client/entities/EntityFactory.js`, `src/client/PlayerVisuals.js`
+
 ## [0.50.0] - 2026-02-19
 
 ### Added
