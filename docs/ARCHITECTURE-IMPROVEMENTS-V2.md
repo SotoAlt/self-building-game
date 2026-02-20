@@ -300,11 +300,24 @@ These don't need modularity changes — they're already well-scoped:
   - File: `src/client/state.js`
   - Done: Exports reorganized into 9 labeled sections by owning module. `_cursedPlayerId` and `_curseRound` formalized as first-class fields. `Object.seal(state)` prevents ad-hoc property additions at runtime.
 
-### Phase E — Deferred (Not Needed at Current Scale)
+### Phase E — WebGPU + TSL Migration
+
+#### E.1 — Three.js Upgrade (r160 → r183) [DONE]
+- [x] `three@^0.183.1` — 23 releases of improvements
+- [x] `Clock` → `Timer` (r182 deprecation) — `src/client/main.js`
+- [x] `stencilBuffer: true` (r162 default change) — `src/client/SceneSetup.js`
+- [x] Import paths `three/examples/jsm/` → `three/addons/` — `src/client/PostProcessing.js`
+
+#### E.2 — WebGPU Renderer + TSL Shaders (Next)
+- [ ] `WebGLRenderer` → `WebGPURenderer` (auto WebGL 2 fallback)
+- [ ] `EffectComposer` → `RenderPipeline` + TSL post-processing nodes
+- [ ] GLSL shaders → TSL (lava, water, wind, sky dome)
+- [ ] `import 'three'` → `import 'three/webgpu'` across all client files
+
+### Phase F — Deferred (Not Needed at Current Scale)
 
 - [ ] Colyseus schema state sync (if bandwidth > 50KB/s per client)
 - [ ] Network interest management / spatial filtering (if entity count > 500)
-- [ ] WebGPU / TSL migration (if adding compute-heavy features)
 - [ ] LOD system (if adding high-poly models)
 - [ ] Texture atlasing (minimal benefit for toon style)
 - [ ] Server-side physics validation (if competitive play becomes a focus)

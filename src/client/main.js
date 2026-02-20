@@ -66,12 +66,13 @@ initNetworkManager({ connectToServerFn: connectToServer, reconnectToServerFn: re
 initFloorManager({ scene, ground, gridHelper, ambientLight, directionalLight });
 
 const isInSpectatorMode = () => cameraController.isInSpectatorMode();
-const clock = new THREE.Clock();
+const timer = new THREE.Timer();
 
 function animate() {
   requestAnimationFrame(animate);
 
-  const delta = clock.getDelta();
+  timer.update();
+  const delta = timer.getDelta();
   const time = performance.now() / 1000;
 
   if (isInSpectatorMode()) {

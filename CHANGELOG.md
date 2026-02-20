@@ -2,6 +2,14 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.62.0] - 2026-02-20
+
+### Upgrade — Architecture Phase E.1
+- **Three.js r160 → r183** — 23 releases of improvements, bug fixes, and WebGPU groundwork. Stays on WebGLRenderer.
+  - `src/client/main.js` — `Clock` → `Timer` (r182 deprecation)
+  - `src/client/SceneSetup.js` — `stencilBuffer: true` (r162 default changed)
+  - `src/client/PostProcessing.js` — import paths `three/examples/jsm/` → `three/addons/`
+
 ## [0.60.0] - 2026-02-20
 
 ### Refactor — Architecture Phase D.4
