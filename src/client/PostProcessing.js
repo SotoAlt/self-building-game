@@ -3,7 +3,7 @@
  *
  * 4 quality tiers with bidirectional FPS scaling:
  *   ultra:  all effects, pixelRatio 2.0, shadows 2048
- *   high:   bloom + FXAA, pixelRatio 1.5, shadows 1024
+ *   high:   outline + bloom + FXAA, pixelRatio 1.5, shadows 1024
  *   medium: FXAA only, pixelRatio 1.25, no shadows
  *   low:    no post-processing, pixelRatio 1.0, no shadows
  *
@@ -21,7 +21,7 @@ const TIER_ORDER = ['low', 'medium', 'high', 'ultra'];
 
 const TIER_CONFIG = {
   ultra:  { pixelRatio: 2.0,  shadowSize: 2048, outline: true,  bloom: true,  fxaa: true,  particleBudget: 20 },
-  high:   { pixelRatio: 1.5,  shadowSize: 1024, outline: false, bloom: true,  fxaa: true,  particleBudget: 15 },
+  high:   { pixelRatio: 1.5,  shadowSize: 1024, outline: true,  bloom: true,  fxaa: true,  particleBudget: 15 },
   medium: { pixelRatio: 1.25, shadowSize: 0,    outline: false, bloom: false, fxaa: true,  particleBudget: 10 },
   low:    { pixelRatio: 1.0,  shadowSize: 0,    outline: false, bloom: false, fxaa: false, particleBudget: 5 },
 };
@@ -100,7 +100,8 @@ function buildPipeline(tier) {
   }
 
   if (cfg.bloom) {
-    outputNode = outputNode.add(bloom(scenePassColor, 0.6, 0.5, 0.3));
+    // bloom(input, strength, radius, threshold)
+    outputNode = outputNode.add(bloom(scenePassColor, 0.25, 0.5, 0.3));
   }
 
   if (cfg.fxaa) {
