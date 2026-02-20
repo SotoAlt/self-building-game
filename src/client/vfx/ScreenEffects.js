@@ -6,6 +6,7 @@
 import * as THREE from 'three/webgpu';
 import { cameraShake, particles } from '../state.js';
 import { getParticleBudget } from '../PostProcessing.js';
+import { createParticleMaterial } from './ParticleUtils.js';
 
 let _scene = null;
 
@@ -62,24 +63,6 @@ export function showVignette(color, duration = 2000) {
   setTimeout(() => { vignetteEl.style.opacity = '0'; }, duration);
 }
 
-// Base materials pooled by color hex; cloned per-system for independent opacity
-const _materialPool = new Map();
-
-function getParticleMaterial(color) {
-  const hex = new THREE.Color(color).getHexString();
-  let base = _materialPool.get(hex);
-  if (!base) {
-    base = new THREE.PointsMaterial({
-      color: new THREE.Color(color),
-      size: 0.3,
-      transparent: true,
-      opacity: 1,
-    });
-    _materialPool.set(hex, base);
-  }
-  return base.clone();
-}
-
 export function spawnParticles(position, color, count = 20, speed = 5) {
   // Enforce particle budget — evict oldest if over limit
   const budget = getParticleBudget();
@@ -90,7 +73,6 @@ export function spawnParticles(position, color, count = 20, speed = 5) {
     oldest.mesh.material.dispose();
   }
 
-  const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(count * 3);
   const velocities = new Float32Array(count * 3);
 
@@ -108,15 +90,24 @@ export function spawnParticles(position, color, count = 20, speed = 5) {
     velocities[i3 + 2] = (Math.random() - 0.5) * speed;
   }
 
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const posAttr = new THREE.InstancedBufferAttribute(positions, 3);
+  const geo = new THREE.PlaneGeometry(1, 1);
+  geo.setAttribute('burstPos', posAttr);
 
-  const material = getParticleMaterial(color);
+  const material = createParticleMaterial(posAttr, {
+    color: new THREE.Color(color),
+    size: 0.3,
+    opacity: 1.0,
+    blending: 'normal',
+  });
 
-  const points = new THREE.Points(geometry, material);
-  _scene.add(points);
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.count = count;
+  _scene.add(mesh);
 
   particles.push({
-    mesh: points,
+    mesh,
+    posAttr,
     velocities,
     startTime: Date.now(),
     lifetime: 1500
@@ -139,7 +130,7 @@ export function updateParticles(dt) {
       continue;
     }
 
-    const positions = p.mesh.geometry.attributes.position.array;
+    const positions = p.posAttr.array;
     const count = positions.length / 3;
     const vel = p.velocities;
 
@@ -151,7 +142,7 @@ export function updateParticles(dt) {
       vel[j3 + 1] -= 9.8 * dt; // gravity
     }
 
-    p.mesh.geometry.attributes.position.needsUpdate = true;
+    p.posAttr.needsUpdate = true;
     p.mesh.material.opacity = 1 - elapsed / p.lifetime;
   }
 }

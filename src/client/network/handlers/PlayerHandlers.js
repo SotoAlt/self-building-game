@@ -7,6 +7,7 @@ import { updateRemotePlayer, removeRemotePlayer } from '../../rendering/RemotePl
 import { showToast, showAnnouncement } from '../../ui/Announcements.js';
 import { addKillFeedEntry } from '../../ui/SpectatorOverlay.js';
 import { updateUI } from '../../ui/GameStatusHUD.js';
+import { spawnParticles } from '../../vfx/ScreenEffects.js';
 
 export function registerPlayerHandlers(room, { clearSpectating }) {
   room.onMessage('player_joined', (p) => {
@@ -49,6 +50,10 @@ export function registerPlayerHandlers(room, { clearSpectating }) {
     p.position = position;
     p.velocity = velocity;
     updateRemotePlayer(p);
+  });
+
+  room.onMessage('player_respawned', (data) => {
+    if (data.position) spawnParticles(data.position, '#00d4ff', 20, 4);
   });
 
   room.onMessage('player_died', (data) => {

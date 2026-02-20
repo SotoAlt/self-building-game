@@ -108,6 +108,9 @@ export function registerEffectHandlers(room) {
 
   room.onMessage('announcement', showAnnouncement);
 
+  // Suppress Colyseus warning — actual disconnect handled by onLeave
+  room.onMessage('afk_kicked', () => {});
+
   // Lifecycle handlers
   room.onLeave((code) => {
     state.connected = false;

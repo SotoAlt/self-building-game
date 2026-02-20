@@ -6,6 +6,7 @@ import { GAME_TYPES } from '../../../shared/constants.js';
 import { state, remotePlayers, player, countdown } from '../../state.js';
 import { updateGameStateUI, clearCountdownInterval, updateUI } from '../../ui/GameStatusHUD.js';
 import { fetchLeaderboard } from '../../ui/Leaderboard.js';
+import { showToast } from '../../ui/Announcements.js';
 import { triggerCameraShake, screenFlash, showVignette, spawnParticles } from '../../vfx/ScreenEffects.js';
 import { playCountdownBeep, playWinFanfare, playCollectSound } from '../../audio/SoundManager.js';
 import { applyWorldState } from '../HttpApi.js';
@@ -164,6 +165,22 @@ export function registerGameStateHandlers(room, { clearSpectating }) {
       mesh.material.emissive?.setHex(0x000000);
       mesh.material.emissiveIntensity = 0;
     }
+  });
+
+  room.onMessage('collectible_picked', (data) => {
+    const entity = state.entities.get(data.entityId);
+    if (entity) spawnParticles(entity.position, '#f1c40f', 15, 3);
+    if (data.playerId === room.sessionId) playCollectSound();
+  });
+
+  room.onMessage('minigame_ended', (data) => {
+    if (data.winnerName) {
+      showToast(`${data.winnerName} wins${data.gameType ? ` (${data.gameType})` : ''}!`, 'success');
+    }
+  });
+
+  room.onMessage('challenge_completed', (data) => {
+    showToast(data.message || 'Challenge complete!', 'success');
   });
 
   room.onMessage('checkpoint_reached', (data) => {

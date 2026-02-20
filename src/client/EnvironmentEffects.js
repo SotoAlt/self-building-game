@@ -11,8 +11,10 @@ import * as THREE from 'three/webgpu';
 import {
   Fn, vec2, vec3,
   uniform, normalize, positionWorld,
-  max, pow, mix, smoothstep, floor, fract, sin, dot
+  max, pow, mix, smoothstep, floor, fract, sin, dot,
+  color as colorNode, instancedBufferAttribute
 } from 'three/tsl';
+import { softCircle, createParticleMaterial } from './vfx/ParticleUtils.js';
 
 let particleSystem = null;
 let particleVelocities = null;
@@ -131,15 +133,16 @@ export function createSkyDome(scene) {
   return skyDome;
 }
 
+const _starOpacity = uniform(0);
+
 function createStarField(scene) {
   const count = 300;
   const positions = new Float32Array(count * 3);
   const sizes = new Float32Array(count);
 
   for (let i = 0; i < count; i++) {
-    // Distribute on upper hemisphere
     const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(Math.random() * 0.8 + 0.2); // upper half bias
+    const phi = Math.acos(Math.random() * 0.8 + 0.2);
     const r = 390;
     positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
     positions[i * 3 + 1] = r * Math.cos(phi);
@@ -147,21 +150,23 @@ function createStarField(scene) {
     sizes[i] = 0.5 + Math.random() * 1.5;
   }
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+  const posAttr = new THREE.InstancedBufferAttribute(positions, 3);
+  const sizeAttr = new THREE.InstancedBufferAttribute(sizes, 1);
+  const geo = new THREE.PlaneGeometry(1, 1);
+  geo.setAttribute('starPos', posAttr);
+  geo.setAttribute('starSize', sizeAttr);
 
-  const material = new THREE.PointsMaterial({
-    color: 0xffffff,
-    size: 1.0,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    sizeAttenuation: false,
-  });
+  const material = new THREE.SpriteNodeMaterial();
+  material.positionNode = instancedBufferAttribute(posAttr);
+  material.scaleNode = instancedBufferAttribute(sizeAttr);
+  material.colorNode = colorNode(0xffffff);
+  material.opacityNode = softCircle().mul(_starOpacity);
+  material.transparent = true;
+  material.depthWrite = false;
+  material.blending = THREE.AdditiveBlending;
 
-  starField = new THREE.Points(geometry, material);
+  starField = new THREE.Mesh(geo, material);
+  starField.count = count;
   starField.frustumCulled = false;
   scene.add(starField);
 }
@@ -177,7 +182,7 @@ export function updateSkyColors(skyColor, fogColor, skyPreset) {
     _cloudBand.value = preset.cloudBand;
 
     if (starField) {
-      starField.material.opacity = preset.starsVisible ? preset.starBrightness : 0;
+      _starOpacity.value = preset.starsVisible ? preset.starBrightness : 0;
       starField.visible = preset.starsVisible;
     }
   } else {
@@ -192,7 +197,7 @@ export function updateSkyColors(skyColor, fogColor, skyPreset) {
     // Auto-enable stars for dark skies
     if (starField) {
       const brightness = top.r * 0.299 + top.g * 0.587 + top.b * 0.114;
-      starField.material.opacity = brightness < 0.15 ? 0.7 : 0;
+      _starOpacity.value = brightness < 0.15 ? 0.7 : 0;
       starField.visible = brightness < 0.15;
     }
   }
@@ -238,19 +243,14 @@ export function initParticles(scene, type = 'dust') {
     particleVelocities[i3 + 2] = (Math.random() - 0.5) * config.velocityXZ;
   }
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const posAttr = new THREE.InstancedBufferAttribute(positions, 3);
+  const geo = new THREE.PlaneGeometry(1, 1);
+  geo.setAttribute('particlePos', posAttr);
 
-  const material = new THREE.PointsMaterial({
-    color: config.color,
-    size: config.size,
-    transparent: true,
-    opacity: config.opacity,
-    depthWrite: false,
-    blending: config.blending === 'additive' ? THREE.AdditiveBlending : THREE.NormalBlending,
-  });
+  const material = createParticleMaterial(posAttr, config);
 
-  particleSystem = new THREE.Points(geometry, material);
+  particleSystem = new THREE.Mesh(geo, material);
+  particleSystem.count = PARTICLE_COUNT;
   particleSystem.frustumCulled = false;
   scene.add(particleSystem);
 }
@@ -258,7 +258,8 @@ export function initParticles(scene, type = 'dust') {
 export function updateEnvironmentEffects(delta, cameraPosition) {
   if (!particleSystem || !particleVelocities) return;
 
-  const positions = particleSystem.geometry.attributes.position.array;
+  const posAttr = particleSystem.geometry.attributes.particlePos;
+  const positions = posAttr.array;
   const now = Date.now() * 0.001;
 
   for (let i = 0; i < PARTICLE_COUNT; i++) {
@@ -294,7 +295,7 @@ export function updateEnvironmentEffects(delta, cameraPosition) {
     }
   }
 
-  particleSystem.geometry.attributes.position.needsUpdate = true;
+  posAttr.needsUpdate = true;
 
   // Animate star twinkle
   if (starField?.visible) {
