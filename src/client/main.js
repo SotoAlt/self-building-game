@@ -13,7 +13,7 @@ import { updateSquashStretch } from './PlayerVisuals.js';
 import { initEntityManager, animateEntities, animateGroups } from './entities/EntityManager.js';
 import { initPhysics, updatePlayer, checkCollisions, createPlayer } from './physics/PhysicsEngine.js';
 import { initRemotePlayers, updateChatBubbles, interpolateRemotePlayers } from './rendering/RemotePlayers.js';
-import { initParticles, updateEnvironmentEffects } from './EnvironmentEffects.js';
+import { initParticles, updateEnvironmentEffects, selectParticleType } from './EnvironmentEffects.js';
 import { initNetworkManager, sendToServer } from './network/NetworkManager.js';
 import { initFloorManager, animateFloors } from './scene/FloorManager.js';
 import { fetchInitialState, pollForUpdates } from './network/HttpApi.js';
@@ -36,6 +36,7 @@ import { showArenaLobby } from './ui/ArenaLobby.js';
 import { startAuthFlow } from './ui/AuthFlow.js';
 import { setupBribeUI } from './ui/BribePanel.js';
 import { setupProfileButton } from './ui/ProfilePanel.js';
+import { setupGameMenu } from './ui/GameMenu.js';
 import { setupSpectatorOverlay } from './ui/SpectatorOverlay.js';
 import { setupDebugPanel } from './ui/DebugPanel.js';
 import { CameraController } from './CameraController.js';
@@ -179,7 +180,11 @@ async function init() {
   });
 
   setupProfileButton();
-  initParticles(scene, 'dust');
+  setupGameMenu();
+
+  const floorType = state.gameState?.floorType || 'solid';
+  const particleType = selectParticleType(floorType, state.gameState?.environment) || 'dust';
+  initParticles(scene, particleType);
 
   renderer.setAnimationLoop(animate);
 

@@ -15,6 +15,14 @@ export function initConnectionManager(messageDeps) {
   _messageDeps = messageDeps;
 }
 
+export function disconnectFromServer() {
+  if (state.room) {
+    state.room.leave();
+    state.room = null;
+    state.connected = false;
+  }
+}
+
 function onRoomJoined(room) {
   state.room = room;
   state.connected = true;

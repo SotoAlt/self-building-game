@@ -16,6 +16,14 @@ export async function showArenaLobby() {
   lobby.style.display = 'flex';
   lobby.classList.add('screen-fade-in');
 
+  const switchBtn = document.getElementById('arena-switch-account');
+  if (switchBtn) {
+    switchBtn.onclick = function handleSwitchAccount() {
+      localStorage.removeItem('game:token');
+      window.location.reload();
+    };
+  }
+
   async function loadArenas() {
     try {
       const res = await fetch(`${API_URL}/api/arenas`);
@@ -69,14 +77,22 @@ export async function showArenaLobby() {
   }, 5000);
 
   return new Promise((resolve) => {
-    listEl.addEventListener('click', (e) => {
+    function onArenaClick(e) {
       const card = e.target.closest('.arena-card');
       if (!card) return;
-      const arenaId = card.dataset.arenaId;
+
+      listEl.removeEventListener('click', onArenaClick);
       clearInterval(arenaRefreshInterval);
+
+      const arenaId = card.dataset.arenaId;
       lobby.classList.add('screen-fade-out');
-      setTimeout(() => { lobby.style.display = 'none'; lobby.classList.remove('screen-fade-out'); }, 300);
+      setTimeout(() => {
+        lobby.style.display = 'none';
+        lobby.classList.remove('screen-fade-out');
+      }, 300);
       resolve(arenaId);
-    });
+    }
+
+    listEl.addEventListener('click', onArenaClick);
   });
 }
