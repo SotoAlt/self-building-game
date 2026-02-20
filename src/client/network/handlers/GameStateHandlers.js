@@ -33,7 +33,7 @@ export function registerGameStateHandlers(room, { clearSpectating }) {
       if (scoreOverlay) scoreOverlay.style.display = 'none';
       if (curseTimer) { curseTimer.style.display = 'none'; curseTimer.className = ''; }
       if (checkpointDisplay) checkpointDisplay.style.display = 'none';
-      state._cursedPlayerId = null;
+      state.cursedPlayerId = null;
       for (const [, mesh] of remotePlayers) {
         if (mesh.material) {
           mesh.material.emissive?.setHex(0x000000);
@@ -128,8 +128,8 @@ export function registerGameStateHandlers(room, { clearSpectating }) {
   });
 
   room.onMessage('curse_changed', (data) => {
-    state._cursedPlayerId = data.cursedPlayerId;
-    state._curseRound = data.round;
+    state.cursedPlayerId = data.cursedPlayerId;
+    state.curseRound = data.round;
     for (const [id, mesh] of remotePlayers) {
       if (mesh.material) {
         const isCursed = id === data.cursedPlayerId;

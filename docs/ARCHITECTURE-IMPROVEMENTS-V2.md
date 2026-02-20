@@ -296,9 +296,9 @@ These don't need modularity changes — they're already well-scoped:
   - Files: `src/client/SceneSetup.js` (NEW), `src/client/ConnectionManager.js` (NEW), `src/client/main.js` refactored
   - Done: Scene/camera/renderer/lights/ground/grid/sky/post-processing creation extracted to `SceneSetup.js`. Colyseus connect/reconnect extracted to `ConnectionManager.js`. main.js reduced from 273 lines (48 imports) to ~170 lines (36 imports) — thin orchestrator.
 
-- [ ] **D.4: Add state.js ownership boundaries** — group state by owner, add comments, freeze shape
+- [x] **D.4: Add state.js ownership boundaries** — group state by owner, add comments, freeze shape ✅
   - File: `src/client/state.js`
-  - Why: 20+ exported mutables with no indication of who should write to them. Ownership annotations + grouping prevents accidental cross-module mutations.
+  - Done: Exports reorganized into 9 labeled sections by owning module. `_cursedPlayerId` and `_curseRound` formalized as first-class fields. `Object.seal(state)` prevents ad-hoc property additions at runtime.
 
 ### Phase E — Deferred (Not Needed at Current Scale)
 

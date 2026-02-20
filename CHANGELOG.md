@@ -2,6 +2,12 @@
 
 All notable changes to the Self-Building Game project.
 
+## [0.60.0] - 2026-02-20
+
+### Refactor — Architecture Phase D.4
+- **Add state.js ownership boundaries** — reorganized 23 exports into 9 labeled sections by owning module (Core, Auth, Network, Player physics, Camera, Entity rendering, Environment, VFX, UI). Formalized `_cursedPlayerId` and `_curseRound` as first-class fields on `state` instead of ad-hoc runtime additions. `Object.seal(state)` prevents future ad-hoc property additions.
+  - `src/client/state.js` — reorganized + sealed
+
 ## [0.58.0] - 2026-02-20
 
 ### Refactor — Architecture Phase D.3
